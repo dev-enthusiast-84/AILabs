@@ -1,0 +1,82 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Agentic RAG — Query Endpoint (dual-mode)", "version": "2.0.0" },
+  "paths": {
+    "/api/query/": {
+      "post": {
+        "summary": "Run a RAG query (simple or agentic mode)",
+        "description": "Retrieves relevant document chunks and generates a grounded answer.\nMode 'simple': retrieve → generate (fast, no validation).\nMode 'agentic': planner → retriever → generator → validator (thorough, validated).\nBoth modes apply input/output guardrails and the per-IP rate limit.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["question"],
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000,
+                    "example": "What are the core capabilities of generative AI?"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": ["simple", "agentic"],
+                    "default": "agentic",
+                    "description": "RAG pipeline to use. Omit for backward-compatible agentic default."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answer":      { "type": "string" },
+                    "sources":     { "type": "array", "items": { "type": "string" } },
+                    "validation":  { "type": "string", "enum": ["VALID", "NEEDS_REVISION", "N/A"] },
+                    "tokens_used": { "type": "integer" },
+                    "mode":        { "type": "string", "enum": ["simple", "agentic"] }
+                  }
+                },
+                "examples": {
+                  "simple": {
+                    "summary": "Simple mode response",
+                    "value": {
+                      "answer": "RAG grounds LLM answers in retrieved document chunks.",
+                      "sources": ["rag_overview.txt"],
+                      "validation": "N/A",
+                      "tokens_used": 312,
+                      "mode": "simple"
+                    }
+                  },
+                  "agentic": {
+                    "summary": "Agentic mode response",
+                    "value": {
+                      "answer": "Retrieval-Augmented Generation (RAG) grounds LLM responses by first retrieving relevant chunks from a vector store, then conditioning the generator on those chunks.",
+                      "sources": ["rag_overview.txt", "agentic_frameworks.txt"],
+                      "validation": "VALID",
+                      "tokens_used": 874,
+                      "mode": "agentic"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "No documents indexed, or query blocked by guardrail" },
+          "422": { "description": "Validation error (question too short/long, invalid mode value)" },
+          "429": { "description": "Rate limit exceeded" },
+          "500": { "description": "Pipeline error" }
+        }
+      }
+    }
+  }
+}

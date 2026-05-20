@@ -1,0 +1,55 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.6
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+
+# Auth
+python-jose[cryptography]==3.3.0
+bcrypt==4.3.0
+
+# LangChain & Agents
+langchain==0.3.18
+langchain-openai==0.3.6
+langchain-community==0.3.17
+langchain-chroma==0.2.2
+langchain-experimental==0.3.4
+langgraph==0.2.73
+
+# Vector store
+chromadb==0.6.3
+rank-bm25==0.2.2        # optional: BM25 hybrid search (RETRIEVER_HYBRID_BM25=true)
+sentence-transformers>=5.5.0  # optional: cross-encoder reranker (RERANKER_TYPE=cross-encoder)
+
+# OpenAI
+openai==1.61.1
+
+# Document processing
+pymupdf==1.27.2.3    # primary PDF extractor — handles multi-column/academic PDFs correctly
+pypdf==5.1.0         # fallback PDF extractor (simple PDFs)
+pandas==2.2.3
+openpyxl==3.1.5
+python-magic==0.4.27
+
+# Rate limiting
+slowapi==0.1.9
+
+# Security
+bleach==6.2.0
+clamd==1.0.2              # optional ClamAV client — used when CLAMAV_HOST env var is set
+
+# Logging
+structlog==25.1.0
+vercel==0.5.6
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.3
+pytest-html==4.1.1
+pytest-cov==6.0.0
+pytest-timeout==2.3.1
+httpx==0.28.1
+faker==33.3.0
+respx==0.22.0
+ragas==0.2.14

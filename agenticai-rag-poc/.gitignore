@@ -1,0 +1,58 @@
+# Env files — NEVER commit secrets
+.env
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+.pytest_cache/
+.mypy_cache/
+
+# Vector store (can be large)
+backend/chroma_db/
+
+# Original uploaded files (served at runtime, not committed)
+backend/uploads/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Test reports (generated, not committed)
+test-reports/
+
+# Sample data files — generated locally, not committed
+# Run: python sample-data/generate_samples.py
+sample-data/sample.txt
+sample-data/sample.csv
+sample-data/sample.xlsx
+sample-data/sample.pdf
+
+# OS
+.DS_Store
+../.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+**/.claude/
+.vercel/
+.vercel
+.env*.local
+backend/.env.*
+frontend/.env*
+
+# Frontend generated reports/artifacts
+frontend/playwright-report/
+frontend/test-results/
+playwright-report/
+test-results/
+
+PENDING_TASKS.md
+artifacts/

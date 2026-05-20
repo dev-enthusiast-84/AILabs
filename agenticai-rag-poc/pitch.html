@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic RAG — Pitch Proposal</title>
+<style>
+/* ═══════════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════════ */
+:root {
+  --bg:        #060c18;
+  --surface:   #0d1627;
+  --surface2:  #111e35;
+  --border:    rgba(99,179,237,.13);
+  --border-hi: rgba(99,179,237,.28);
+  --cyan:      #38bdf8;
+  --cyan-dim:  rgba(56,189,248,.15);
+  --purple:    #a78bfa;
+  --purple-dim:rgba(167,139,250,.15);
+  --emerald:   #34d399;
+  --emerald-dim:rgba(52,211,153,.13);
+  --amber:     #fbbf24;
+  --amber-dim: rgba(251,191,36,.13);
+  --rose:      #fb7185;
+  --rose-dim:  rgba(251,113,133,.13);
+  --text:      #e2e8f0;
+  --text-dim:  #94a3b8;
+  --text-faint:#475569;
+  --grad-main: linear-gradient(135deg,#38bdf8,#a78bfa);
+  --grad-green:linear-gradient(135deg,#34d399,#38bdf8);
+  --grad-warm: linear-gradient(135deg,#fbbf24,#fb7185);
+  --r:         10px;
+  --r-sm:      7px;
+}
+
+/* ═══════════════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:13px;scroll-behavior:smooth}
+body{
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.5;
+  min-height:100vh;
+}
+
+/* ═══════════════════════════════════════════════════
+   PAGE SHELL
+═══════════════════════════════════════════════════ */
+.page{
+  width:980px;
+  margin:28px auto;
+  border-radius:16px;
+  overflow:hidden;
+  border:1px solid var(--border-hi);
+  box-shadow:0 0 0 1px rgba(56,189,248,.05),
+             0 32px 80px rgba(0,0,0,.6),
+             0 0 120px rgba(56,189,248,.04);
+}
+
+/* ═══════════════════════════════════════════════════
+   HEADER
+═══════════════════════════════════════════════════ */
+.header{
+  position:relative;
+  background:var(--surface);
+  padding:32px 38px 28px;
+  overflow:hidden;
+  border-bottom:1px solid var(--border);
+}
+/* Dot-grid background */
+.header::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background-image:
+    radial-gradient(circle, rgba(56,189,248,.18) 1px, transparent 1px);
+  background-size:26px 26px;
+  mask-image:linear-gradient(to bottom,transparent,rgba(0,0,0,.5) 40%,transparent);
+  pointer-events:none;
+}
+/* Glow orbs */
+.header::after{
+  content:'';
+  position:absolute;
+  top:-60px;right:-60px;
+  width:320px;height:320px;
+  background:radial-gradient(circle,rgba(167,139,250,.18) 0%,transparent 70%);
+  pointer-events:none;
+}
+.header-inner{
+  position:relative;
+  z-index:1;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:24px;
+}
+.header-left{flex:1}
+
+.eyebrow{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--cyan);
+  margin-bottom:10px;
+  padding:4px 10px;
+  background:var(--cyan-dim);
+  border:1px solid rgba(56,189,248,.25);
+  border-radius:20px;
+}
+.eyebrow-dot{
+  width:5px;height:5px;
+  border-radius:50%;
+  background:var(--cyan);
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:.4;transform:scale(.7)}
+}
+
+.header h1{
+  font-size:30px;
+  font-weight:900;
+  letter-spacing:-.5px;
+  line-height:1.1;
+  background:var(--grad-main);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.header h1 em{
+  font-style:normal;
+  -webkit-text-fill-color:var(--text);
+}
+.tagline{
+  margin-top:10px;
+  font-size:12px;
+  color:var(--text-dim);
+  max-width:460px;
+  line-height:1.6;
+}
+.tagline strong{color:var(--text)}
+
+/* Stat cards */
+.header-stats{
+  display:flex;
+  gap:10px;
+  align-self:flex-end;
+  flex-shrink:0;
+}
+.stat{
+  text-align:center;
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border-hi);
+  border-radius:10px;
+  padding:10px 16px;
+  min-width:72px;
+  position:relative;
+  overflow:hidden;
+  transition:transform .2s,border-color .2s;
+}
+.stat:hover{transform:translateY(-2px);border-color:var(--cyan)}
+.stat::before{
+  content:'';
+  position:absolute;
+  top:0;left:0;right:0;height:2px;
+  background:var(--grad-main);
+}
+.stat-num{
+  font-size:22px;
+  font-weight:900;
+  background:var(--grad-main);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+  line-height:1.1;
+}
+.stat-label{
+  font-size:9px;
+  color:var(--text-faint);
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  margin-top:4px;
+}
+
+/* ═══════════════════════════════════════════════════
+   BODY
+═══════════════════════════════════════════════════ */
+.body{
+  background:var(--bg);
+  background-image:
+    radial-gradient(ellipse 80% 40% at 10% 0%,rgba(56,189,248,.04) 0%,transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 100%,rgba(167,139,250,.04) 0%,transparent 60%);
+  padding:26px 38px 32px;
+}
+
+/* ═══════════════════════════════════════════════════
+   SECTION HEADING
+═══════════════════════════════════════════════════ */
+.sh{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--text-faint);
+  margin-bottom:12px;
+}
+.sh::after{
+  content:'';
+  flex:1;
+  height:1px;
+  background:linear-gradient(to right,var(--border),transparent);
+}
+.sh-dot{
+  width:6px;height:6px;
+  border-radius:50%;
+  flex-shrink:0;
+}
+
+/* ═══════════════════════════════════════════════════
+   PROBLEM / SOLUTION
+═══════════════════════════════════════════════════ */
+.ps{
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  gap:0;
+  margin-bottom:22px;
+  border-radius:var(--r);
+  overflow:hidden;
+  border:1px solid var(--border);
+}
+.ps-block{padding:14px 18px}
+.ps-problem{background:linear-gradient(135deg,rgba(251,113,133,.08),rgba(251,113,133,.04))}
+.ps-solution{background:linear-gradient(135deg,rgba(52,211,153,.08),rgba(52,211,153,.04))}
+.ps-mid{
+  display:flex;align-items:center;justify-content:center;
+  padding:0 12px;
+  background:rgba(255,255,255,.02);
+  border-left:1px solid var(--border);
+  border-right:1px solid var(--border);
+  flex-shrink:0;
+}
+.ps-arrow-circle{
+  width:28px;height:28px;
+  border-radius:50%;
+  background:var(--grad-main);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;color:#fff;font-weight:900;
+  box-shadow:0 0 16px rgba(56,189,248,.35);
+}
+.ps-label{
+  font-size:9.5px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;margin-bottom:5px;
+}
+.ps-problem .ps-label{color:var(--rose)}
+.ps-solution .ps-label{color:var(--emerald)}
+.ps-block p{font-size:11.5px;color:var(--text-dim);line-height:1.55}
+
+/* ═══════════════════════════════════════════════════
+   PIPELINE
+═══════════════════════════════════════════════════ */
+.pipeline-wrap{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:18px 20px 14px;
+  margin-bottom:22px;
+  position:relative;
+  overflow:hidden;
+}
+.pipeline-wrap::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:linear-gradient(90deg,
+    rgba(56,189,248,.06) 0%,
+    rgba(167,139,250,.06) 33%,
+    rgba(52,211,153,.06) 66%,
+    rgba(251,191,36,.06) 100%);
+  pointer-events:none;
+}
+.pipeline{
+  position:relative;
+  display:flex;
+  align-items:center;
+  gap:0;
+}
+.p-node{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  padding:10px 6px 8px;
+  border-radius:var(--r-sm);
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border);
+  position:relative;
+  transition:border-color .2s,background .2s;
+  cursor:default;
+}
+.p-node:hover{
+  background:rgba(255,255,255,.06);
+  border-color:var(--border-hi);
+}
+.p-num{
+  position:absolute;
+  top:-1px;left:-1px;
+  font-size:8px;font-weight:900;
+  width:18px;height:18px;
+  border-radius:var(--r-sm) 0 var(--r-sm) 0;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;
+}
+.n1 .p-num{background:var(--cyan)}
+.n2 .p-num{background:#818cf8}
+.n3 .p-num{background:var(--purple)}
+.n4 .p-num{background:var(--rose)}
+.n5 .p-num{background:var(--emerald)}
+.n6 .p-num{background:var(--amber)}
+.n7 .p-num{background:#34d399}
+.p-icon{
+  font-size:18px;
+  line-height:1;
+  margin-bottom:4px;
+  filter:drop-shadow(0 0 8px rgba(56,189,248,.4));
+}
+.n2 .p-icon{filter:drop-shadow(0 0 8px rgba(129,140,248,.4))}
+.n3 .p-icon{filter:drop-shadow(0 0 8px rgba(167,139,250,.4))}
+.n4 .p-icon{filter:drop-shadow(0 0 8px rgba(251,113,133,.4))}
+.n5 .p-icon{filter:drop-shadow(0 0 8px rgba(52,211,153,.4))}
+.n6 .p-icon{filter:drop-shadow(0 0 8px rgba(251,191,36,.4))}
+.n7 .p-icon{filter:drop-shadow(0 0 8px rgba(52,211,153,.4))}
+.p-name{font-size:10px;font-weight:800;color:var(--text);margin-bottom:2px}
+.n1 .p-name{color:var(--cyan)}
+.n2 .p-name{color:#818cf8}
+.n3 .p-name{color:var(--purple)}
+.n4 .p-name{color:var(--rose)}
+.n5 .p-name{color:var(--emerald)}
+.n6 .p-name{color:var(--amber)}
+.n7 .p-name{color:#34d399}
+.p-desc{font-size:9px;color:var(--text-faint);line-height:1.4}
+
+.p-connector{
+  flex-shrink:0;
+  display:flex;align-items:center;
+  padding:0 4px;
+  position:relative;
+}
+.p-connector::before{
+  content:'';
+  display:block;
+  width:22px;height:2px;
+  background:var(--grad-main);
+  border-radius:2px;
+  opacity:.5;
+}
+.p-connector::after{
+  content:'›';
+  position:absolute;
+  right:0px;
+  font-size:14px;font-weight:900;
+  background:var(--grad-main);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+  line-height:1;
+}
+
+/* ═══════════════════════════════════════════════════
+   TWO-COL LAYOUT
+═══════════════════════════════════════════════════ */
+.two-col{
+  display:grid;
+  grid-template-columns:1.05fr .95fr;
+  gap:20px;
+  margin-bottom:20px;
+}
+
+/* ═══════════════════════════════════════════════════
+   CAPABILITY CARDS
+═══════════════════════════════════════════════════ */
+.cap-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.cap-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+  padding:11px 13px;
+  position:relative;
+  overflow:hidden;
+  transition:border-color .2s,transform .2s;
+  cursor:default;
+}
+.cap-card:hover{
+  border-color:var(--border-hi);
+  transform:translateY(-1px);
+}
+/* Coloured left accent */
+.cap-card::before{
+  content:'';
+  position:absolute;
+  top:0;bottom:0;left:0;
+  width:3px;
+}
+.cc-purple::before{background:var(--purple)}
+.cc-cyan::before{background:var(--cyan)}
+.cc-emerald::before{background:var(--emerald)}
+.cc-amber::before{background:var(--amber)}
+
+.cc-head{
+  display:flex;align-items:center;
+  gap:7px;margin-bottom:4px;
+}
+.cc-icon{
+  font-size:15px;line-height:1;
+  flex-shrink:0;
+}
+.cc-head h4{
+  font-size:11.5px;font-weight:700;
+  color:var(--text);flex:1;
+}
+.badge{
+  font-size:8.5px;font-weight:800;
+  padding:2px 6px;
+  border-radius:4px;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  flex-shrink:0;
+}
+.b-purple{background:var(--purple-dim);color:var(--purple);border:1px solid rgba(167,139,250,.25)}
+.b-cyan  {background:var(--cyan-dim);  color:var(--cyan);  border:1px solid rgba(56,189,248,.25)}
+.b-emerald{background:var(--emerald-dim);color:var(--emerald);border:1px solid rgba(52,211,153,.25)}
+.b-amber {background:var(--amber-dim); color:var(--amber); border:1px solid rgba(251,191,36,.25)}
+
+.cap-card p{
+  font-size:10.5px;
+  color:var(--text-dim);
+  line-height:1.5;
+  padding-left:3px;
+}
+
+/* ═══════════════════════════════════════════════════
+   ACCESS TABLE
+═══════════════════════════════════════════════════ */
+.access-wrap{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+  overflow:hidden;
+  margin-bottom:16px;
+}
+.access-table{
+  width:100%;border-collapse:collapse;
+  font-size:11px;
+}
+.access-table th{
+  background:rgba(56,189,248,.08);
+  color:var(--text-dim);
+  padding:7px 12px;
+  font-size:9.5px;font-weight:800;
+  letter-spacing:.07em;text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.access-table th:not(:first-child){text-align:center;width:72px}
+.access-table td{
+  padding:6px 12px;
+  border-bottom:1px solid var(--border);
+  color:var(--text-dim);
+}
+.access-table tr:last-child td{border-bottom:none}
+.access-table td:not(:first-child){text-align:center}
+.access-table tr:hover td{background:rgba(255,255,255,.02)}
+.tick{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;
+  background:rgba(52,211,153,.15);
+  color:var(--emerald);font-size:10px;font-weight:900;
+  border:1px solid rgba(52,211,153,.25);
+}
+.dash-cell{color:var(--text-faint);font-size:16px;line-height:1}
+
+/* ═══════════════════════════════════════════════════
+   SECURITY PILLS
+═══════════════════════════════════════════════════ */
+.sec-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px;
+}
+.sec-pill{
+  display:flex;align-items:center;gap:7px;
+  background:rgba(255,255,255,.02);
+  border:1px solid var(--border);
+  border-radius:6px;
+  padding:5px 9px;
+  font-size:10.5px;color:var(--text-dim);
+  transition:border-color .15s;
+}
+.sec-pill:hover{border-color:var(--border-hi)}
+.sec-icon{
+  width:20px;height:20px;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;flex-shrink:0;
+}
+.si-rose   {background:var(--rose-dim);  border:1px solid rgba(251,113,133,.2)}
+.si-amber  {background:var(--amber-dim); border:1px solid rgba(251,191,36,.2)}
+.si-cyan   {background:var(--cyan-dim);  border:1px solid rgba(56,189,248,.2)}
+.si-emerald{background:var(--emerald-dim);border:1px solid rgba(52,211,153,.2)}
+.si-purple {background:var(--purple-dim);border:1px solid rgba(167,139,250,.2)}
+
+/* ═══════════════════════════════════════════════════
+   BOTTOM ROW: STACK + DEPLOY
+═══════════════════════════════════════════════════ */
+.bottom-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:20px;
+}
+.stack-cloud{
+  display:flex;flex-wrap:wrap;gap:6px;
+  margin-top:8px;
+}
+.chip{
+  font-size:10.5px;font-weight:600;
+  padding:4px 10px;
+  border-radius:20px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,.03);
+  color:var(--text-dim);
+  transition:border-color .15s,color .15s;
+}
+.chip:hover{border-color:var(--border-hi);color:var(--text)}
+.chip-c {color:var(--cyan);  border-color:rgba(56,189,248,.25);  background:var(--cyan-dim)}
+.chip-p {color:var(--purple);border-color:rgba(167,139,250,.25); background:var(--purple-dim)}
+.chip-e {color:var(--emerald);border-color:rgba(52,211,153,.25); background:var(--emerald-dim)}
+.chip-a {color:var(--amber); border-color:rgba(251,191,36,.25);  background:var(--amber-dim)}
+
+/* Terminal */
+.terminal{
+  background:#020810;
+  border:1px solid rgba(56,189,248,.2);
+  border-radius:var(--r-sm);
+  overflow:hidden;
+  margin-top:8px;
+  box-shadow:0 0 30px rgba(56,189,248,.06);
+}
+.term-bar{
+  display:flex;align-items:center;gap:6px;
+  padding:7px 12px;
+  background:rgba(56,189,248,.06);
+  border-bottom:1px solid rgba(56,189,248,.12);
+}
+.term-dot{
+  width:9px;height:9px;border-radius:50%;
+}
+.td1{background:#ef4444}
+.td2{background:#fbbf24}
+.td3{background:#34d399}
+.term-title{
+  font-size:9px;font-weight:700;letter-spacing:.07em;
+  color:var(--text-faint);text-transform:uppercase;margin-left:4px;
+}
+.term-body{padding:12px 16px}
+.term-body code{
+  font-family:'Cascadia Code','Fira Code','Courier New',monospace;
+  font-size:10.5px;
+  display:block;
+  line-height:2;
+}
+.t-comment{color:#334155}
+.t-prompt{color:var(--text-faint)}
+.t-cmd{color:var(--emerald)}
+.t-arg{color:var(--cyan)}
+
+/* ═══════════════════════════════════════════════════
+   FOOTER
+═══════════════════════════════════════════════════ */
+.footer{
+  background:var(--surface);
+  border-top:1px solid var(--border);
+  padding:11px 38px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+.footer-brand{
+  display:flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:700;color:var(--text);
+}
+.footer-brand-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--grad-main);
+  box-shadow:0 0 8px rgba(56,189,248,.6);
+}
+.footer-meta{font-size:10px;color:var(--text-faint)}
+.footer-pdf{
+  font-size:10px;color:var(--text-faint);
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border);
+  border-radius:20px;
+  padding:4px 12px;
+}
+.footer-pdf strong{color:var(--cyan)}
+
+/* ═══════════════════════════════════════════════════
+   REQUIREMENTS COMPLIANCE GRID
+═══════════════════════════════════════════════════ */
+.req-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:7px;
+  margin-bottom:22px;
+}
+.req-row{
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+  padding:8px 11px;
+  transition:border-color .15s;
+}
+.req-row:hover{border-color:var(--border-hi)}
+.req-num{
+  flex-shrink:0;
+  width:20px;height:20px;
+  border-radius:50%;
+  background:var(--grad-green);
+  color:#0d1627;
+  font-size:9px;font-weight:900;
+  display:flex;align-items:center;justify-content:center;
+  margin-top:1px;
+}
+.req-body{}
+.req-title{
+  font-size:10.5px;font-weight:700;
+  color:var(--text);
+  margin-bottom:2px;
+}
+.req-impl{
+  font-size:9.5px;
+  color:var(--text-faint);
+  line-height:1.45;
+}
+.req-impl code{font-size:9px;color:var(--cyan)}
+
+/* ═══════════════════════════════════════════════════
+   PRINT
+═══════════════════════════════════════════════════ */
+@media print{
+  body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{width:100%;margin:0;border-radius:0;box-shadow:none;border:none}
+  @page{margin:8mm 10mm;size:A4 landscape}
+  .stat:hover,.cap-card:hover,.p-node:hover{transform:none}
+}
+
+/* ═══════════════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════════════ */
+@media(max-width:1000px){
+  .page{width:100%;margin:0;border-radius:0}
+  .two-col,.bottom-row{grid-template-columns:1fr}
+  .cap-grid{grid-template-columns:1fr}
+  .header-inner{flex-direction:column}
+  .header-stats{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ══════════════════════════════════════════════
+     HEADER
+══════════════════════════════════════════════ -->
+<div class="header">
+  <div class="header-inner">
+    <div class="header-left">
+      <div class="eyebrow">
+        <span class="eyebrow-dot"></span>
+        Edureka / Illinois Tech &nbsp;·&nbsp; Generative AI &amp; ML Capstone
+      </div>
+      <h1>Agentic <em>RAG</em> —<br>Enterprise Document Q&amp;A</h1>
+      <p class="tagline">
+        A <strong>production-ready</strong> multi-agent knowledge platform that retrieves,
+        generates, and <strong>validates</strong> every answer — with HyDE search, content guardrails,
+        tiered access, multilingual voice/text chat, full pipeline telemetry, and one-command deployment.
+      </p>
+    </div>
+    <div class="header-stats">
+      <div class="stat">
+        <div class="stat-num">2</div>
+        <div class="stat-label">RAG Modes</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">12</div>
+        <div class="stat-label">Guardrail Rules</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">590</div>
+        <div class="stat-label">Backend Tests</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">Voice</div>
+        <div class="stat-label">Chat Mode</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">22</div>
+        <div class="stat-label">API Endpoints</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     BODY
+══════════════════════════════════════════════ -->
+<div class="body">
+
+  <!-- Problem / Solution -->
+  <div class="ps">
+    <div class="ps-block ps-problem">
+      <div class="ps-label">The Problem</div>
+      <p>Enterprise knowledge is trapped in PDFs and spreadsheets. Keyword search misses context. Plain GenAI hallucinates. Employees spend hours manually hunting for answers that already exist in documents.</p>
+    </div>
+    <div class="ps-mid">
+      <div class="ps-arrow-circle">→</div>
+    </div>
+    <div class="ps-block ps-solution">
+      <div class="ps-label">The Solution</div>
+      <p>Upload documents and ask in natural language. Choose <strong>⚡ Simple</strong> for instant single-pass answers or <strong>🤖 Agentic</strong> for a 7-node pipeline with HyDE search, multi-query retrieval, and independent answer validation — source citations and pipeline telemetry always included.</p>
+    </div>
+  </div>
+
+  <!-- Pipeline -->
+  <div class="sh"><span class="sh-dot" style="background:var(--grad-main)"></span>LangGraph Agent Pipeline — <span style="color:var(--text-dim);font-weight:500;text-transform:none;letter-spacing:0;font-size:10px">⚡ Simple mode: Retriever → Generator only; 🤖 Agentic runs all 7 nodes with retry loop</span></div>
+  <div class="pipeline-wrap">
+    <div class="pipeline">
+      <div class="p-node n1">
+        <span class="p-num">1</span>
+        <div class="p-icon">🧠</div>
+        <div class="p-name">Planner</div>
+        <div class="p-desc">Multi-query rewrite + 2 variants</div>
+      </div>
+      <div class="p-connector"></div>
+      <div class="p-node n2">
+        <span class="p-num">2</span>
+        <div class="p-icon">💡</div>
+        <div class="p-name">HyDE</div>
+        <div class="p-desc">Hypothetical doc embedding for recall</div>
+      </div>
+      <div class="p-connector"></div>
+      <div class="p-node n3">
+        <span class="p-num">3</span>
+        <div class="p-icon">🔍</div>
+        <div class="p-name">Retriever</div>
+        <div class="p-desc">Fan-out + RRF fusion (BM25 optional)</div>
+      </div>
+      <div class="p-connector"></div>
+      <div class="p-node n4">
+        <span class="p-num">4</span>
+        <div class="p-icon">🏷️</div>
+        <div class="p-name">Grader</div>
+        <div class="p-desc">Self-RAG relevance filter (opt-in)</div>
+      </div>
+      <div class="p-connector"></div>
+      <div class="p-node n5">
+        <span class="p-num">5</span>
+        <div class="p-icon">🎯</div>
+        <div class="p-name">Reranker</div>
+        <div class="p-desc">Cross-encoder precision sort (opt-in)</div>
+      </div>
+      <div class="p-connector"></div>
+      <div class="p-node n6">
+        <span class="p-num">6</span>
+        <div class="p-icon">✍️</div>
+        <div class="p-name">Generator</div>
+        <div class="p-desc">Grounded answer from context</div>
+      </div>
+      <div class="p-connector"></div>
+      <div class="p-node n7">
+        <span class="p-num">7</span>
+        <div class="p-icon">✅</div>
+        <div class="p-name">Validator</div>
+        <div class="p-desc">Verified / Unverified (≤ 2 retries)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Requirements Compliance -->
+  <div class="sh"><span class="sh-dot" style="background:var(--emerald)"></span>10 / 10 Capstone Requirements — All Met</div>
+  <div class="req-grid">
+
+    <div class="req-row">
+      <div class="req-num">1</div>
+      <div class="req-body">
+        <div class="req-title">Project Foundation</div>
+        <div class="req-impl">Git repo · <code>scripts/local/setup.sh</code> · pydantic-settings · <code>backend/.env.example</code> · Makefile</div>
+      </div>
+    </div>
+
+    <div class="req-row">
+      <div class="req-num">2</div>
+      <div class="req-body">
+        <div class="req-title">User Interaction Layer</div>
+        <div class="req-impl">React 18 SPA (login + dashboard) · 22-endpoint FastAPI REST · guest mode — no account required</div>
+      </div>
+    </div>
+
+    <div class="req-row">
+      <div class="req-num">3</div>
+      <div class="req-body">
+        <div class="req-title">Document Ingestion</div>
+        <div class="req-impl"><code>rag/ingestion.py</code> — PDF (pypdf), TXT, CSV (pandas), XLSX/XLS; magic-byte validation; ClamAV optional</div>
+      </div>
+    </div>
+
+    <div class="req-row">
+      <div class="req-num">4</div>
+      <div class="req-body">
+        <div class="req-title">Data Preparation for Semantic Search</div>
+        <div class="req-impl"><code>rag/chunking.py</code> — recursive (800 chars, 100 overlap) or semantic (SemanticChunker); contextual chunk headers</div>
+      </div>
+    </div>
+
+    <div class="req-row">
+      <div class="req-num">5</div>
+      <div class="req-body">
+        <div class="req-title">Vector Knowledge Store</div>
+        <div class="req-impl"><code>rag/vector_store.py</code> — OpenAI <code>text-embedding-3-small</code> → ChromaDB locally/Docker; Pinecone for durable production/serverless vectors</div>
+      </div>
+    </div>
+
+    <div class="req-row">
+      <div class="req-num">6</div>
+      <div class="req-body">
+        <div class="req-title">Intelligent Document Retrieval</div>
+        <div class="req-impl">Similarity search · MMR · score-threshold · BM25 hybrid dense+sparse · RRF multi-query fusion</div>
+      </div>
+    </div>
+
+    <div class="req-row">
+      <div class="req-num">7</div>
+      <div class="req-body">
+        <div class="req-title">RAG Pipeline</div>
+        <div class="req-impl"><code>rag/pipeline.py</code> (simple) + 7-node LangGraph agentic pipeline; grounded answers with source citations</div>
+      </div>
+    </div>
+
+    <div class="req-row">
+      <div class="req-num">8</div>
+      <div class="req-body">
+        <div class="req-title">Agent-Based Reasoning</div>
+        <div class="req-impl">LangGraph StateGraph: Planner → HyDE → Retriever → Grader → Reranker → Generator → Validator (≤2 retries)</div>
+      </div>
+    </div>
+
+    <div class="req-row">
+      <div class="req-num">9</div>
+      <div class="req-body">
+        <div class="req-title">Reliability &amp; Safety Controls</div>
+        <div class="req-impl">Guardrail engine (12 rules) · Pydantic validation · rate limits · bcrypt+JWT auth · scanner · OWASP A01–A09</div>
+      </div>
+    </div>
+
+    <div class="req-row">
+      <div class="req-num">10</div>
+      <div class="req-body">
+        <div class="req-title">Deploy &amp; Document</div>
+        <div class="req-impl">Vercel (live) · Docker Compose · Railway/Render · GitHub Pages docs (architecture, agent roles, limitations, challenges)</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Two-column: Capabilities + Access/Security -->
+  <div class="two-col">
+
+    <!-- LEFT: Capabilities -->
+    <div>
+      <div class="sh"><span class="sh-dot" style="background:var(--purple)"></span>Capabilities Beyond Requirements</div>
+      <div class="cap-grid">
+
+        <div class="cap-card cc-purple">
+          <div class="cc-head">
+            <span class="cc-icon">🛡️</span>
+            <h4>Guardrails Engine</h4>
+            <span class="badge b-purple">New</span>
+          </div>
+          <p>12 built-in rules: prompt injection block, SQL injection block, PII redaction (email, phone, SSN, credit card), token and secret redaction. Admins create custom block / redact / flag rules via UI or REST API. <code style="font-size:10px;color:var(--cyan)">output_flagged</code> signals when an output rule fired.</p>
+        </div>
+
+        <div class="cap-card cc-cyan">
+          <div class="cc-head">
+            <span class="cc-icon">👤</span>
+            <h4>Guest Mode</h4>
+            <span class="badge b-cyan">New</span>
+          </div>
+          <p>Zero-friction access — chat &amp; query without an account. 15-min signed JWT. Tiered limits enforce what guests can and cannot do at the API level, including 5/min upload rate limiting.</p>
+        </div>
+
+        <div class="cap-card cc-emerald">
+          <div class="cc-head">
+            <span class="cc-icon">🏅</span>
+            <h4>Answer Verification Badge</h4>
+            <span class="badge b-emerald">Enhanced</span>
+          </div>
+          <p>Validator uses structured output (<code style="font-size:10px;color:var(--cyan)">_ValidationResult</code>) to classify answers. ✅ <strong>Verified</strong> badge on valid answers; 🟡 <strong>Unverified</strong> with reason text shown inline in chat.</p>
+        </div>
+
+        <div class="cap-card cc-amber">
+          <div class="cc-head">
+            <span class="cc-icon">📊</span>
+            <h4>Agent Trace Telemetry</h4>
+            <span class="badge b-amber">New</span>
+          </div>
+          <p>Collapsible trace accordion per message: per-node tokens, latency ms, refined query, HyDE tokens, chunks found, retry count. <code style="font-size:10px;color:var(--cyan)">AgentTrace</code> in every API response.</p>
+        </div>
+
+        <div class="cap-card cc-purple">
+          <div class="cc-head">
+            <span class="cc-icon">⚙️</span>
+            <h4>7-Section Runtime Settings</h4>
+            <span class="badge b-purple">Beyond</span>
+          </div>
+          <p>Admin settings UI with 7 accordion sections: model/API key, per-node models, retrieval tuning, generation limits, LangSmith, Pinecone/Blob storage, and Ragas evaluation — zero restarts.</p>
+        </div>
+
+        <div class="cap-card cc-emerald">
+          <div class="cc-head">
+            <span class="cc-icon">🎙️</span>
+            <h4>Voice + Multilingual Chat</h4>
+            <span class="badge b-emerald">Beyond</span>
+          </div>
+          <p>Chat window supports text, voice, and hybrid conversations with English, Spanish, and French answer modes. Transcript and audio exports are redacted by the backend before download or speech synthesis.</p>
+        </div>
+
+        <div class="cap-card cc-cyan">
+          <div class="cc-head">
+            <span class="cc-icon">🚀</span>
+            <h4>One-Command Deploy</h4>
+            <span class="badge b-cyan">Beyond</span>
+          </div>
+          <p><code style="font-size:10px;color:var(--cyan)">bash deploy-vercel.sh</code> checks prereqs, auto-installs Vercel CLI, sets env vars, deploys, and prints the live URL. Supports full-stack and frontend-only modes.</p>
+        </div>
+
+        <div class="cap-card cc-emerald">
+          <div class="cc-head">
+            <span class="cc-icon">🔬</span>
+            <h4>HyDE + Multi-Query Search</h4>
+            <span class="badge b-emerald">New</span>
+          </div>
+          <p>Planner generates 2 alternative phrasings; HyDE node creates a hypothetical answer passage. Retriever fans-out across all 3 queries + HyDE embedding — deduplication preserves relevance ordering.</p>
+        </div>
+
+        <div class="cap-card cc-amber">
+          <div class="cc-head">
+            <span class="cc-icon">🔁</span>
+            <h4>4 Deployment Targets</h4>
+            <span class="badge b-amber">Beyond</span>
+          </div>
+          <p>Local dev · Docker Compose (persistent ChromaDB + ClamAV) · Vercel full-stack serverless · Vercel frontend + Railway/Render backend. All scripted and documented.</p>
+        </div>
+
+        <div class="cap-card cc-cyan">
+          <div class="cc-head">
+            <span class="cc-icon">🧩</span>
+            <h4>Storage Engineering Challenge</h4>
+            <span class="badge b-cyan">Resolved</span>
+          </div>
+          <p>ChromaDB persists cleanly on local/Docker filesystems, but Vercel serverless instances do not share durable writable storage. Production full-stack mode uses Pinecone for vectors and Blob for original uploaded files. Blob vectors remain a small-demo fallback only.</p>
+        </div>
+
+        <div class="cap-card cc-emerald">
+          <div class="cc-head">
+            <span class="cc-icon">📈</span>
+            <h4>Ragas Evaluation Dashboard</h4>
+            <span class="badge b-emerald">New</span>
+          </div>
+          <p>Admin Settings → Ragas shows 4 metrics (faithfulness, answer relevancy, context precision, context recall) color-coded ≥75% / ≥50% / below. One-click trigger from UI; scores persist across restarts.</p>
+        </div>
+
+        <div class="cap-card cc-purple">
+          <div class="cc-head">
+            <span class="cc-icon">🌐</span>
+            <h4>Live Production Deploy</h4>
+            <span class="badge b-purple">Shipped</span>
+          </div>
+          <p>Running at <strong>agenticai-rag-poc.vercel.app</strong> — Vercel Analytics + Speed Insights instrumented. LangSmith tracing configurable at runtime. Zero-downtime redeploy via <code style="font-size:10px;color:var(--cyan)">redeploy-vercel.sh</code>.</p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- RIGHT: Access + Security -->
+    <div>
+      <div class="sh"><span class="sh-dot" style="background:var(--emerald)"></span>Tiered Access Model</div>
+      <div class="access-wrap">
+        <table class="access-table">
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Guest</th>
+              <th>Admin</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Chat queries + source citations</td>
+              <td><span class="tick">✓</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>View agent trace (pipeline telemetry)</td>
+              <td><span class="tick">✓</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>List indexed documents</td>
+              <td><span class="tick">✓</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Upload TXT (≤ 2 MB)</td>
+              <td><span class="tick">✓</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Upload PDF / CSV / Excel (≤ 20 MB)</td>
+              <td><span class="dash-cell">–</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Delete documents</td>
+              <td><span class="dash-cell">–</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Create / edit guardrail rules</td>
+              <td><span class="dash-cell">–</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Configure pipeline settings</td>
+              <td><span class="dash-cell">–</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="sh"><span class="sh-dot" style="background:var(--rose)"></span>Security — OWASP Top 10 Coverage</div>
+      <div class="sec-grid">
+        <div class="sec-pill">
+          <span class="sec-icon si-rose">🔐</span>bcrypt passwords + HS256 JWT
+        </div>
+        <div class="sec-pill">
+          <span class="sec-icon si-amber">🧹</span>bleach XSS + injection regex
+        </div>
+        <div class="sec-pill">
+          <span class="sec-icon si-rose">🚫</span>Path traversal prevention
+        </div>
+        <div class="sec-pill">
+          <span class="sec-icon si-cyan">🛡️</span>CSP · nosniff · X-Frame-Options
+        </div>
+        <div class="sec-pill">
+          <span class="sec-icon si-emerald">⏱️</span>Rate limits: 10/min login &amp; query
+        </div>
+        <div class="sec-pill">
+          <span class="sec-icon si-purple">🌐</span>CORS allowlist · server header stripped
+        </div>
+        <div class="sec-pill">
+          <span class="sec-icon si-amber">✅</span>Pydantic validation on all inputs
+        </div>
+        <div class="sec-pill">
+          <span class="sec-icon si-cyan">📝</span>structlog — no credentials in logs
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom row: Stack + Deploy -->
+  <div class="bottom-row">
+    <div>
+      <div class="sh"><span class="sh-dot" style="background:var(--cyan)"></span>Technology Stack</div>
+      <div class="stack-cloud">
+        <span class="chip chip-c">OpenAI GPT-4o-mini</span>
+        <span class="chip chip-p">LangGraph</span>
+        <span class="chip chip-e">FastAPI</span>
+        <span class="chip chip-p">ChromaDB</span>
+        <span class="chip chip-p">Pinecone</span>
+        <span class="chip chip-c">Vercel Blob</span>
+        <span class="chip chip-c">React 18 + TypeScript</span>
+        <span class="chip chip-a">Vite + Tailwind</span>
+        <span class="chip chip-e">pytest · Vitest · Playwright</span>
+        <span class="chip">Docker · Vercel · Railway</span>
+        <span class="chip chip-p">Spec-Kit SDD</span>
+        <span class="chip chip-c">JWT + bcrypt</span>
+        <span class="chip chip-a">Ragas eval dashboard</span>
+        <span class="chip chip-p">langchain-experimental</span>
+        <span class="chip chip-c">LangSmith tracing</span>
+        <span class="chip chip-e">BM25 hybrid search</span>
+      </div>
+    </div>
+    <div>
+      <div class="sh"><span class="sh-dot" style="background:var(--emerald)"></span>Running in Under 2 Minutes</div>
+      <div class="terminal">
+        <div class="term-bar">
+          <span class="term-dot td1"></span>
+          <span class="term-dot td2"></span>
+          <span class="term-dot td3"></span>
+          <span class="term-title">Terminal</span>
+        </div>
+        <div class="term-body">
+          <code>
+            <span class="t-comment"># ── Local — hot reload ──────────────────</span><br>
+            <span class="t-prompt">$ </span><span class="t-cmd">bash setup.sh</span> <span class="t-arg">&amp;&amp; bash dev.sh --open</span><br>
+            <span class="t-comment"># ── Docker — persistent ChromaDB ────────</span><br>
+            <span class="t-prompt">$ </span><span class="t-cmd">docker compose up</span> <span class="t-arg">--build</span><br>
+            <span class="t-comment"># ── Vercel — public URL, free tier ──────</span><br>
+            <span class="t-prompt">$ </span><span class="t-cmd">bash deploy-vercel.sh</span>
+          </code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /body -->
+
+<!-- ══════════════════════════════════════════════
+     FOOTER
+══════════════════════════════════════════════ -->
+<div class="footer">
+  <div class="footer-brand">
+    <span class="footer-brand-dot"></span>
+    Agentic RAG — Edureka / Illinois Tech Capstone
+  </div>
+  <div class="footer-meta">
+    FastAPI · LangGraph · ChromaDB/Pinecone · React 18 · OpenAI · tested unit/integration/e2e/live paths · 10/10 requirements met
+  </div>
+  <div class="footer-pdf">
+    <strong>→ PDF:</strong> Print → Save as PDF → Landscape · A4
+  </div>
+</div>
+
+</div><!-- /page -->
+</body>
+</html>

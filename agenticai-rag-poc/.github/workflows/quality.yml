@@ -1,0 +1,84 @@
+name: Quality Checks
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/quality.yml"
+      - "api/**"
+      - "Makefile"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/quality.yml"
+      - "api/**"
+      - "Makefile"
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend deterministic tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: test
+      LIVE_TESTS: "0"
+      SECRET_KEY: test-secret-key-for-quality-checks-32ch
+      ADMIN_PASSWORD: TestPass@99!
+      OPENAI_API_KEY: sk-test-key
+      VECTOR_STORE_TYPE: memory
+      FILE_STORE_TYPE: local
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Compile backend
+        run: python -m compileall app tests
+
+      - name: Run backend unit tests
+        run: pytest tests/unit -q
+
+      - name: Run backend integration tests
+        run: pytest tests/integration -q
+
+  frontend:
+    name: Frontend build and coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Run frontend unit coverage gates
+        run: npm run test:coverage
