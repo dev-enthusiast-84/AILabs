@@ -1,7 +1,10 @@
 import axios, { AxiosError } from 'axios'
-import type { LoginRequest, TokenResponse, DocumentListResponse, DocumentChunksResponse, DocumentContentResponse, UploadResponse, QueryRequest, QueryResponse, SettingsResponse, SettingsUpdateRequest, GuardrailRule, GuardrailRuleCreate, GuardrailRuleUpdate, GuardrailCheckRequest, GuardrailCheckResponse, RagasScores } from '@/types'
+import { useAuthStore } from '@/store/authStore'
+import type { LoginRequest, TokenResponse, DocumentListResponse, DocumentChunksResponse, DocumentContentResponse, UploadResponse, QueryRequest, QueryResponse, SettingsResponse, SettingsUpdateRequest, GuardrailRule, GuardrailRuleCreate, GuardrailRuleUpdate, GuardrailCheckRequest, GuardrailCheckResponse, RagasScores, ChatVoiceExportRequest, ChatVoiceExportResponse, ChatVoiceExportAcceptedResponse, ChatVoiceExportJobResponse, TranscriptRedactionRequest, TranscriptRedactionResponse } from '@/types'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
+const SESSION_COMPAT_HEADER = 'x-app-session-compatibility'
+const SESSION_COMPAT_STORAGE_KEY = 'app_session_compatibility'
 
 const http = axios.create({
   baseURL: BASE_URL,
@@ -17,12 +20,40 @@ http.interceptors.request.use((config) => {
   return config
 })
 
+function refreshSessionIfDeploymentChanged(compatibilityVersion?: string): void {
+  if (!compatibilityVersion) return
+
+  const previousVersion = sessionStorage.getItem(SESSION_COMPAT_STORAGE_KEY)
+  sessionStorage.setItem(SESSION_COMPAT_STORAGE_KEY, compatibilityVersion)
+
+  const hasActiveSession = Boolean(sessionStorage.getItem('token'))
+  if (!previousVersion || previousVersion === compatibilityVersion || !hasActiveSession) {
+    return
+  }
+
+  useAuthStore.getState().clearAuth()
+  sessionStorage.setItem(
+    'auth_error',
+    'The application was updated and your previous session is no longer compatible. Please sign in again.',
+  )
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login'
+  }
+}
+
 // Global 401 → logout this tab only (sessionStorage is per-tab)
 http.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    refreshSessionIfDeploymentChanged(res.headers[SESSION_COMPAT_HEADER])
+    return res
+  },
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      sessionStorage.removeItem('token')
+    const requestUrl = error.config?.url ?? ''
+    const isLoginRequest = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/guest')
+    refreshSessionIfDeploymentChanged(error.response?.headers?.[SESSION_COMPAT_HEADER])
+    if (error.response?.status === 401 && !isLoginRequest) {
+      useAuthStore.getState().clearAuth()
+      sessionStorage.setItem('auth_error', 'Your session is no longer valid. Please sign in again.')
       window.location.href = '/login'
     }
     return Promise.reject(error)
@@ -84,6 +115,53 @@ export const queryApi = {
   },
 }
 
+function audioResponseToBlob(response: Pick<ChatVoiceExportResponse, 'audio_base64' | 'audio_mime_type'>): Blob {
+  const binary = atob(response.audio_base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return new Blob([bytes], { type: response.audio_mime_type || 'audio/mpeg' })
+}
+
+function isAcceptedExport(response: ChatVoiceExportResponse | ChatVoiceExportAcceptedResponse): response is ChatVoiceExportAcceptedResponse {
+  return 'job_id' in response
+}
+
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
+
+export const voiceApi = {
+  redactTranscript: async (data: TranscriptRedactionRequest): Promise<TranscriptRedactionResponse> => {
+    const res = await http.post<TranscriptRedactionResponse>('/chat/voice/redact', data)
+    return res.data
+  },
+  exportAudio: async (data: ChatVoiceExportRequest): Promise<Blob> => {
+    const res = await http.post<ChatVoiceExportResponse | ChatVoiceExportAcceptedResponse>('/chat/voice/export', data)
+    if (!isAcceptedExport(res.data)) return audioResponseToBlob(res.data)
+
+    const deadline = Date.now() + 120_000
+    let retryAfterMs = Math.max(250, res.data.retry_after_seconds * 1000)
+    while (Date.now() < deadline) {
+      await wait(retryAfterMs)
+      const status = await voiceApi.getExportJob(res.data.job_id)
+      retryAfterMs = Math.max(250, status.policy.retry_after_seconds * 1000)
+      if (status.status === 'succeeded' && status.artifact) return audioResponseToBlob(status.artifact)
+      if (status.status === 'failed') throw new Error(status.error?.message ?? 'Audio export failed.')
+      if (status.status === 'canceled') throw new Error('Audio export was canceled.')
+      if (status.status === 'expired') throw new Error('Audio export expired. Please export again.')
+    }
+    throw new Error('Audio export is still processing. Please try again.')
+  },
+  getExportJob: async (jobId: string): Promise<ChatVoiceExportJobResponse> => {
+    const res = await http.get<ChatVoiceExportJobResponse>(`/chat/voice/export/jobs/${encodeURIComponent(jobId)}`)
+    return res.data
+  },
+  cancelExportJob: async (jobId: string): Promise<ChatVoiceExportJobResponse> => {
+    const res = await http.delete<ChatVoiceExportJobResponse>(`/chat/voice/export/jobs/${encodeURIComponent(jobId)}`)
+    return res.data
+  },
+}
+
 export const settingsApi = {
   get: async (): Promise<SettingsResponse> => {
     const res = await http.get<SettingsResponse>('/settings/')
@@ -100,6 +178,10 @@ export const settingsApi = {
     } catch {
       return null
     }
+  },
+  triggerRagas: async (): Promise<{ status: string; message: string }> => {
+    const res = await http.post<{ status: string; message: string }>('/settings/ragas-trigger')
+    return res.data
   },
 }
 
@@ -131,7 +213,26 @@ export const guardrailsApi = {
 
 export function extractErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    return (error.response?.data as { detail?: string })?.detail ?? error.message
+    const detail = (error.response?.data as { detail?: unknown } | undefined)?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) => {
+          if (typeof item === 'string') return item
+          if (item && typeof item === 'object' && 'msg' in item) {
+            return String((item as { msg: unknown }).msg)
+          }
+          return JSON.stringify(item)
+        })
+        .join(', ')
+    }
+    if (detail && typeof detail === 'object') {
+      if ('message' in detail && typeof (detail as { message?: unknown }).message === 'string') {
+        return (detail as { message: string }).message
+      }
+      return JSON.stringify(detail)
+    }
+    return error.message
   }
   return 'An unexpected error occurred.'
 }
