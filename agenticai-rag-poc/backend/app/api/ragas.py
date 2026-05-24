@@ -1,17 +1,20 @@
 """
 Ragas evaluation API.
 
-POST /api/ragas/evaluate  — trigger in-process evaluation (admin only, OWASP A01)
+POST /api/ragas/evaluate  — trigger in-process evaluation (any authenticated user)
 
 Results are persisted to disk via app.ragas_store (path: RAGAS_SCORES_FILE env var,
 default /tmp/ragas_scores.json) so they survive server restarts.
 
-Accepted risk: POST makes real OpenAI calls and can take 30-60 s.
-It is protected by require_full_access and wrapped in asyncio.to_thread.
+Accepted risk: any authenticated user (including guests) can trigger an evaluation.
+Each run samples up to 5 indexed chunks and makes real OpenAI calls (30-60 s).
+Concurrent runs are blocked with HTTP 429.  Production deployments should add
+per-user rate limiting to prevent cost abuse.  OWASP A01: access is restricted
+to authenticated sessions; guests are scoped to their own session documents.
 
 GET /api/ragas/scores was removed — the canonical read endpoint is
-GET /api/settings/ragas-scores (admin only, returns 200 with has_results=False
-when no evaluation has been run yet).
+GET /api/settings/ragas-scores (returns 200 with has_results=False when no
+evaluation has been run yet).
 """
 import asyncio
 
@@ -19,7 +22,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.auth.utils import require_full_access
+from app.auth.utils import get_current_user
 from app.runtime.ragas_store import get_ragas_scores, save_ragas_scores
 
 log = structlog.get_logger()
