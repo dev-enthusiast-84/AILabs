@@ -796,8 +796,9 @@ def get_effective_blob_read_write_token() -> str:
     """Return runtime/env Vercel Blob token. Supports both Vercel token names.
 
     Request-restored Settings UI values are scoped by the encrypted runtime token
-    and, for guests, the token's session id. Deployment env fallback remains local
-    dev/test only via _account_env_value.
+    and, for guests, the token's session id. Deployment env fallback is local
+    dev/test only — in production all billable attributes must come from the
+    Settings UI.
     """
     with _lock:
         cfg = get_settings()
@@ -1147,6 +1148,11 @@ def apply_runtime_settings(
 
     if blob_read_write_token is not None:
         sync_effective_blob_token_to_env()
+        # The vector store type changes from memory → blob when a token is first
+        # configured; clear the singleton so the next call builds the correct store.
+        import app.rag.vector_store as _vector_store_mod
+        _vector_store_mod.get_vector_store.cache_clear()
+        _vector_store_mod.invalidate_doc_cache()
 
     log.info(
         "runtime_settings_applied",

@@ -24,6 +24,7 @@ def _admin_doc(headers: dict[str, str]):
 _MOCK_AGENT_RESULT = {
     "answer": "Employees may work remotely up to 3 days per week.",
     "sources": ["sample.txt"],
+    "citations": [],
     "validation": "VALID",
     "tokens_used": 312,
     "mode": "agentic",
@@ -34,6 +35,7 @@ _MOCK_AGENT_RESULT = {
 _MOCK_SIMPLE_RESULT = {
     "answer": "RAG grounds answers in retrieved context.",
     "sources": ["test_doc.txt"],
+    "citations": [],
     "validation": "N/A",
     "mode": "simple",
     "tokens_used": 200,

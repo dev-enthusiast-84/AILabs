@@ -67,13 +67,20 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-sm relative">
-        {/* Logo */}
+        {/* Logo — click to go to dashboard */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-5 bg-gradient-to-br from-sky-500 to-indigo-600 shadow-lg shadow-sky-500/25 animate-float">
-            <DocumentMagnifyingGlassIcon className="h-9 w-9 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-gradient mb-1">Agentic RAG</h1>
-          <p className="text-sm text-slate-500">Enterprise Document Q&amp;A</p>
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="inline-flex flex-col items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded-2xl group"
+            aria-label="Go to dashboard"
+          >
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-5 bg-gradient-to-br from-sky-500 to-indigo-600 shadow-lg shadow-sky-500/25 animate-float group-hover:brightness-110 transition-all">
+              <DocumentMagnifyingGlassIcon className="h-9 w-9 text-white" />
+            </div>
+            <h1 className="text-3xl font-bold text-gradient mb-1">Agentic RAG</h1>
+            <p className="text-sm text-slate-500">Enterprise Document Q&amp;A</p>
+          </button>
         </div>
 
         {/* Card */}

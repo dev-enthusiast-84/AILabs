@@ -80,7 +80,7 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
       return
     }
     setSuggestionsLoading(true)
-    documentsApi.getSuggestions(documents.slice(0, 3))
+    documentsApi.getSuggestions(documents.slice(0, 4))
       .then((res) => { if (!cancelled) setSuggestions(res.suggestions) })
       .catch(() => { if (!cancelled) setSuggestions([]) })
       .finally(() => { if (!cancelled) setSuggestionsLoading(false) })
@@ -158,6 +158,7 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
         role: 'assistant',
         content: result.answer,
         sources: result.sources,
+        citations: result.citations,
         validation: result.validation,
         tokens_used: result.tokens_used,
         mode: result.mode,
@@ -202,6 +203,10 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
   const voiceOnlyConversation = useMemo(() => {
     const userMessages = messages.filter((message) => message.role === 'user')
     return userMessages.length > 0 && userMessages.every((message) => message.input_method === 'voice')
+  }, [messages])
+
+  const hasVoiceMessages = useMemo(() => {
+    return messages.some((m) => m.role === 'user' && m.input_method === 'voice')
   }, [messages])
 
   const startRecording = useCallback(() => {
@@ -280,10 +285,6 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
 
   const exportAudioConversation = useCallback(async () => {
     setVoiceError(null)
-    if (!voiceOnlyConversation) {
-      setVoiceError('Audio export is available for voice-only conversations. Transcript export is available for every chat.')
-      return
-    }
     setExportingAudio(true)
     try {
       const settings = await settingsApi.get()
@@ -327,9 +328,9 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
         chatLanguage={chatLanguage}
         exportingAudio={exportingAudio}
         exportJobStatus={exportJobStatus}
+        hasVoiceMessages={hasVoiceMessages}
         messageCount={messages.length}
         ragMode={ragMode}
-        voiceOnlyConversation={voiceOnlyConversation}
         onCancelExport={async () => {
           if (currentExportJobIdRef.current) {
             try {

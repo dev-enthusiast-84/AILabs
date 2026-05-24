@@ -607,6 +607,53 @@ class TestGetDocumentSuggestions:
         )
         assert result.suggestions == expected
 
+    def test_multi_doc_uses_per_doc_prompt(self, monkeypatch):
+        """Multiple files → one question per doc, using the per-doc structured prompt."""
+        import asyncio
+        import json
+        from unittest.mock import MagicMock
+        from app.api.documents import get_document_suggestions
+
+        chunks_by_name = {
+            "hr.txt": ["HR policy content about leave."],
+            "it.csv": ["IT security controls CSV content."],
+            "training.xlsx": ["Training catalog XLSX content."],
+        }
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr(
+            "app.api.documents._load_document_chunks_for_display",
+            lambda name: chunks_by_name.get(name, []),
+        )
+
+        per_doc_questions = [
+            "What is the annual leave entitlement?",
+            "What MFA methods are required?",
+            "Which course awards the AI Practitioner Certificate?",
+        ]
+
+        prompts_seen: list[str] = []
+        fake_llm = MagicMock()
+        fake_llm.invoke.side_effect = lambda msgs: (
+            prompts_seen.append(msgs[0].content) or MagicMock(content=json.dumps(per_doc_questions))
+        )
+        fake_chat_class = MagicMock(return_value=fake_llm)
+
+        monkeypatch.setattr("app.api.documents.get_effective_api_key", lambda: "sk-test", raising=False)
+        import sys
+        fake_module = MagicMock()
+        fake_module.ChatOpenAI = fake_chat_class
+        monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+        result = asyncio.get_event_loop().run_until_complete(
+            get_document_suggestions(files=["hr.txt", "it.csv", "training.xlsx"], _user=self._make_admin())
+        )
+        assert result.suggestions == per_doc_questions
+        # Prompt must reference multiple documents (per-doc path)
+        assert len(prompts_seen) == 1
+        assert "Document 1" in prompts_seen[0]
+        assert "Document 2" in prompts_seen[0]
+        assert "Document 3" in prompts_seen[0]
+
     def test_returns_empty_on_llm_json_parse_error(self, monkeypatch):
         """Malformed LLM response → empty list, no exception raised."""
         import asyncio

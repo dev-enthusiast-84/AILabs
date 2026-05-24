@@ -34,6 +34,18 @@ _SIMPLE_RAG_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
+def _pipeline_docs_to_citations(docs: list[Document]) -> list[dict]:
+    """Convert Documents to plain-dict citations (avoids circular import with rag_agent)."""
+    return [
+        {
+            "source": doc.metadata.get("source", "unknown"),
+            "chunk_index": int(doc.metadata.get("chunk_index", 0)),
+            "text": (doc.metadata.get("raw_chunk", doc.page_content) or "")[:300],
+        }
+        for doc in docs
+    ]
+
+
 def format_context(docs: list[Document]) -> str:
     limited = docs[: get_effective_max_context_chunks()]
     parts = []
@@ -65,9 +77,11 @@ def run_simple_rag(
     if docs:
         context = format_context(docs)
         sources: list[str] = list({doc.metadata.get("source", "unknown") for doc in docs})
+        citations = _pipeline_docs_to_citations(docs)
     else:
         context = "No relevant documents found in the knowledge base."
         sources = []
+        citations = []
 
     with get_usage_metadata_callback() as cb:
         chain = _SIMPLE_RAG_PROMPT | _llm() | StrOutputParser()
@@ -80,6 +94,7 @@ def run_simple_rag(
     return {
         "answer": answer,
         "sources": sources,
+        "citations": citations,
         "validation": "N/A",
         "mode": "simple",
         "tokens_used": sum(v.get("total_tokens", 0) for v in cb.usage_metadata.values()),

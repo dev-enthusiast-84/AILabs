@@ -356,10 +356,12 @@ async def upload_document(
 ):
     """Upload and index a document (PDF, TXT, CSV, Excel).
 
-    Any authenticated user may upload. Guests are limited to 2 MB per file and
-    {guest_upload_rate_limit_per_minute} uploads/minute per IP; admins are exempt
-    from the upload rate limit. All content undergoes basic safety validation
-    (magic bytes, executable detection, script injection) before indexing (OWASP A04).
+    Any authenticated user may upload. Guests are limited to 3 MB per file and
+    {guest_upload_rate_limit_per_minute} uploads/minute per IP; admins are limited
+    to 20 MB total per batch (enforced client-side) with a per-file server-side
+    fallback check. Admins are exempt from the upload rate limit. All content
+    undergoes basic safety validation (magic bytes, executable detection, script
+    injection) before indexing (OWASP A04).
     """
     # Restore settings saved via the UI (e.g. OpenAI key) from the encrypted
     # httponly cookie. Required on Vercel where each invocation is a fresh process
@@ -605,7 +607,11 @@ async def get_document_suggestions(
     files: list[str] = Query(default=[]),
     _user: UserInDB = Depends(get_current_user),
 ):
-    """Generate LLM-based answerable questions from the content of up to 3 uploaded documents.
+    """Generate LLM-based answerable questions from uploaded documents.
+
+    With 1 file: returns up to 4 diverse questions about that document.
+    With 2-4 files: returns exactly 1 question per file, each grounded in that
+    file's specific content — so each walkthrough query slot covers a distinct doc.
 
     Returns an empty list when the LLM is not configured or content is insufficient.
     Read-only; any authenticated user (OWASP A01 — same access as /content).
@@ -613,44 +619,65 @@ async def get_document_suggestions(
     if not files:
         return DocumentSuggestionsResponse(suggestions=[])
 
-    combined_chunks: list[str] = []
-    for filename in files[:3]:
+    from app.runtime.settings_store import get_effective_api_key, get_effective_model
+    api_key = get_effective_api_key()
+    if not api_key:
+        return DocumentSuggestionsResponse(suggestions=[])
+
+    target_files = files[:4]
+
+    # Build per-doc content snippets
+    doc_snippets: list[str] = []
+    for filename in target_files:
         try:
             safe_name = validate_filename(filename)
             source_key = _document_source_key(safe_name, _user)
             chunks = _load_document_chunks_for_display(source_key)
-            combined_chunks.extend(chunks[:8])
+            if chunks:
+                doc_snippets.append("\n".join(chunks[:8])[:800])
         except Exception:
             continue
 
-    if not combined_chunks:
+    if not doc_snippets:
         return DocumentSuggestionsResponse(suggestions=[])
-
-    content_snippet = "\n".join(combined_chunks)[:3000]
 
     try:
         import json
         from langchain_core.messages import HumanMessage
         from langchain_openai import ChatOpenAI as _ChatOpenAI
-        from app.runtime.settings_store import get_effective_api_key, get_effective_model
-
-        api_key = get_effective_api_key()
-        if not api_key:
-            return DocumentSuggestionsResponse(suggestions=[])
 
         llm = _ChatOpenAI(
             model=get_effective_model(),
             temperature=0.0,
             openai_api_key=api_key,
-            max_tokens=300,
+            max_tokens=400,
         )
-        prompt = (
-            "Based on the document content below, generate exactly 4 specific questions "
-            "that a user could ask and receive a clear, factual answer from this document. "
-            "Each question must be directly and fully answerable from the content shown. "
-            "Return ONLY a JSON array of 4 question strings, nothing else.\n\n"
-            f"Document content:\n{content_snippet}"
-        )
+
+        if len(doc_snippets) == 1:
+            # Single doc: generate 4 diverse answerable questions from it.
+            prompt = (
+                "Based on the document content below, generate exactly 4 specific questions "
+                "that a user could ask and receive a clear, factual answer from this document. "
+                "Each question must be directly and fully answerable from the content shown. "
+                "Return ONLY a JSON array of 4 question strings, nothing else.\n\n"
+                f"Document content:\n{doc_snippets[0]}"
+            )
+        else:
+            # Multiple docs: generate exactly 1 answerable question per document so
+            # each demo query slot covers a different document's content.
+            n = len(doc_snippets)
+            sections = "\n\n".join(
+                f"Document {i + 1}:\n{snippet}"
+                for i, snippet in enumerate(doc_snippets)
+            )
+            prompt = (
+                f"Below are excerpts from {n} different documents. "
+                f"For each document, generate exactly 1 specific question that is directly "
+                f"and fully answerable from THAT document's content. "
+                f"Return ONLY a JSON array of exactly {n} question strings in the same order "
+                f"as the documents, nothing else.\n\n{sections}"
+            )
+
         result = llm.invoke([HumanMessage(content=prompt)])
         raw = result.content.strip()
         if raw.startswith("```"):

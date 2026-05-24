@@ -19,6 +19,9 @@ Request/response schemas, AgentTrace field reference, token budget, and rate lim
 {
   "answer": "Generative AI can produce text, code, images, and structured data ...",
   "sources": ["sample.txt"],
+  "citations": [
+    { "source": "sample.txt", "chunk_index": 2, "text": "Generative AI can produce text, code ..." }
+  ],
   "validation": "VALID",
   "tokens_used": 847,
   "mode": "agentic",
@@ -34,6 +37,9 @@ Request/response schemas, AgentTrace field reference, token budget, and rate lim
 {
   "answer": "Generative AI can produce text, code, images, and structured data ...",
   "sources": ["sample.txt"],
+  "citations": [
+    { "source": "sample.txt", "chunk_index": 0, "text": "Generative AI can produce text, code ..." }
+  ],
   "validation": "N/A",
   "tokens_used": 312,
   "mode": "simple",
@@ -43,6 +49,16 @@ Request/response schemas, AgentTrace field reference, token budget, and rate lim
   "trace": null
 }
 ```
+
+### QueryResponse — `citations` field
+
+`citations` is a list of chunk-level provenance objects, one per retrieved chunk used to generate the answer. Each object contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source` | `string` | Document filename (guest prefix stripped for guest users) |
+| `chunk_index` | `integer` | Zero-based position of the chunk within the document |
+| `text` | `string` | Raw chunk text, truncated to 300 characters |
 
 **Invalid `mode` value → 422:**
 ```json

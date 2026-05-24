@@ -14,7 +14,7 @@ SLOW_MO_MS="${WALKTHROUGH_SLOW_MO_MS:-250}"
 INTERACTIVE_SETTINGS="${WALKTHROUGH_INTERACTIVE_SETTINGS:-false}"
 INTERACTIVE_TIMEOUT_MS="${WALKTHROUGH_INTERACTIVE_TIMEOUT_MS:-600000}"
 ENV_LABEL="${WALKTHROUGH_ENV:-}"
-HEADED=false
+HEADED=true
 DRY_RUN=false
 PUBLISH="${WALKTHROUGH_PUBLISH:-true}"
 # GitHub token: WALKTHROUGH_GH_TOKEN → GH_TOKEN → GITHUB_TOKEN (CI standard)
@@ -262,112 +262,277 @@ _upload_release_assets() {
     rm -rf "$tmpdir"
 }
 
-# (Re)generate docs/walkthrough/index.html using release asset URLs from _meta.json.
+# Always (re)generate docs/walkthrough/index.html from _meta.json.
+# Paths are derived from the fixed release tag + filename pattern so they never
+# drift between re-recordings.  The script always overwrites the file so that
+# the embed URLs are guaranteed identical to what was actually published.
 _generate_walkthrough_html() {
     local docs_walk="${SCRIPT_DIR}/docs/walkthrough"
     local meta_file="${docs_walk}/_meta.json"
-
-    local remote_url="" local_url="" remote_assets="" local_assets=""
-    if [[ -f "$meta_file" ]]; then
-        remote_url=$(python3    -c "import json; d=json.load(open('${meta_file}')); print(d.get('remote_url',''))"    2>/dev/null || true)
-        local_url=$(python3     -c "import json; d=json.load(open('${meta_file}')); print(d.get('local_url',''))"     2>/dev/null || true)
-        remote_assets=$(python3 -c "import json; d=json.load(open('${meta_file}')); print(' '.join(d.get('remote_assets',[])))" 2>/dev/null || true)
-        local_assets=$(python3  -c "import json; d=json.load(open('${meta_file}')); print(' '.join(d.get('local_assets',[])))"  2>/dev/null || true)
-    fi
-
-    local sections_html=""
-    for env in local remote; do
-        local app_url="" assets_str=""
-        [[ "$env" == "local" ]]  && { app_url="$local_url";  assets_str="$local_assets";  }
-        [[ "$env" == "remote" ]] && { app_url="$remote_url"; assets_str="$remote_assets"; }
-        [[ -z "$assets_str" ]] && continue
-
-        local heading="Local Stack"
-        [[ "$env" == "remote" ]] && heading="Deployed App (Vercel)"
-
-        local link_html=""
-        [[ -n "$app_url" ]] && \
-            link_html="<a href=\"${app_url}\" target=\"_blank\" rel=\"noopener noreferrer\">Open live app &#x2197;</a>"
-
-        local cards_html="" tag="${_RELEASE_BASE}/walkthrough-${env}"
-        for asset_name in $assets_str; do
-            local vname vtitle video_url
-            vname="${asset_name%.webm}"
-            vtitle=$(echo "$vname" | tr '-' ' ' | \
-                     awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2); print}')
-            video_url="${tag}/${asset_name}"
-            cards_html+="
-          <div class=\"card\">
-            <h3>${vtitle}</h3>
-            <video controls preload=\"metadata\" width=\"100%\">
-              <source src=\"${video_url}\" type=\"video/webm\" />
-              <p>WebM not supported. <a href=\"${video_url}\">Download video</a></p>
-            </video>
-            <p class=\"dl\"><a href=\"${video_url}\">&#x2B07; Download ${asset_name}</a></p>
-          </div>"
-        done
-
-        [[ -z "$cards_html" ]] && continue
-        sections_html+="
-    <section>
-      <h2>${heading}${link_html:+ }${link_html}</h2>
-      <div class=\"grid\">${cards_html}
-      </div>
-    </section>"
-    done
+    local html_file="${docs_walk}/index.html"
 
     mkdir -p "$docs_walk"
-    cat > "${docs_walk}/index.html" <<HTMLEOF
-<!DOCTYPE html>
+
+    python3 - "$html_file" "$meta_file" \
+              "$_RELEASE_BASE" "$_GH_REPO" "$_GH_PAGES_GALLERY" <<'PYEOF'
+import json, os, sys
+
+html_path, meta_path, release_base, gh_repo, gallery_url = sys.argv[1:6]
+
+meta = {}
+if os.path.exists(meta_path):
+    try:
+        meta = json.load(open(meta_path))
+    except Exception:
+        pass
+
+local_assets  = set(meta.get('local_assets',  []))
+remote_assets = set(meta.get('remote_assets', []))
+local_url     = meta.get('local_url',  'http://localhost:5173')
+remote_url    = meta.get('remote_url', 'https://agenticai-rag-poc.vercel.app')
+
+FNAMES = ('guest-walkthrough.webm', 'admin-walkthrough.webm')
+
+def slot(env, fname, assets):
+    role      = 'Guest' if 'guest' in fname else 'Admin'
+    icon      = '&#x1F464;' if role == 'Guest' else '&#x1F511;'
+    badge_cls = 'guest' if role == 'Guest' else 'admin'
+    note      = 'No login needed' if role == 'Guest' else 'Login required'
+    src       = f'{release_base}/walkthrough-{env}/{fname}'
+    active    = fname in assets
+    ph_attr   = '' if active else '\n               data-placeholder="true"'
+    ov_cls    = 'video-overlay clickable' if active else 'video-overlay'
+    ov_role   = 'role="button" tabindex="0"' if active else 'aria-hidden="true"'
+    play_dim  = '' if active else ' style="opacity:.3"'
+    body      = (
+        '<div class="ov-label">Click to watch</div>'
+        '<div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div>'
+        '<div class="ov-progress-pct"></div>'
+    ) if active else (
+        '<div class="ov-placeholder-msg">'
+        '<div class="ov-main">Recording not yet generated</div>'
+        '<div class="ov-sub">Run the command below to produce this video</div>'
+        '</div>'
+    )
+    return f'''\
+        <div class="video-slot">
+          <div class="slot-label">{icon} {role} Walkthrough
+            <span class="role-badge {badge_cls}">{note}</span></div>
+          <div class="video-wrap"
+               data-src="{src}"
+               data-filename="{fname}"{ph_attr}>
+            <video controls preload="none"></video>
+            <div class="{ov_cls}" {ov_role}>
+              <div class="ov-play-btn"{play_dim}>&#9654;</div>
+              {body}
+            </div>
+          </div>
+        </div>'''
+
+def env_col(env, app_url, badge_label, badge_cls, assets, local_cmd_note, pw_note):
+    icon   = '&#x1F4BB;' if env == 'local' else '&#x1F310;'
+    title  = 'Local Demo'   if env == 'local' else 'Live Demo'
+    url_a  = f'<a href="{app_url}" target="_blank" rel="noopener noreferrer">{app_url.split("//")[1]}</a>'
+    slots  = '\n'.join(slot(env, f, assets) for f in FNAMES)
+    cmd_pw = '&lt;password from backend/.env&gt;' if env == 'local' else '&lt;password from Vercel env&gt;'
+    return f'''\
+    <section class="env-col" aria-labelledby="{env}-heading">
+      <div class="env-head">
+        <span class="env-icon">{icon}</span>
+        <h2 class="env-title" id="{env}-heading">{title}</h2>
+        <span class="badge {badge_cls}">{badge_label}</span>
+      </div>
+      <div class="env-url-strip">
+        <span class="url-dot"></span>{url_a}
+      </div>
+      <div class="video-slots">
+{slots}
+      </div>
+      <div class="record-section">
+        <div class="record-label">Record command</div>
+        <div class="record-cmd"><span class="cmd-comment"># Records both guest + admin walkthrough videos</span>
+bash scripts/record-walkthrough.sh \\
+  --url {app_url} \\
+  --username admin \\
+  --password {cmd_pw}</div>
+      </div>
+    </section>'''
+
+cols = '\n'.join([
+    env_col('local',  local_url,  'LOCALHOST',     'badge',         local_assets,  'npm run dev', 'backend/.env'),
+    env_col('remote', remote_url, '&#x26A1; VERCEL', 'badge badge-vercel', remote_assets, 'Vercel URL',   'Vercel env'),
+])
+
+HTML = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Walkthrough Videos — Agentic RAG</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Demo Recordings &#x2014; Agentic RAG</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #0f172a; line-height: 1.6; }
-    header { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 45%, #1e40af 100%); color: #fff; padding: 2rem 2.5rem; }
-    header h1 { font-size: 1.75rem; margin-bottom: .3rem; }
-    header p { opacity: .8; font-size: .95rem; }
-    header a { color: #93c5fd; }
-    main { max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem 3rem; }
-    section { margin-bottom: 3rem; }
-    h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem;
-         font-size: 1.25rem; color: #1e3a5f; border-bottom: 2px solid #dbeafe;
-         padding-bottom: .5rem; margin-bottom: 1.5rem; }
-    h2 a { font-size: .825rem; background: #2563eb; color: #fff;
-            padding: .2rem .7rem; border-radius: 4px; text-decoration: none; }
-    h2 a:hover { background: #1d4ed8; }
-    h3 { font-size: .95rem; margin-bottom: .5rem; color: #374151; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.5rem; }
-    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
-            padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    video { display: block; border-radius: 4px; max-height: 400px; }
-    .dl { margin-top: .5rem; font-size: .8rem; }
-    .dl a { color: #2563eb; }
-    footer { text-align: center; padding: 1.5rem; color: #64748b; font-size: .875rem; }
-    footer a { color: #2563eb; }
+    :root{{--bg:#FAF6EE;--surface:#F2E8D0;--surface2:#EDE0C4;--border:rgba(139,103,20,.16);--border-hi:rgba(139,103,20,.32);--gold:#8B6914;--sage:#4C7A4C;--tan:#C4A46B;--text:#2C1A08;--text-dim:#6B5240;--text-soft:#8B7355;--grad:linear-gradient(135deg,#8B6914,#C4A46B);--r:10px;--r-sm:7px}}
+    *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+    html{{font-size:14px;scroll-behavior:smooth}}
+    body{{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}}
+    .page{{max-width:1020px;margin:24px auto 48px;border-radius:16px;overflow:hidden;border:1px solid var(--border-hi);box-shadow:0 24px 64px rgba(60,40,15,.18)}}
+    .demo-header{{background:var(--surface);padding:28px 36px 22px;border-bottom:1px solid var(--border);position:relative;overflow:hidden}}
+    .demo-header::before{{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,rgba(196,164,107,.2) 1px,transparent 1px);background-size:26px 26px;mask-image:linear-gradient(to bottom,transparent,rgba(0,0,0,.35) 50%,transparent);pointer-events:none}}
+    .header-inner{{position:relative;z-index:1}}
+    .eyebrow{{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);background:rgba(139,103,20,.1);border:1px solid rgba(139,103,20,.22);border-radius:20px;padding:4px 12px;margin-bottom:12px}}
+    .eyebrow-dot{{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 2.2s ease-in-out infinite;flex-shrink:0}}
+    @keyframes pulse{{0%,100%{{opacity:1;transform:scale(1)}}50%{{opacity:.4;transform:scale(.7)}}}}
+    .demo-header h1{{font-size:22px;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px}}
+    .header-links{{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}}
+    .hlink{{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--text-dim);text-decoration:none;background:rgba(139,103,20,.06);border:1px solid var(--border);border-radius:6px;padding:4px 10px;transition:border-color .15s,color .15s}}
+    .hlink:hover{{border-color:var(--border-hi);color:var(--text)}}
+    .hlink.hl-live{{color:var(--sage);border-color:rgba(76,122,76,.3);background:rgba(76,122,76,.08)}}
+    .demo-grid{{display:grid;grid-template-columns:1fr 1fr}}
+    .env-col{{padding:22px 24px 24px;border-right:1px solid var(--border)}}
+    .env-col:last-child{{border-right:none}}
+    .env-head{{display:flex;align-items:center;gap:9px;margin-bottom:12px}}
+    .env-icon{{font-size:17px;line-height:1}}
+    .env-title{{font-size:13.5px;font-weight:800;color:var(--text);flex:1}}
+    .badge{{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:20px;background:var(--text);color:var(--bg)}}
+    .badge-vercel{{background:linear-gradient(135deg,#111 0%,#2a2a2a 100%)}}
+    .env-url-strip{{display:flex;align-items:center;gap:7px;background:rgba(139,103,20,.06);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 11px;margin-bottom:14px;font-size:11px}}
+    .url-dot{{width:6px;height:6px;border-radius:50%;background:var(--sage);box-shadow:0 0 6px rgba(76,122,76,.7);flex-shrink:0;animation:pulse 2s ease-in-out infinite}}
+    .env-url-strip a{{color:var(--gold);font-weight:600;text-decoration:none}}
+    .env-url-strip a:hover{{text-decoration:underline}}
+    .video-slots{{display:flex;flex-direction:column;gap:12px;margin-bottom:16px}}
+    .video-slot{{border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;background:var(--surface)}}
+    .slot-label{{display:flex;align-items:center;gap:7px;padding:7px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-dim)}}
+    .role-badge{{margin-left:auto;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.05em}}
+    .role-badge.guest{{background:rgba(76,122,76,.12);color:#2E5A2E;border:1px solid rgba(76,122,76,.3)}}
+    .role-badge.admin{{background:rgba(181,83,42,.12);color:#7A2E10;border:1px solid rgba(181,83,42,.3)}}
+    .video-wrap{{position:relative;background:#140d04;aspect-ratio:16/9}}
+    .video-wrap video{{width:100%;height:100%;display:none;object-fit:contain}}
+    .video-overlay{{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:radial-gradient(ellipse at 50% 40%,rgba(196,164,107,.12) 0%,rgba(20,13,4,.94) 75%)}}
+    .video-overlay.clickable{{cursor:pointer;transition:background .2s}}
+    .video-overlay.clickable:hover{{background:radial-gradient(ellipse at 50% 40%,rgba(196,164,107,.22) 0%,rgba(20,13,4,.88) 75%)}}
+    .video-overlay.clickable:hover .ov-play-btn{{transform:scale(1.09);background:rgba(196,164,107,.28)}}
+    .ov-play-btn{{width:48px;height:48px;border-radius:50%;background:rgba(196,164,107,.14);border:2px solid rgba(196,164,107,.38);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--tan);transition:transform .2s,background .2s}}
+    .ov-label{{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(196,164,107,.75)}}
+    .ov-placeholder-msg{{text-align:center}}
+    .ov-placeholder-msg .ov-main{{font-size:11px;color:rgba(196,164,107,.55);font-weight:600}}
+    .ov-placeholder-msg .ov-sub{{font-size:10px;color:rgba(196,164,107,.38);margin-top:3px}}
+    .ov-progress-wrap{{width:62%;height:3px;background:rgba(196,164,107,.18);border-radius:2px;overflow:hidden;display:none}}
+    .ov-progress-fill{{height:100%;width:0%;background:var(--grad);border-radius:2px;transition:width .25s}}
+    .ov-progress-pct{{font-size:9.5px;color:rgba(196,164,107,.5);margin-top:1px}}
+    .dl-strip{{padding:9px 12px;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;gap:10px}}
+    .dl-btn{{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--tan);border:1px solid rgba(196,164,107,.38);border-radius:20px;padding:4px 14px;text-decoration:none;background:transparent;cursor:pointer;transition:background .15s}}
+    .dl-btn:hover{{background:rgba(196,164,107,.1)}}
+    .dl-err{{font-size:10px;color:rgba(196,164,107,.5)}}
+    .record-section{{margin-top:2px}}
+    .record-label{{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-soft);margin-bottom:6px}}
+    .record-cmd{{background:#1a1007;border:1px solid rgba(139,103,20,.22);border-radius:var(--r-sm);padding:10px 13px;font-family:'SF Mono','Fira Code',monospace;font-size:10px;color:var(--tan);line-height:1.75;overflow-x:auto;white-space:pre}}
+    .cmd-comment{{color:rgba(196,164,107,.4)}}
+    .demo-footer{{background:var(--surface);border-top:1px solid var(--border);padding:11px 36px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--text-dim)}}
+    .demo-footer a{{color:var(--gold);text-decoration:none;border-bottom:1px dashed rgba(139,103,20,.3)}}
+    .demo-footer a:hover{{border-bottom-color:var(--gold)}}
+    @media(max-width:680px){{.demo-grid{{grid-template-columns:1fr}}.env-col{{border-right:none;border-bottom:1px solid var(--border)}}.env-col:last-child{{border-bottom:none}}.page{{margin:0;border-radius:0}}}}
+    @media(prefers-reduced-motion:reduce){{*,*::before,*::after{{animation-duration:.01ms!important;transition-duration:.01ms!important}}}}
   </style>
 </head>
 <body>
-  <header>
-    <h1>&#x1F3A5; Agentic RAG — Walkthrough Videos</h1>
-    <p>Enterprise document Q&amp;A demo &middot;
-       <a href="../index.html">Full Docs &#x2197;</a> &middot;
-       <a href="https://github.com/${_GH_REPO}">GitHub &#x2197;</a></p>
+<div class="page">
+  <header class="demo-header">
+    <div class="header-inner">
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Demo Recordings</div>
+      <h1>Agentic RAG &#x2014; Walkthrough Videos</h1>
+      <nav class="header-links">
+        <a class="hlink hl-live" href="{remote_url}" target="_blank" rel="noopener noreferrer">&#x1F310; Live App</a>
+        <a class="hlink" href="https://dev-enthusiast-84.github.io/AILabs/" target="_blank" rel="noopener noreferrer">&#x1F4D6; Documentation</a>
+        <a class="hlink" href="https://github.com/{gh_repo}" target="_blank" rel="noopener noreferrer">&#x1F4E6; GitHub</a>
+        <a class="hlink" href="https://github.com/{gh_repo}/releases" target="_blank" rel="noopener noreferrer">&#x1F3AC; All Releases</a>
+      </nav>
+    </div>
   </header>
-  <main>${sections_html}
-  </main>
-  <footer>
-    Videos hosted on <a href="https://github.com/${_GH_REPO}/releases">GitHub Releases</a> &mdash;
-    gallery published to <a href="${_GH_PAGES_GALLERY}">GitHub Pages</a> by
-    <code>scripts/record-walkthrough.sh</code>
+  <div class="demo-grid" role="main">
+{cols}
+  </div>
+  <footer class="demo-footer">
+    <span>Videos on <a href="https://github.com/{gh_repo}/releases">GitHub Releases</a></span>
+    <span>Gallery: <a href="{gallery_url}">GitHub Pages</a></span>
+    <span>Auto-produced by <code>scripts/record-walkthrough.sh</code></span>
   </footer>
+</div>
+<script>
+(function(){{
+  'use strict';
+  function fmtB(b){{return b>1048576?(b/1048576).toFixed(1)+' MB':(b/1024).toFixed(0)+' KB'}}
+  function showVideo(wrap,blobUrl){{
+    var v=wrap.querySelector('video'),ov=wrap.querySelector('.video-overlay');
+    v.src=blobUrl;v.style.display='block';if(ov)ov.remove();
+    v.play().catch(function(){{}});
+  }}
+  function showFallback(wrap,src,fname){{
+    var ov=wrap.querySelector('.video-overlay');if(ov)ov.remove();
+    var v=wrap.querySelector('video');v.src=src;v.style.display='block';v.load();
+    v.play().catch(function(){{
+      v.remove();
+      var s=document.createElement('div');s.className='dl-strip';
+      s.innerHTML='<span class="dl-err">Inline playback unavailable.</span>'
+        +'<a class="dl-btn" href="'+src+'" download="'+(fname||'walkthrough.webm')+'">&#x2B07; Download to watch</a>';
+      wrap.appendChild(s);
+    }});
+  }}
+  function loadBlob(wrap){{
+    var src=wrap.dataset.src,fname=wrap.dataset.filename||'walkthrough.webm';
+    var ov=wrap.querySelector('.video-overlay');
+    ov.classList.remove('clickable');ov.style.cursor='wait';
+    var pb=ov.querySelector('.ov-play-btn'),lb=ov.querySelector('.ov-label');
+    var pw=ov.querySelector('.ov-progress-wrap'),pf=ov.querySelector('.ov-progress-fill'),pp=ov.querySelector('.ov-progress-pct');
+    if(pb)pb.textContent='&#x29D7;';if(lb)lb.textContent='Loading…';if(pw)pw.style.display='block';
+    fetch(src,{{mode:'cors'}})
+      .then(function(r){{
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        var cl=parseInt(r.headers.get('content-length')||'0',10),rd=r.body.getReader(),ch=[],rx=0;
+        function pump(){{return rd.read().then(function(x){{
+          if(x.done)return ch;
+          ch.push(x.value);rx+=x.value.length;
+          var p=cl?Math.min(99,Math.round(rx/cl*100)):0;
+          if(pf)pf.style.width=p+'%';if(pp)pp.textContent=p>0?p+'% of '+fmtB(cl):'';
+          return pump();
+        }});}}
+        return pump().then(function(c){{return new Blob(c,{{type:'video/webm'}});}});
+      }})
+      .then(function(b){{showVideo(wrap,URL.createObjectURL(b));}} )
+      .catch(function(e){{console.warn('Blob fetch failed:',e.message);showFallback(wrap,src,fname);}});
+  }}
+  function attachClick(wrap){{
+    var ov=wrap.querySelector('.video-overlay');if(!ov)return;
+    function go(){{ov.removeEventListener('click',go);ov.removeEventListener('keydown',kd);loadBlob(wrap);}}
+    function kd(e){{if(e.key==='Enter'||e.key===' '){{e.preventDefault();go();}}}}
+    ov.addEventListener('click',go);ov.addEventListener('keydown',kd);
+  }}
+  function probe(wrap){{
+    fetch(wrap.dataset.src,{{method:'HEAD',mode:'cors'}})
+      .then(function(r){{
+        if(!r.ok)return;
+        var ov=wrap.querySelector('.video-overlay');if(!ov)return;
+        ov.removeAttribute('aria-hidden');
+        ov.innerHTML='<div class="ov-play-btn">&#9654;</div>'
+          +'<div class="ov-label">Click to watch</div>'
+          +'<div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div>'
+          +'<div class="ov-progress-pct"></div>';
+        ov.classList.add('clickable');wrap.removeAttribute('data-placeholder');
+        attachClick(wrap);
+      }}).catch(function(){{}});
+  }}
+  document.addEventListener('DOMContentLoaded',function(){{
+    document.querySelectorAll('.video-wrap[data-src]').forEach(function(w){{
+      w.dataset.placeholder==='true'?probe(w):attachClick(w);
+    }});
+  }});
+}());
+</script>
 </body>
-</html>
-HTMLEOF
-    echo "  Generated: docs/walkthrough/index.html"
+</html>'''
+
+open(html_path, 'w').write(HTML)
+print(f"  (Re)generated docs/walkthrough/index.html")
+PYEOF
+    echo "  Gallery: ${_GH_PAGES_GALLERY}"
 }
 
 # Idempotently update the <!-- REMOTE-APP-URL --> marker in README.md.
@@ -618,8 +783,12 @@ if [[ -n "$UPLOAD_FILE" ]]; then
     UPLOAD_FILE="$(cd "$(dirname "$UPLOAD_FILE")" && pwd)/$(basename "$UPLOAD_FILE")"
 fi
 
+# Export WALKTHROUGH_BASE_URL from --url immediately after arg parsing so the
+# Playwright spec (which checks process.env.WALKTHROUGH_BASE_URL) always sees it.
+export WALKTHROUGH_BASE_URL="$BASE_URL"
+
 echo "Walkthrough recorder"
-echo "  URL        : ${BASE_URL}"
+echo "  URL        : ${WALKTHROUGH_BASE_URL}"
 echo "  Env        : ${ENV_LABEL}"
 echo "  Mode       : ${MODE}"
 echo "  Browser    : $([[ "$HEADED" == true ]] && echo headed || echo headless)"
@@ -640,9 +809,35 @@ if [[ "$DRY_RUN" == true ]]; then
     exit 0
 fi
 
+# ── GitHub token prompt (publish enabled, token missing) ──────────────────────
+# Prompt before the browser launches so the operator can enter the token
+# interactively without interrupting the recording mid-session.
+if [[ "$PUBLISH" == true && -z "$_RESOLVED_GH_TOKEN" ]]; then
+    echo "┌─────────────────────────────────────────────────────────────────────┐"
+    echo "│  GitHub token required to publish walkthrough videos               │"
+    echo "│                                                                     │"
+    echo "│  Generate a Personal Access Token (PAT) with 'repo' scope:         │"
+    echo "│    https://github.com/settings/tokens                              │"
+    echo "│                                                                     │"
+    echo "│  Then paste it at the prompt below, or press Enter to skip.        │"
+    echo "│  (To skip permanently, pass --no-publish when running the script.) │"
+    echo "└─────────────────────────────────────────────────────────────────────┘"
+    # Read silently (no echo) so the token doesn't appear in terminal history.
+    read -r -s -p "  GitHub PAT (or Enter to skip): " _INPUT_GH_TOKEN
+    echo ""
+    if [[ -n "$_INPUT_GH_TOKEN" ]]; then
+        _RESOLVED_GH_TOKEN="$_INPUT_GH_TOKEN"
+        echo "  Token accepted."
+    else
+        echo "  No token entered — videos will be saved locally only."
+        echo "  Artifacts: artifacts/walkthrough/${ENV_LABEL}/"
+        PUBLISH=false
+    fi
+    echo ""
+fi
+
 cd "$FRONTEND_DIR"
 
-export WALKTHROUGH_BASE_URL="$BASE_URL"
 export WALKTHROUGH_ENV="$ENV_LABEL"
 export WALKTHROUGH_SLOW_MO_MS="$SLOW_MO_MS"
 export WALKTHROUGH_INTERACTIVE_SETTINGS="$INTERACTIVE_SETTINGS"

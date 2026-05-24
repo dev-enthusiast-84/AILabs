@@ -61,23 +61,23 @@ list.
 
 ### User Story 2 - Guest Document Upload (Priority: P2)
 
-A guest user may upload documents but is subject to a stricter file-size cap (2 MB) to
+A guest user may upload documents but is subject to a stricter file-size cap (3 MB) to
 prevent resource abuse. The same safety checks apply.
 
 **Why this priority**: Guest upload enables lightweight demos and self-service testing
 without requiring an admin account. The tighter size cap is an OWASP A04 control.
 
-**Independent Test**: Obtain a guest JWT, upload a TXT file under 2 MB, and verify HTTP 201.
-Then upload a TXT file over 2 MB and verify HTTP 413.
+**Independent Test**: Obtain a guest JWT, upload a TXT file under 3 MB, and verify HTTP 201.
+Then upload a TXT file over 3 MB and verify HTTP 413.
 
 **Acceptance Scenarios**:
 
-1. **Given** a valid guest JWT and a TXT file under 2 MB, **When** the file is uploaded,
+1. **Given** a valid guest JWT and a TXT file under 3 MB, **When** the file is uploaded,
    **Then** the server returns HTTP 201 with a populated `UploadResponse`.
 
-2. **Given** a valid guest JWT and a file whose size exceeds 2 MB (even if under 20 MB),
+2. **Given** a valid guest JWT and a file whose size exceeds 3 MB (even if under 20 MB),
    **When** the file is uploaded, **Then** the server returns HTTP 413 with
-   `detail: "File exceeds the 2 MB limit."`.
+   `detail: "File exceeds the 3 MB limit."`.
 
 3. **Given** a valid guest JWT and a TXT file containing null bytes in the first 512 bytes,
    **When** the file is uploaded, **Then** the server returns HTTP 422 with
@@ -219,7 +219,7 @@ list or chunks endpoints.
 - **FR-002**: The upload endpoint MUST enforce per-role file size limits:
   - Admin (standard): 20 MB (`max_upload_size_mb`, configurable via `MAX_UPLOAD_SIZE_MB`).
   - Admin (Vercel): 4 MB (capped by `effective_max_upload_size_mb`).
-  - Guest: 2 MB (`guest_max_upload_size_mb`, configurable via `GUEST_MAX_UPLOAD_SIZE_MB`).
+  - Guest: 3 MB (`guest_max_upload_size_mb`, configurable via `GUEST_MAX_UPLOAD_SIZE_MB`).
   - Exceeding the limit MUST return HTTP 413.
 - **FR-003**: The upload endpoint MUST reject empty files with HTTP 422.
 - **FR-004**: The system MUST accept only PDF, TXT, CSV, and XLSX file types for indexing.
@@ -278,7 +278,7 @@ list or chunks endpoints.
 
 - **SC-001**: `POST /api/documents/upload` with a valid file returns HTTP 201 and
   `chunks_indexed >= 1` in every successful invocation.
-- **SC-002**: Uploading a file that exceeds the applicable size limit (2 MB for guests,
+- **SC-002**: Uploading a file that exceeds the applicable size limit (3 MB for guests,
   20 MB for admins) returns HTTP 413 in 100% of attempts.
 - **SC-003**: Uploading a file with an executable magic byte header returns HTTP 422 in
   100% of attempts, regardless of file extension.
@@ -310,7 +310,7 @@ list or chunks endpoints.
 - The magic byte check for TXT and CSV files is advisory (null bytes and script markers)
   rather than signature-based, since these are variable text formats.
 - Vercel's 4 MB effective upload cap applies to admin users only when `VERCEL` env var is
-  set. Guest cap (2 MB) is always enforced regardless of deployment platform.
+  set. Guest cap (3 MB) is always enforced regardless of deployment platform.
 - Path traversal prevention is delegated entirely to `validate_filename()` in
   `app.guardrails.safety`. The documents router trusts the sanitized name returned by that
   function.

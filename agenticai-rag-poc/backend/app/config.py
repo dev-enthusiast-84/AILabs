@@ -107,9 +107,9 @@ class Settings(BaseSettings):
 
     # Upload limits
     max_upload_size_mb: int = 20
-    guest_max_upload_size_mb: int = 2  # smaller cap for unauthenticated/guest uploads
+    guest_max_upload_size_mb: int = 3  # smaller cap for unauthenticated/guest uploads
     max_indexed_documents: int = 10
-    guest_max_indexed_documents: int = 3
+    guest_max_indexed_documents: int = 1
     max_query_length: int = 1000
 
     # ── Token budget controls (OWASP A04 — Insecure Design) ──────────────────

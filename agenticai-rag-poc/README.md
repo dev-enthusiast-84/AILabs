@@ -52,7 +52,7 @@ Login: `admin` / password shown in startup banner. Alternatives: `make setup && 
 |------------|:-----:|:-----:|
 | Chat against indexed documents | ✅ | ✅ |
 | List documents | ✅ | ✅ |
-| Upload TXT (max 2 MB) | ✅ | ✅ |
+| Upload TXT (max 3 MB) | ✅ | ✅ |
 | Upload PDF / CSV / Excel (up to 20 MB) | ❌ | ✅ |
 | Delete documents | ❌ | ✅ |
 | Set OpenAI / Pinecone / Blob keys | ✅ once / session | ✅ |

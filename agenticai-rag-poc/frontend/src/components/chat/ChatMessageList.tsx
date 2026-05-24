@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { RefObject } from 'react'
 import {
   CheckBadgeIcon,
@@ -9,7 +10,7 @@ import {
   SpeakerXMarkIcon,
   SparklesIcon,
 } from '@heroicons/react/24/outline'
-import type { ChatMessage } from '@/types'
+import type { ChatMessage, Citation } from '@/types'
 
 interface ChatMessageListProps {
   bottomRef: RefObject<HTMLDivElement>
@@ -26,6 +27,48 @@ interface ChatMessageListProps {
   onSuggestionClick: (question: string) => void
   onTogglePlayback: (message: ChatMessage) => void
   onToggleTrace: (messageId: string) => void
+}
+
+function CitationCard({
+  citation,
+  index: _index,
+  onOpenSource,
+}: {
+  citation: Citation
+  index: number
+  onOpenSource: (source: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const preview = citation.text.length > 120 ? citation.text.slice(0, 120) + '…' : citation.text
+  const hasMore = citation.text.length > 120
+
+  return (
+    <div className="rounded-md border border-sky-200 bg-sky-50 text-xs overflow-hidden" data-testid="citation-card">
+      <div className="flex items-center gap-1.5 px-2 py-1">
+        <button
+          onClick={() => onOpenSource(citation.source)}
+          className="text-sky-700 font-medium hover:underline truncate max-w-[200px]"
+          title="Click to view document content"
+        >
+          {citation.source}
+        </button>
+        <span className="text-slate-300 shrink-0">·</span>
+        <span className="text-slate-400 shrink-0">chunk {citation.chunk_index + 1}</span>
+        {hasMore && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="ml-auto shrink-0 text-slate-400 hover:text-slate-600 transition-colors"
+            aria-label={expanded ? 'Collapse citation' : 'Expand citation'}
+          >
+            {expanded ? '▲' : '▼'}
+          </button>
+        )}
+      </div>
+      <div className="px-2 pb-1.5 text-slate-600 leading-relaxed">
+        {expanded ? citation.text : preview}
+      </div>
+    </div>
+  )
 }
 
 function TraceRow({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -69,6 +112,7 @@ function EmptyChatState({
               {suggestions.map((question) => (
                 <button
                   key={question}
+                  data-testid="suggestion-btn"
                   onClick={() => onSuggestionClick(question)}
                   className="text-xs px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 hover:border-sky-300 transition-colors"
                 >
@@ -105,7 +149,7 @@ function AssistantMessageFooter({
   onToggleTrace: (messageId: string) => void
 }) {
   return (
-    <div className={`${message.sources && message.sources.length > 0 ? '' : 'mt-2.5 pt-2.5 border-t border-slate-200'}`}>
+    <div className={`${(message.citations?.length || message.sources?.length) ? '' : 'mt-2.5 pt-2.5 border-t border-slate-200'}`}>
       <div className="flex items-center gap-3 flex-wrap">
         {message.validation && (message.mode === 'agentic' || !message.mode) && (
           message.validation === 'VALID' ? (
@@ -264,23 +308,36 @@ function MessageBubble({
       >
         <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
 
-        {message.role === 'assistant' && !isError && message.sources && message.sources.length > 0 && (
+        {message.role === 'assistant' && !isError && (message.citations?.length || message.sources?.length) ? (
           <div className="mt-2.5 pt-2.5 border-t border-slate-200">
             <p className="text-xs text-slate-400 font-medium mb-1.5">Sources:</p>
-            <div className="flex flex-wrap gap-1 mb-2">
-              {message.sources.map((source) => (
-                <button
-                  key={source}
-                  onClick={() => onOpenSource(source)}
-                  className="text-xs bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200 text-sky-700 hover:bg-sky-100 hover:border-sky-300 transition-colors"
-                  title="Click to view document content"
-                >
-                  {source}
-                </button>
-              ))}
-            </div>
+            {message.citations && message.citations.length > 0 ? (
+              <div className="space-y-1.5">
+                {message.citations.map((citation, i) => (
+                  <CitationCard
+                    key={`${citation.source}-${citation.chunk_index}`}
+                    citation={citation}
+                    index={i}
+                    onOpenSource={onOpenSource}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {(message.sources ?? []).map((source) => (
+                  <button
+                    key={source}
+                    onClick={() => onOpenSource(source)}
+                    className="text-xs bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200 text-sky-700 hover:bg-sky-100 hover:border-sky-300 transition-colors"
+                    title="Click to view document content"
+                  >
+                    {source}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        ) : null}
 
         {message.role === 'assistant' && !isError && (
           <AssistantMessageFooter

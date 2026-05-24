@@ -258,3 +258,87 @@ def test_run_simple_rag_spanish_language_keeps_retrieval_query_clean():
     assert generation_payload["answer_instruction"] == answer_instruction
     assert "Answer in Spanish" not in mock_search.call_args.args[0]
     assert result["answer"] == "La política permite trabajo remoto."
+
+
+# ── _pipeline_docs_to_citations helper ───────────────────────────────────────
+
+def test_pipeline_docs_to_citations_basic():
+    """_pipeline_docs_to_citations converts Documents to plain dicts."""
+    from app.rag.pipeline import _pipeline_docs_to_citations
+    docs = [
+        Document(
+            page_content="chunk body",
+            metadata={"source": "doc.txt", "chunk_index": 1, "raw_chunk": "chunk body"},
+        )
+    ]
+    result = _pipeline_docs_to_citations(docs)
+    assert len(result) == 1
+    assert result[0]["source"] == "doc.txt"
+    assert result[0]["chunk_index"] == 1
+    assert result[0]["text"] == "chunk body"
+
+
+def test_pipeline_docs_to_citations_truncates_to_300():
+    """_pipeline_docs_to_citations truncates text to 300 chars."""
+    from app.rag.pipeline import _pipeline_docs_to_citations
+    long_text = "y" * 500
+    docs = [Document(page_content=long_text, metadata={"source": "f.txt", "raw_chunk": long_text})]
+    result = _pipeline_docs_to_citations(docs)
+    assert len(result[0]["text"]) == 300
+
+
+def test_pipeline_docs_to_citations_falls_back_to_page_content():
+    """When raw_chunk is absent, page_content is used."""
+    from app.rag.pipeline import _pipeline_docs_to_citations
+    docs = [Document(page_content="fallback", metadata={"source": "x.txt"})]
+    result = _pipeline_docs_to_citations(docs)
+    assert result[0]["text"] == "fallback"
+
+
+def test_run_simple_rag_returns_citations_key():
+    """run_simple_rag must include 'citations' in the result dict."""
+    fake_docs = [
+        Document(
+            page_content="chunk text",
+            metadata={"source": "doc.txt", "chunk_index": 0, "raw_chunk": "chunk text"},
+        ),
+    ]
+    fake_cb_cm, _ = _make_fake_callback(total_tokens=100)
+
+    mock_chain = MagicMock()
+    mock_chain.invoke.return_value = "answer"
+    mock_chain_a = MagicMock()
+    mock_chain_a.__or__ = MagicMock(return_value=mock_chain)
+
+    with patch("app.rag.pipeline.similarity_search", return_value=fake_docs), \
+         patch("app.rag.pipeline.get_usage_metadata_callback", return_value=fake_cb_cm), \
+         patch("app.agents.rag_agent._llm", return_value=MagicMock()), \
+         patch("app.rag.pipeline._SIMPLE_RAG_PROMPT") as mock_prompt:
+        mock_prompt.__or__ = MagicMock(return_value=mock_chain_a)
+        from app.rag.pipeline import run_simple_rag
+        result = run_simple_rag("What is RAG?")
+
+    assert "citations" in result
+    assert isinstance(result["citations"], list)
+    assert len(result["citations"]) == 1
+    assert result["citations"][0]["source"] == "doc.txt"
+    assert result["citations"][0]["text"] == "chunk text"
+
+
+def test_run_simple_rag_no_docs_returns_empty_citations():
+    """When no docs are found, citations must be an empty list."""
+    fake_cb_cm, _ = _make_fake_callback(total_tokens=50)
+    mock_chain = MagicMock()
+    mock_chain.invoke.return_value = "No info found."
+    mock_chain_a = MagicMock()
+    mock_chain_a.__or__ = MagicMock(return_value=mock_chain)
+
+    with patch("app.rag.pipeline.similarity_search", return_value=[]), \
+         patch("app.rag.pipeline.get_usage_metadata_callback", return_value=fake_cb_cm), \
+         patch("app.agents.rag_agent._llm", return_value=MagicMock()), \
+         patch("app.rag.pipeline._SIMPLE_RAG_PROMPT") as mock_prompt:
+        mock_prompt.__or__ = MagicMock(return_value=mock_chain_a)
+        from app.rag.pipeline import run_simple_rag
+        result = run_simple_rag("unknown topic")
+
+    assert result["citations"] == []

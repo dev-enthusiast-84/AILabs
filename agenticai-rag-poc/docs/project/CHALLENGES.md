@@ -79,7 +79,7 @@ The in-process async job store enforces TTL-based expiry (job TTL 900 s, artifac
 ## Known Limitations
 
 - **OpenAI dependency:** All embedding and generation require an OpenAI-compatible key; no offline fallback.
-- **Vercel upload cap:** Admin uploads limited to 4 MB (serverless body constraint); 20 MB locally/Docker.
+- **Vercel upload cap:** Admin batch total limited to 4 MB (serverless body constraint); 20 MB locally/Docker.
 - **Reranker on Vercel:** Cross-encoder (`sentence-transformers` ~80 MB) disabled; `llm-judge` used instead. Semantic chunker falls back to recursive if `langchain-experimental` absent. See [Environment Variables Reference](deployment/DEPLOY-LOCAL-ENV.md) for all optional dep defaults.
 - **In-memory/Blob vector stores:** `memory` is tests-only; `blob` is a small demo/fallback only.
 - **Live/Ragas tests:** Require external services (OpenAI, Pinecone) and are excluded from standard CI.

@@ -94,9 +94,9 @@ test.describe('Guest dashboard — upload area', () => {
     await expect(page.getByText(/TXT only/i)).toBeVisible()
   })
 
-  test('upload area shows 2 MB guest limit', async ({ page }) => {
+  test('upload area shows 3 MB guest limit', async ({ page }) => {
     // Scope to the dropzone to avoid strict-mode collision with the header banner
-    await expect(page.getByTestId('dropzone').getByText(/2 MB/i)).toBeVisible()
+    await expect(page.getByTestId('dropzone').getByText(/3 MB/i)).toBeVisible()
   })
 
   test('guest warning banner is shown inside upload card', async ({ page }) => {

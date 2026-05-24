@@ -16,7 +16,7 @@ function renderToolbar(overrides: Partial<Parameters<typeof ChatToolbar>[0]> = {
     exportJobStatus: null,
     messageCount: 5,
     ragMode: 'simple' as const,
-    voiceOnlyConversation: false,
+    hasVoiceMessages: false,
     onChangeLanguage,
     onChangeMode,
     onExportAudio,
@@ -36,8 +36,8 @@ describe('ChatToolbar', () => {
 
   it('renders Simple and Agentic mode buttons', () => {
     renderToolbar()
-    expect(screen.getByText(/Simple/)).toBeTruthy()
-    expect(screen.getByText(/Agentic/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Simple mode/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Agentic mode/i })).toBeTruthy()
   })
 
   it('Simple button has aria-pressed=true when ragMode is simple', () => {
@@ -104,46 +104,44 @@ describe('ChatToolbar', () => {
     expect(exportBtn.disabled).toBe(false)
   })
 
-  it('does not render export audio button when voiceOnlyConversation is false', () => {
-    renderToolbar({ voiceOnlyConversation: false })
-    expect(screen.queryByTestId('export-audio-btn')).toBeNull()
+  it('audio button is always rendered and disabled when no voice messages', () => {
+    renderToolbar({ hasVoiceMessages: false })
+    const audioBtn = screen.getByTestId('export-audio-btn') as HTMLButtonElement
+    expect(audioBtn).not.toBeNull()
+    expect(audioBtn.disabled).toBe(true)
   })
 
-  it('renders export audio button when voiceOnlyConversation is true', () => {
-    renderToolbar({ voiceOnlyConversation: true })
-    expect(screen.getByTestId('export-audio-btn')).toBeTruthy()
+  it('audio button is enabled when hasVoiceMessages is true', () => {
+    renderToolbar({ hasVoiceMessages: true, messageCount: 3 })
+    const audioBtn = screen.getByTestId('export-audio-btn') as HTMLButtonElement
+    expect(audioBtn.disabled).toBe(false)
   })
 
   it('export audio button is disabled while exportingAudio is true', () => {
-    renderToolbar({ voiceOnlyConversation: true, exportingAudio: true, messageCount: 3 })
+    renderToolbar({ hasVoiceMessages: true, exportingAudio: true, messageCount: 3 })
     const audioBtn = screen.getByTestId('export-audio-btn') as HTMLButtonElement
     expect(audioBtn.disabled).toBe(true)
   })
 
-  it('shows "Exporting…" label on audio button while exportingAudio is true', () => {
-    renderToolbar({ voiceOnlyConversation: true, exportingAudio: true, messageCount: 3 })
-    expect(screen.getByText('Exporting…')).toBeTruthy()
-  })
-
   it('shows export job status "Queued…" when exportJobStatus is queued and exporting', () => {
-    renderToolbar({ voiceOnlyConversation: true, exportingAudio: true, exportJobStatus: 'queued' })
+    renderToolbar({ hasVoiceMessages: true, exportingAudio: true, exportJobStatus: 'queued' })
     expect(screen.getByTestId('export-job-status').textContent).toBe('Queued…')
   })
 
   it('shows export job status "Processing…" when exportJobStatus is running and exporting', () => {
-    renderToolbar({ voiceOnlyConversation: true, exportingAudio: true, exportJobStatus: 'running' })
+    renderToolbar({ hasVoiceMessages: true, exportingAudio: true, exportJobStatus: 'running' })
     expect(screen.getByTestId('export-job-status').textContent).toBe('Processing…')
   })
 
   it('shows cancel button while exportingAudio is true when onCancelExport is provided', () => {
     const onCancelExport = vi.fn()
-    renderToolbar({ voiceOnlyConversation: true, exportingAudio: true, onCancelExport })
+    renderToolbar({ hasVoiceMessages: true, exportingAudio: true, onCancelExport })
     expect(screen.getByTestId('cancel-export-btn')).toBeTruthy()
   })
 
   it('clicking cancel export button calls onCancelExport', () => {
     const onCancelExport = vi.fn()
-    renderToolbar({ voiceOnlyConversation: true, exportingAudio: true, onCancelExport })
+    renderToolbar({ hasVoiceMessages: true, exportingAudio: true, onCancelExport })
     fireEvent.click(screen.getByTestId('cancel-export-btn'))
     expect(onCancelExport).toHaveBeenCalledTimes(1)
   })

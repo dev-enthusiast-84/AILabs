@@ -64,8 +64,6 @@ vi.mock('@/services/api', () => ({
   settingsApi: {
     get: vi.fn().mockResolvedValue(mockSettings),
     update: vi.fn().mockResolvedValue({ ...mockSettings, api_key_source: 'runtime' }),
-    getRagasScores: vi.fn().mockResolvedValue(null),
-    triggerRagas: vi.fn().mockResolvedValue({ status: 'started', message: 'Ragas evaluation running in background' }),
   },
   extractErrorMessage: (e: unknown) => String(e),
 }))
@@ -331,104 +329,10 @@ describe('SettingsModal', () => {
     )
   })
 
-  it('shows no-evaluation message when getRagasScores returns null', async () => {
+  it('Ragas Evaluation section no longer present in Settings (moved to header dashboard)', async () => {
     renderModal(true, false) // admin
-    await waitFor(() => screen.getByText('Ragas Evaluation'))
-    fireEvent.click(screen.getByText('Ragas Evaluation'))
-    await waitFor(() =>
-      expect(screen.getByText('No evaluation has been run yet.')).toBeInTheDocument()
-    )
-  })
-
-  it('shows metric tiles when Ragas scores exist', async () => {
-    const { settingsApi } = await import('@/services/api')
-    vi.mocked(settingsApi.getRagasScores).mockResolvedValueOnce({
-      faithfulness: 0.82,
-      answer_relevancy: 0.91,
-      context_precision: 0.75,
-      context_recall: 0.68,
-      model: 'gpt-4o',
-      num_samples: 3,
-      evaluated_at: '2026-05-17T10:00:00Z',
-    })
-    renderModal(true, false)
-    await waitFor(() => screen.getByText('Ragas Evaluation'))
-    fireEvent.click(screen.getByText('Ragas Evaluation'))
-    await waitFor(() => expect(screen.getByText('82%')).toBeInTheDocument())
-    expect(screen.getByText('91%')).toBeInTheDocument()
-    expect(screen.getByText('75%')).toBeInTheDocument()
-    expect(screen.getByText('68%')).toBeInTheDocument()
-    expect(screen.getByText(/gpt-4o · 3 samples/)).toBeInTheDocument()
-  })
-
-  it('Ragas section not visible for guest', async () => {
-    renderModal(true, true) // isGuest = true
     await waitFor(() => screen.getByTestId('model-select'))
     expect(screen.queryByText('Ragas Evaluation')).not.toBeInTheDocument()
-  })
-
-  // ── Ragas trigger button tests ─────────────────────────────────────────────
-
-  it('test_ragas_trigger_button_visible_for_admin', async () => {
-    renderModal(true, false) // admin
-    await waitFor(() => screen.getByText('Ragas Evaluation'))
-    fireEvent.click(screen.getByText('Ragas Evaluation'))
-    await waitFor(() => expect(screen.getByTestId('ragas-trigger-btn')).toBeInTheDocument())
-  })
-
-  it('test_ragas_trigger_button_hidden_for_guest', async () => {
-    renderModal(true, true) // guest
-    await waitFor(() => screen.getByTestId('model-select'))
-    expect(screen.queryByTestId('ragas-trigger-btn')).not.toBeInTheDocument()
-  })
-
-  it('test_ragas_trigger_shows_loading_state', async () => {
-    const { settingsApi } = await import('@/services/api')
-    // Make triggerRagas hang indefinitely so we can observe the loading state
-    vi.mocked(settingsApi.triggerRagas).mockImplementation(
-      () => new Promise(() => {}),
-    )
-    renderModal(true, false)
-    await waitFor(() => screen.getByText('Ragas Evaluation'))
-    fireEvent.click(screen.getByText('Ragas Evaluation'))
-    await waitFor(() => screen.getByTestId('ragas-trigger-btn'))
-    fireEvent.click(screen.getByTestId('ragas-trigger-btn'))
-    await waitFor(() =>
-      expect(screen.getByTestId('ragas-trigger-btn')).toBeDisabled()
-    )
-    expect(screen.getByText('Running…')).toBeInTheDocument()
-  })
-
-  it('test_ragas_trigger_shows_success_toast', async () => {
-    const { settingsApi } = await import('@/services/api')
-    vi.mocked(settingsApi.triggerRagas).mockResolvedValueOnce({
-      status: 'started',
-      message: 'Ragas evaluation running in background',
-    })
-    renderModal(true, false)
-    await waitFor(() => screen.getByText('Ragas Evaluation'))
-    fireEvent.click(screen.getByText('Ragas Evaluation'))
-    await waitFor(() => screen.getByTestId('ragas-trigger-btn'))
-    fireEvent.click(screen.getByTestId('ragas-trigger-btn'))
-    await waitFor(() =>
-      expect(settingsApi.triggerRagas).toHaveBeenCalledTimes(1)
-    )
-  })
-
-  it('shows a prerequisite message when Ragas evaluation is run without an OpenAI key', async () => {
-    const { settingsApi } = await import('@/services/api')
-    vi.mocked(settingsApi.get).mockResolvedValueOnce({
-      ...mockSettings,
-      api_key_masked: '',
-      api_key_source: 'not_configured',
-    })
-    renderModal(true, false)
-    await waitFor(() => screen.getByText('Ragas Evaluation'))
-    fireEvent.click(screen.getByText('Ragas Evaluation'))
-    await waitFor(() => screen.getByTestId('ragas-trigger-btn'))
-    fireEvent.click(screen.getByTestId('ragas-trigger-btn'))
-    expect(screen.getByText('OpenAI API key is required before running Ragas evaluation.')).toBeInTheDocument()
-    expect(settingsApi.triggerRagas).not.toHaveBeenCalled()
   })
 
   // ── Pipeline section tests ──────────────────────────────────────────────────

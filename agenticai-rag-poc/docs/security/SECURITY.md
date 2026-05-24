@@ -19,11 +19,11 @@ OWASP Top 10 controls, authentication, input validation, upload safety, and secr
 | **A01 Broken Access Control** | `require_full_access` dependency blocks guests on write/admin endpoints (HTTP 403). Guest JWT carries `role: "guest"`. | `auth/utils.py`, `api/documents.py`, `api/settings.py`, `api/guardrails.py` |
 | **A02 Cryptographic Failures** | Passwords hashed with bcrypt. JWT HS256 signed with `SECRET_KEY`; raises `RuntimeError` at startup if left as default in non-development. | `auth/utils.py`, `main.py` |
 | **A03 Injection** | bleach strips XSS. Regex patterns detect prompt/SQL injection before any LLM or DB operation. Filename sanitisation blocks path traversal. Guardrail regex validated with `re.compile` at creation. | `guardrails/safety.py`, `guardrails/engine.py` |
-| **A04 Insecure Design** | Token budget hard cap (`MAX_COMPLETION_TOKENS`). Per-IP rate limits on auth (10/min), queries (10/min), guest uploads (5/min). Guest uploads capped at 2 MB; admin at 20 MB (4 MB on Vercel). Indexed-document caps bound file/vector storage growth. | `config.py`, `api/query.py`, `api/documents.py` |
+| **A04 Insecure Design** | Token budget hard cap (`MAX_COMPLETION_TOKENS`). Per-IP rate limits on auth (10/min), queries (10/min), guest uploads (5/min). Guest uploads capped at 3 MB per file; admin batch capped at 20 MB total (4 MB on Vercel). Indexed-document caps bound file/vector storage growth. | `config.py`, `api/query.py`, `api/documents.py` |
 | **A05 Security Misconfiguration** | HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, strict CSP via Vercel headers. `Server` header stripped. Swagger UI disabled when `APP_ENV=production`. | `main.py`, `vercel.json` |
 | **A06 Vulnerable Components** | Dependencies pinned in `requirements.txt`. ClamAV daemon (optional) scans uploads against current malware signatures. | `requirements.txt`, `rag/scanner.py` |
 | **A07 Auth Failures** | Login rate-limited to 10 req/min per IP. Uniform error on auth failure (no username enumeration). Guest tokens expire after 15 min. JWT JTI enforces one-time guest settings gate. | `auth/router.py`, `auth/utils.py` |
-| **A08 Data Integrity** | File extension allowlist. Magic-byte validation rejects mismatched content. ZIP-bomb detection (100 MB limit). Stored prompt-injection scan before indexing. | `rag/scanner.py`, `api/documents.py` |
+| **A08 Data Integrity** | File extension allowlist. Magic-byte validation rejects mismatched content. ZIP-bomb detection (50 MB / 50× ratio limit). Stored prompt-injection scan before indexing. | `rag/scanner.py`, `api/documents.py` |
 | **A09 Logging Failures** | `structlog` structured logging. Startup banner suppressed in production. Guardrail violations logged server-side; no rule detail leaked to client. | `main.py`, `guardrails/engine.py` |
 | **A10 SSRF** | No server-initiated HTTP to user-controlled URLs. OpenAI calls use only the configured key; no user-supplied endpoints are followed. | `rag_agent.py`, `vector_store.py` |
 
@@ -64,8 +64,8 @@ Filename inputs pass through `validate_filename()`: rejects `..`, `/`, `\`, null
 | **Early peek check** | First bytes read *before* any vector-store I/O: empty files → 422; Windows PE (`MZ`) / ELF / shell-script executable headers → 422. Fires even when the vector store is degraded (503), so validation errors are never masked by infrastructure failures. |
 | **Extension allowlist** | Only `pdf`, `txt`, `csv`, `xlsx`, `xls` accepted |
 | **Magic-byte validation** | File content checked against declared MIME type |
-| **ZIP-bomb detection** | Decompressed size capped at 100 MB |
-| **ClamAV scan** *(optional)* | File streamed to ClamAV if `CLAMAV_HOST` set; detected malware → HTTP 400 |
+| **ZIP-bomb detection** | Decompressed size capped at 50 MB; compression ratio capped at 50× |
+| **ClamAV scan** *(optional — Docker / self-hosted only)* | File streamed to ClamAV if `CLAMAV_HOST` set; detected malware → HTTP 400. **Not available on Vercel** (serverless). Skipped with logged warning when daemon is unreachable (fail-open). |
 | **Stored prompt-injection** | Document text scanned for LLM override patterns before embedding |
 
 ### Stored Prompt-Injection Protection

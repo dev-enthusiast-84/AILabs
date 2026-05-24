@@ -279,8 +279,8 @@ describe('ChatInterface — mode toggle', () => {
 
   it('renders mode toggle with Agentic selected by default', async () => {
     await renderChat()
-    const simpleBtn = screen.getByRole('button', { name: /⚡ Simple/i })
-    const agenticBtn = screen.getByRole('button', { name: /🤖 Agentic/i })
+    const simpleBtn = screen.getByRole('button', { name: /Simple mode/i })
+    const agenticBtn = screen.getByRole('button', { name: /Agentic mode/i })
     expect(simpleBtn).toBeInTheDocument()
     expect(agenticBtn).toBeInTheDocument()
     expect(agenticBtn).toHaveAttribute('aria-pressed', 'true')
@@ -298,7 +298,7 @@ describe('ChatInterface — mode toggle', () => {
     })
 
     await renderChat()
-    fireEvent.click(screen.getByRole('button', { name: /⚡ Simple/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Simple mode/i }))
     await submitQuery('What is this?')
 
     await waitFor(() => expect(queryApi.ask).toHaveBeenCalledOnce())
@@ -318,7 +318,7 @@ describe('ChatInterface — mode toggle', () => {
     })
 
     await renderChat()
-    fireEvent.click(screen.getByRole('button', { name: /⚡ Simple/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Simple mode/i }))
     await submitQuery('Tell me something')
 
     await waitFor(() =>
@@ -569,7 +569,7 @@ describe('ChatInterface — agent trace accordion', () => {
     })
 
     await renderChat()
-    fireEvent.click(screen.getByRole('button', { name: /⚡ Simple/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Simple mode/i }))
     await submitQuery('Simple question')
 
     await waitFor(() => expect(screen.getByText('⚡ Simple RAG')).toBeInTheDocument())
@@ -867,7 +867,7 @@ describe('ChatInterface — voice chat', () => {
       await new Promise(r => setTimeout(r, 0))
     })
 
-    const exportAudio = await screen.findByRole('button', { name: /export audio/i })
+    const exportAudio = await screen.findByTestId('export-audio-btn')
     fireEvent.click(exportAudio)
     await waitFor(() => expect(voiceApi.exportAudio).toHaveBeenCalledOnce())
     const payload = vi.mocked(voiceApi.exportAudio).mock.calls[0][0]
@@ -915,7 +915,7 @@ describe('ChatInterface — voice chat', () => {
       await new Promise(r => setTimeout(r, 0))
     })
 
-    const exportAudio = await screen.findByRole('button', { name: /export audio/i })
+    const exportAudio = await screen.findByTestId('export-audio-btn')
     fireEvent.click(exportAudio)
     await waitFor(() =>
       expect(onOpenSettings).toHaveBeenCalledWith(expect.stringMatching(/OpenAI API key is required before exporting audio/)),

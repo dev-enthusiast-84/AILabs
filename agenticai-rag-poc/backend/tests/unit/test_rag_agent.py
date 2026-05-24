@@ -25,6 +25,7 @@ def _base_agent_state(validation: str = "VALID", retry_count: int = 0) -> dict:
         "tokens_used": 0,
         "messages": [],
         "sources": [],
+        "citations": [],
         "original_question": "q",
         "refined_query": "q refined",
         "chunks_found": 2,
@@ -130,6 +131,7 @@ class TestGeneratorRetryHint:
             "retry_count": retry_count,
             "messages": [],
             "sources": [],
+            "citations": [],
             "original_question": "What is X?",
             "refined_query": "What is X?",
             "chunks_found": 1,
@@ -252,6 +254,7 @@ class TestGraphStructure:
                 "answer": "ok",
                 "validation": "VALID",
                 "sources": [],
+                "citations": [],
                 "tokens_used": 0,
                 "retry_count": 1,
                 "original_question": state["original_question"],
@@ -288,6 +291,7 @@ class TestAgentTrace:
             "answer": "The policy allows 3 days.",
             "validation": "VALID",
             "sources": ["sample.txt"],
+            "citations": [],
             "tokens_used": 35,
             "retry_count": retry_count,
             "messages": [],
@@ -947,6 +951,7 @@ class TestAgentTraceFeatures47:
             "answer": "ans",
             "validation": "VALID",
             "sources": [],
+            "citations": [],
             "tokens_used": 50,
             "retry_count": 1,
             "messages": [],
@@ -1598,3 +1603,116 @@ class TestInitialState:
         state = _initial_state("what is Generation", retrieval_question="generation stage RAG")
         assert state["question"] == "generation stage RAG"
         assert state["original_question"] == "what is Generation"
+
+    def test_initial_state_citations_is_empty_list(self):
+        """_initial_state must initialize citations to an empty list."""
+        from app.agents.rag_agent import _initial_state
+        state = _initial_state("test question")
+        assert state["citations"] == []
+
+
+# ── Citation model and _docs_to_citations helper ─────────────────────────────
+
+class TestCitationModel:
+    def test_citation_model_valid_construction(self):
+        from app.agents.rag_agent import Citation
+        c = Citation(source="policy.txt", chunk_index=2, text="Remote work is allowed.")
+        assert c.source == "policy.txt"
+        assert c.chunk_index == 2
+        assert c.text == "Remote work is allowed."
+
+    def test_docs_to_citations_converts_documents(self):
+        from langchain_core.documents import Document
+        from app.agents.rag_agent import _docs_to_citations, Citation
+        docs = [
+            Document(
+                page_content="[Document: policy.txt]\nActual chunk text.",
+                metadata={"source": "policy.txt", "chunk_index": 3, "raw_chunk": "Actual chunk text."},
+            )
+        ]
+        citations = _docs_to_citations(docs)
+        assert len(citations) == 1
+        assert isinstance(citations[0], Citation)
+        assert citations[0].source == "policy.txt"
+        assert citations[0].chunk_index == 3
+        assert citations[0].text == "Actual chunk text."
+
+    def test_docs_to_citations_truncates_to_300_chars(self):
+        from langchain_core.documents import Document
+        from app.agents.rag_agent import _docs_to_citations
+        long_text = "x" * 500
+        docs = [
+            Document(
+                page_content=long_text,
+                metadata={"source": "big.txt", "chunk_index": 0, "raw_chunk": long_text},
+            )
+        ]
+        citations = _docs_to_citations(docs)
+        assert len(citations[0].text) == 300
+
+    def test_docs_to_citations_falls_back_to_page_content(self):
+        """When raw_chunk is absent, page_content is used for citation text."""
+        from langchain_core.documents import Document
+        from app.agents.rag_agent import _docs_to_citations
+        docs = [
+            Document(
+                page_content="fallback content",
+                metadata={"source": "doc.txt"},
+            )
+        ]
+        citations = _docs_to_citations(docs)
+        assert citations[0].text == "fallback content"
+
+    def test_docs_to_citations_unknown_source_fallback(self):
+        """When source metadata is absent, 'unknown' is used."""
+        from langchain_core.documents import Document
+        from app.agents.rag_agent import _docs_to_citations
+        docs = [Document(page_content="content", metadata={})]
+        citations = _docs_to_citations(docs)
+        assert citations[0].source == "unknown"
+        assert citations[0].chunk_index == 0
+
+    def test_run_agent_returns_citations_key(self):
+        """run_agent() must include 'citations' in the returned dict."""
+        from app.agents.rag_agent import run_agent
+
+        fake_result = {
+            "answer": "ans",
+            "validation": "VALID",
+            "sources": [],
+            "citations": [],
+            "tokens_used": 0,
+            "retry_count": 1,
+            "messages": [],
+            "question": "q",
+            "retrieved_context": "ctx",
+            "retrieved_docs": [],
+            "original_question": "q",
+            "refined_query": "q",
+            "chunks_found": 0,
+            "chunks_after_grading": 0,
+            "chunks_after_rerank": 0,
+            "validation_reason": "ok",
+            "query_variants": [],
+            "hypothetical_answer": "",
+            "planner_tokens": 0,
+            "hyde_tokens": 0,
+            "grader_tokens": 0,
+            "generator_tokens": 0,
+            "validator_tokens": 0,
+            "planner_latency_ms": 0,
+            "hyde_latency_ms": 0,
+            "grader_latency_ms": 0,
+            "reranker_latency_ms": 0,
+            "generator_latency_ms": 0,
+            "validator_latency_ms": 0,
+        }
+        from unittest.mock import MagicMock, patch
+        with patch("app.agents.rag_agent.get_agent") as mock_get_agent, \
+             patch("app.agents.rag_agent.get_effective_model", return_value="gpt-4o-mini"):
+            mock_agent = MagicMock()
+            mock_agent.invoke.return_value = fake_result
+            mock_get_agent.return_value = mock_agent
+            result = run_agent("q")
+        assert "citations" in result
+        assert result["citations"] == []

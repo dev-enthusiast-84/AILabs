@@ -14,7 +14,7 @@ import axios from 'axios'
 import toast from 'react-hot-toast'
 import { settingsApi, extractErrorMessage } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
-import type { SettingsResponse, SettingsUpdateRequest, RagasScores } from '@/types'
+import type { SettingsResponse, SettingsUpdateRequest } from '@/types'
 
 const SOURCE_LABEL: Record<string, string> = {
   runtime: 'set via UI',
@@ -186,28 +186,6 @@ function LabeledSlider({
   )
 }
 
-// ── Ragas metric tile ──────────────────────────────────────────────────────────
-function MetricTile({ label, score }: { label: string; score: number }) {
-  const pct = Math.round(score * 100)
-  const colorClass =
-    score >= 0.75
-      ? { text: 'text-emerald-700', bg: 'bg-emerald-500' }
-      : score >= 0.5
-      ? { text: 'text-amber-700', bg: 'bg-amber-500' }
-      : { text: 'text-rose-700', bg: 'bg-rose-500' }
-  return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3">
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
-      <p className={`text-lg font-bold ${colorClass.text}`}>{pct}%</p>
-      <div className="mt-1.5 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-        <div
-          className={`h-full ${colorClass.bg} rounded-full`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  )
-}
 
 interface Props {
   open: boolean
@@ -268,12 +246,7 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
   const [showBlobToken, setShowBlobToken] = useState(false)
   const [blobTokenError, setBlobTokenError] = useState<string | null>(null)
 
-  // Section 7 — Ragas evaluation (admin only)
-  const [ragasScores, setRagasScores] = useState<RagasScores | null>(null)
-  const [ragasNotRun, setRagasNotRun] = useState(false)
-  const [ragasRunning, setRagasRunning] = useState(false)
-
-  // Section 8 — Pipeline feature flags (admin only)
+  // Section 7 — Pipeline feature flags (admin only)
   const [hybridBm25, setHybridBm25] = useState(true)
   const [relevanceGrader, setRelevanceGrader] = useState(false)
   const [ragasAutoEval, setRagasAutoEval] = useState(false)
@@ -404,15 +377,6 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
       })
       .catch(() => toast.error('Could not load settings.'))
       .finally(() => setLoading(false))
-    if (!isGuest) {
-      settingsApi.getRagasScores().then((scores) => {
-        if (scores) {
-          setRagasScores(scores)
-        } else {
-          setRagasNotRun(true)
-        }
-      })
-    }
     setTimeout(() => firstFocusRef.current?.focus(), 50)
   }, [open, isGuest])
 
@@ -626,11 +590,11 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 backdrop-blur-sm overflow-y-auto py-8 px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/40 w-full max-w-md overflow-hidden flex flex-col"
+        className="bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/40 w-full max-w-md overflow-hidden max-h-[90vh] flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
@@ -654,7 +618,7 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
         </div>
 
         {/* Body — scrollable */}
-        <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0 max-h-[60vh]">
+        <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
           {isGuest && (
             <div
               className={`text-xs rounded-lg px-3 py-2.5 border ${
@@ -1291,7 +1255,7 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
 
                     {/* Re-index warning */}
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      Chunker strategy, chunk size, and chunk overlap apply to newly uploaded documents only. Re-upload existing documents to apply new settings.
+                      Chunker strategy, chunk size, and chunk overlap apply to all documents at upload time. Changes made here take effect for new uploads only — re-upload existing documents to re-index them with the updated settings.
                     </div>
                   </SettingsSection>
                 </>
@@ -1544,106 +1508,6 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                     )}
                   </SettingsSection>
 
-              {/* Section 7 — Ragas Evaluation */}
-              {!isGuest && (
-                  <SettingsSection
-                    id="ragas"
-                    title="Ragas Evaluation"
-                    open={openSections.has('ragas')}
-                    onToggle={() => toggleSection('ragas')}
-                  >
-                    {ragasNotRun && !ragasScores ? (
-                      <div className="text-xs text-slate-500 space-y-1.5">
-                        <p>No evaluation has been run yet.</p>
-                        <code className="block bg-slate-100 rounded px-2 py-1 text-slate-600 font-mono text-[11px] leading-relaxed">
-                          LIVE_TESTS=1 OPENAI_API_KEY=&lt;your-openai-api-key&gt; pytest tests/live/test_live_ragas.py
-                        </code>
-                      </div>
-                    ) : ragasScores ? (
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-2">
-                          <MetricTile label="Faithfulness" score={ragasScores.faithfulness} />
-                          <MetricTile label="Answer Relevancy" score={ragasScores.answer_relevancy} />
-                          <MetricTile label="Context Precision" score={ragasScores.context_precision} />
-                          <MetricTile label="Context Recall" score={ragasScores.context_recall} />
-                        </div>
-                        <p className="text-xs text-slate-400">
-                          Last run:{' '}
-                          {new Date(ragasScores.evaluated_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}{' '}
-                          · {ragasScores.model} · {ragasScores.num_samples} samples
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 py-2">
-                        <div className="w-3 h-3 rounded-full border-2 border-sky-500 border-t-transparent animate-spin" />
-                        <p className="text-xs text-slate-400">Loading…</p>
-                      </div>
-                    )}
-                    {/* Run Evaluation button — admin only */}
-                    {!isGuest && (
-                      <div className="pt-1">
-                        <button
-                          type="button"
-                          data-testid="ragas-trigger-btn"
-                          disabled={ragasRunning}
-                          onClick={async () => {
-                            if (current?.api_key_source === 'not_configured' && !apiKey.trim()) {
-                              toast.error('OpenAI API key is required before running Ragas evaluation. Enter a key in Settings and save it first.')
-                              setKeyError('OpenAI API key is required before running Ragas evaluation.')
-                              return
-                            }
-                            if (apiKey.trim()) {
-                              toast.error('Save the OpenAI API key before running Ragas evaluation.')
-                              return
-                            }
-                            setRagasRunning(true)
-                            try {
-                              await settingsApi.triggerRagas()
-                              toast.success('Ragas evaluation started — scores will update shortly')
-                              // Reload scores after 5 seconds to pick up results
-                              setTimeout(() => {
-                                settingsApi.getRagasScores().then((scores) => {
-                                  if (scores && scores.has_results) {
-                                    setRagasScores(scores)
-                                    setRagasNotRun(false)
-                                  }
-                                })
-                              }, 5000)
-                            } catch (err) {
-                              if (axios.isAxiosError(err)) {
-                                if (err.response?.status === 422) {
-                                  toast.error('Upload documents first before running evaluation')
-                                } else if (err.response?.status === 429) {
-                                  toast.error('Evaluation already running. Please wait.')
-                                } else {
-                                  toast.error(extractErrorMessage(err))
-                                }
-                              } else {
-                                toast.error('Failed to start evaluation.')
-                              }
-                            } finally {
-                              setRagasRunning(false)
-                            }
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {ragasRunning ? (
-                            <>
-                              <div className="w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                              Running…
-                            </>
-                          ) : (
-                            'Run Evaluation'
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </SettingsSection>
-              )}
             {hasCostImpactingChanges && (
               <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 <ExclamationCircleIcon className="h-4 w-4 shrink-0 mt-0.5" />

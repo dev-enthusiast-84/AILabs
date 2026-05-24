@@ -384,7 +384,7 @@ def guest_headers_docs(client):
 
 
 def test_guest_upload_txt_succeeds(client, guest_headers_docs):
-    """Guests can upload a TXT file within the 2 MB limit."""
+    """Guests can upload a TXT file within the 3 MB limit."""
     resp = client.post(
         "/api/documents/upload",
         headers=guest_headers_docs,
@@ -395,7 +395,7 @@ def test_guest_upload_txt_succeeds(client, guest_headers_docs):
 
 
 def test_guest_upload_exceeds_size_limit(client, guest_headers_docs):
-    """Files larger than the 2 MB guest limit must return 413."""
+    """Files larger than the 3 MB guest limit must return 413."""
     from unittest.mock import patch, PropertyMock
     from app.config import Settings
     with patch.object(Settings, "guest_max_upload_size_bytes", new_callable=PropertyMock, return_value=10):

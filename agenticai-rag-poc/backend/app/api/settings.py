@@ -254,7 +254,8 @@ class SettingsResponse(BaseModel):
     max_query_length: int = 1000
     query_rate_limit_per_minute: int = 10
     max_upload_size_mb: int = 20
-    guest_max_upload_size_mb: int = 2
+    guest_max_upload_size_mb: int = 3
+    guest_max_indexed_documents: int = 1
     guest_session_ttl_minutes: int = 15
     guest_doc_retention_hours: float = 1.0
     is_vercel: bool = False
@@ -374,6 +375,7 @@ def _build_response(user: UserInDB | None = None) -> SettingsResponse:
         query_rate_limit_per_minute=settings.query_rate_limit_per_minute,
         max_upload_size_mb=settings.effective_max_upload_size_mb,
         guest_max_upload_size_mb=settings.guest_max_upload_size_mb,
+        guest_max_indexed_documents=settings.guest_max_indexed_documents,
         guest_session_ttl_minutes=settings.guest_token_expire_minutes,
         guest_doc_retention_hours=settings.guest_doc_retention_seconds / 3600,
         is_vercel=bool(os.environ.get("VERCEL")),

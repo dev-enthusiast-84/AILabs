@@ -61,59 +61,24 @@ describe('DocumentUpload', () => {
     expect(screen.getByTestId('dropzone')).toBeTruthy()
   })
 
-  it('shows PDF/CSV/XLSX hint for admin users', () => {
+  it('shows PDF/CSV/XLSX format note with "total" limit for admin users', () => {
     render(<DocumentUpload onUploaded={vi.fn()} />)
-    // Both the dropzone formatNote and the upload-size-hint paragraph mention PDF/TXT/CSV/XLSX
-    const elements = screen.getAllByText(/PDF, TXT, CSV, XLSX/)
-    expect(elements.length).toBeGreaterThanOrEqual(1)
-    // The dedicated upload-size-hint should also be present
-    expect(screen.getByTestId('upload-size-hint')).toBeTruthy()
+    // The dropzone subtitle shows the cumulative limit, not a per-file "each" limit
+    expect(screen.getByText(/PDF, TXT, CSV, XLSX.*total/i)).toBeTruthy()
   })
 
-  it('shows TXT-only guest restriction hint', () => {
+  it('shows TXT-only format note for guest users in dropzone', () => {
     setAuth({ isGuest: true })
     render(<DocumentUpload onUploaded={vi.fn()} />)
-    // The upload-size-hint shows TXT only for guests
-    const hint = screen.getByTestId('upload-size-hint')
-    expect(hint.textContent).toMatch(/TXT only/)
+    // The dropzone subtitle shows TXT-only constraint
+    expect(screen.getByText(/TXT only/)).toBeTruthy()
   })
 
-  it('shows compact guest upload limit for guest users', () => {
+  it('does not show the redundant guest upload notice box', () => {
     setAuth({ isGuest: true })
     render(<DocumentUpload onUploaded={vi.fn()} />)
-    expect(screen.getByTestId('upload-size-hint').textContent).toMatch(/Max.*MB/)
-  })
-
-  it('shows guest notice banner for guest users', () => {
-    setAuth({ isGuest: true })
-    render(<DocumentUpload onUploaded={vi.fn()} />)
-    expect(screen.getByTestId('guest-upload-note')).toBeTruthy()
-    expect(screen.getByTestId('guest-upload-note').textContent).toMatch(/You can upload 1 TXT file/)
-  })
-
-  it('shows dynamic retention hours in guest note when settings provide it', async () => {
-    setAuth({ isGuest: true })
-    vi.mocked(settingsApi.get).mockResolvedValueOnce({
-      api_key_source: 'runtime',
-      vector_store_type: 'chroma',
-      pinecone_api_key_source: 'not_configured',
-      guest_doc_retention_hours: 2,
-      guest_max_upload_size_mb: 3,
-      max_upload_size_mb: 20,
-    } as never)
-    render(<DocumentUpload onUploaded={vi.fn()} />)
-    await waitFor(() => {
-      const note = screen.getByTestId('guest-upload-note')
-      expect(note.textContent).toMatch(/removed after 2 hours/)
-      expect(note.textContent).toMatch(/up to 3 MB/)
-    })
-  })
-
-  it('does not show retention message when settings do not provide guest_doc_retention_hours', () => {
-    setAuth({ isGuest: true })
-    render(<DocumentUpload onUploaded={vi.fn()} />)
-    const note = screen.getByTestId('guest-upload-note')
-    expect(note.textContent).not.toMatch(/removed after/)
+    // Guest constraints are shown in the header banner, not in a notice inside the card
+    expect(screen.queryByTestId('guest-upload-note')).toBeNull()
   })
 
   it('shows uploading state during upload', async () => {
@@ -244,5 +209,25 @@ describe('DocumentUpload', () => {
     })
     expect(screen.getByText(/Blob read\/write token is required before uploading/)).toBeTruthy()
     expect(onOpenSettings).toHaveBeenCalledWith(expect.stringMatching(/Blob read\/write token is required/))
+  })
+
+  it('rejects a multi-file batch whose cumulative size exceeds the total limit', async () => {
+    const { getByTestId } = render(<DocumentUpload onUploaded={vi.fn()} />)
+    const input = getByTestId('file-input') as HTMLInputElement
+
+    const file1 = new File(['x'], 'a.pdf', { type: 'application/pdf' })
+    const file2 = new File(['y'], 'b.pdf', { type: 'application/pdf' })
+    // Override sizes: 12 MB + 10 MB = 22 MB, which exceeds the 20 MB admin total limit.
+    Object.defineProperty(file1, 'size', { value: 12 * 1024 * 1024 })
+    Object.defineProperty(file2, 'size', { value: 10 * 1024 * 1024 })
+
+    await act(async () => {
+      Object.defineProperty(input, 'files', { value: [file1, file2], configurable: true })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await waitFor(() => expect(screen.getAllByText('Upload failed').length).toBeGreaterThanOrEqual(1))
+    expect(screen.getAllByText(/exceeds the.*MB.*limit/i).length).toBeGreaterThanOrEqual(1)
+    expect(vi.mocked(documentsApi.upload)).not.toHaveBeenCalled()
   })
 })

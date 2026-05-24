@@ -510,10 +510,11 @@ def document_exists(source: str) -> bool:
 def _fetch_all_documents_from_db() -> list[Document]:
     """Unconditionally fetch all stored chunks from the backing store."""
     store = get_vector_store()
-    store_type = _vector_store_type()
-    if store_type == "chroma":
-        collection = store._collection
-        results = collection.get(include=["documents", "metadatas"])
+    # Use isinstance rather than _vector_store_type() to avoid a stale-cache
+    # mismatch: the LRU-cached store may have been created under different
+    # effective settings than the current request's runtime token.
+    if hasattr(store, "_collection"):  # Chroma
+        results = store._collection.get(include=["documents", "metadatas"])
         return [
             Document(page_content=text, metadata=meta or {})
             for text, meta in zip(
@@ -521,9 +522,12 @@ def _fetch_all_documents_from_db() -> list[Document]:
                 results.get("metadatas") or [],
             )
         ]
-    if store_type in ("blob", "pinecone"):
+    if isinstance(store, BlobVectorStore) or hasattr(store, "list_document_sources"):
         return store.get_all_documents()
-    # InMemoryVectorStore
+    # InMemoryVectorStore — fall back to Pinecone-style get_all_documents if present
+    if hasattr(store, "get_all_documents"):
+        return store.get_all_documents()
+    # LangChain InMemoryVectorStore internal store dict
     return [
         Document(page_content=v.get("text", ""), metadata=v.get("metadata", {}))
         for v in store.store.values()
@@ -553,10 +557,8 @@ def get_all_documents() -> list[Document]:
 def get_document_chunks(source: str) -> list[str]:
     """Return all stored chunk texts for a source document, sorted by chunk_index."""
     store = get_vector_store()
-    store_type = _vector_store_type()
-    if store_type == "chroma":
-        collection = store._collection
-        results = collection.get(
+    if hasattr(store, "_collection"):  # Chroma
+        results = store._collection.get(
             where={"source": source},
             include=["documents", "metadatas"],
         )
@@ -566,7 +568,7 @@ def get_document_chunks(source: str) -> list[str]:
         ))
         pairs.sort(key=lambda p: p[1].get("chunk_index", 0))
         return [meta.get("raw_chunk", text) for text, meta in pairs]
-    if store_type in ("blob", "pinecone"):
+    if hasattr(store, "get_document_chunks"):
         return store.get_document_chunks(source)
     # InMemoryVectorStore
     chunks: list[tuple[int, str]] = []
@@ -615,15 +617,14 @@ def get_document_content(source: str) -> str:
 
 def delete_document(source: str) -> int:
     store = get_vector_store()
-    store_type = _vector_store_type()
-    if store_type == "chroma":
+    if hasattr(store, "_collection"):  # Chroma
         collection = store._collection
         results = collection.get(where={"source": source}, include=["metadatas"])
         ids = results.get("ids") or []
         if ids:
             collection.delete(ids=ids)
         return len(ids)
-    if store_type in ("blob", "pinecone"):
+    if hasattr(store, "delete_document"):
         return store.delete_document(source)
     # InMemoryVectorStore: filter by source metadata
     ids_to_delete = [

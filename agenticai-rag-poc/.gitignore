@@ -59,6 +59,7 @@ frontend/playwright-report/
 frontend/test-results/
 playwright-report/
 test-results/
+test-reports/
 
 PENDING_TASKS.md
 artifacts/

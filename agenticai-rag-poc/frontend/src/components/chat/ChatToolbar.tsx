@@ -1,5 +1,6 @@
 import {
   ArrowDownTrayIcon,
+  BoltIcon,
   CpuChipIcon,
   SpeakerWaveIcon,
 } from '@heroicons/react/24/outline'
@@ -9,9 +10,9 @@ interface ChatToolbarProps {
   chatLanguage: ChatLanguageCode
   exportingAudio: boolean
   exportJobStatus?: string | null
+  hasVoiceMessages: boolean
   messageCount: number
   ragMode: 'simple' | 'agentic'
-  voiceOnlyConversation: boolean
   onCancelExport?: () => void
   onChangeLanguage: (language: ChatLanguageCode) => void
   onChangeMode: (mode: 'simple' | 'agentic') => void
@@ -23,9 +24,9 @@ export function ChatToolbar({
   chatLanguage,
   exportingAudio,
   exportJobStatus,
+  hasVoiceMessages,
   messageCount,
   ragMode,
-  voiceOnlyConversation,
   onCancelExport,
   onChangeLanguage,
   onChangeMode,
@@ -34,8 +35,7 @@ export function ChatToolbar({
 }: ChatToolbarProps) {
   return (
     <div className="shrink-0 flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
-      <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-        <CpuChipIcon className="h-5 w-5 text-sky-600" />
+      <h2 className="text-base font-semibold text-slate-900">
         Ask a Question
       </h2>
       <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -56,6 +56,8 @@ export function ChatToolbar({
             </option>
           ))}
         </select>
+
+        {/* RAG mode toggle — icon-only with aria-label for accessibility and tooltip via title */}
         <div
           className="flex gap-0 rounded-lg overflow-hidden border border-slate-300 text-xs bg-white shadow-sm shadow-slate-200/60"
           role="group"
@@ -65,67 +67,78 @@ export function ChatToolbar({
             type="button"
             onClick={() => onChangeMode('simple')}
             aria-pressed={ragMode === 'simple'}
-            className={`px-3 py-2 transition-colors ${
+            aria-label="Simple mode"
+            title="Simple mode — direct vector search"
+            className={`w-9 h-9 flex items-center justify-center transition-colors ${
               ragMode === 'simple'
                 ? 'bg-sky-500 text-white'
                 : 'text-slate-500 hover:text-slate-800 bg-white hover:bg-slate-50'
             }`}
           >
-            ⚡ Simple
+            <BoltIcon className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={() => onChangeMode('agentic')}
             aria-pressed={ragMode === 'agentic'}
-            className={`px-3 py-2 transition-colors ${
+            aria-label="Agentic mode"
+            title="Agentic mode — multi-step LangGraph pipeline"
+            className={`w-9 h-9 flex items-center justify-center transition-colors ${
               ragMode === 'agentic'
                 ? 'bg-sky-500 text-white'
                 : 'text-slate-500 hover:text-slate-800 bg-white hover:bg-slate-50'
             }`}
           >
-            🤖 Agentic
+            <CpuChipIcon className="h-4 w-4" />
           </button>
         </div>
+
+        {/* Export transcript — icon-only */}
         <button
           type="button"
           onClick={onExportTranscript}
           disabled={messageCount === 0}
-          className="btn-tool"
+          className="btn-tool w-9 px-0"
           data-testid="export-btn"
-          title={messageCount === 0 ? 'Ask a question before exporting the chat' : 'Export chat transcript'}
+          aria-label="Export transcript"
+          title={messageCount === 0 ? 'Ask a question before exporting' : 'Export chat transcript'}
         >
           <ArrowDownTrayIcon className="h-4 w-4" />
-          Export transcript
         </button>
-        {voiceOnlyConversation && (
-          <>
-            <button
-              type="button"
-              onClick={onExportAudio}
-              disabled={messageCount === 0 || exportingAudio}
-              className="btn-tool"
-              data-testid="export-audio-btn"
-              title="Export redacted voice chat audio"
-            >
-              <SpeakerWaveIcon className="h-4 w-4" />
-              {exportingAudio ? 'Exporting…' : 'Export audio'}
-            </button>
-            {exportingAudio && exportJobStatus && (
-              <span className="text-xs text-slate-500" data-testid="export-job-status">
-                {exportJobStatus === 'queued' ? 'Queued…' : exportJobStatus === 'running' ? 'Processing…' : 'Exporting…'}
-              </span>
-            )}
-            {exportingAudio && onCancelExport && (
-              <button
-                type="button"
-                onClick={onCancelExport}
-                className="text-xs text-rose-600 underline"
-                data-testid="cancel-export-btn"
-              >
-                Cancel
-              </button>
-            )}
-          </>
+
+        {/* Export audio — always visible; enabled when conversation has voice messages */}
+        <button
+          type="button"
+          onClick={onExportAudio}
+          disabled={messageCount === 0 || !hasVoiceMessages || exportingAudio}
+          className="btn-tool w-9 px-0"
+          data-testid="export-audio-btn"
+          aria-label="Export audio"
+          title={
+            !hasVoiceMessages
+              ? 'Available once the conversation includes voice messages'
+              : exportingAudio
+              ? 'Exporting audio…'
+              : 'Export voice chat audio'
+          }
+        >
+          <SpeakerWaveIcon className="h-4 w-4" />
+        </button>
+
+        {exportingAudio && exportJobStatus && (
+          <span className="text-xs text-slate-500" data-testid="export-job-status">
+            {exportJobStatus === 'queued' ? 'Queued…' : exportJobStatus === 'running' ? 'Processing…' : 'Exporting…'}
+          </span>
+        )}
+        {exportingAudio && onCancelExport && (
+          <button
+            type="button"
+            onClick={onCancelExport}
+            className="text-xs text-rose-600 underline"
+            data-testid="cancel-export-btn"
+          >
+            Cancel
+          </button>
         )}
       </div>
     </div>
