@@ -189,3 +189,32 @@ def test_save_creates_parent_directories(tmp_path, monkeypatch):
         num_samples=3,
     )
     assert nested_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# clear_ragas_scores
+# ---------------------------------------------------------------------------
+
+def test_clear_ragas_scores_removes_file(tmp_path, monkeypatch):
+    """clear_ragas_scores deletes the scores file when it exists."""
+    path = tmp_path / "ragas_scores.json"
+    monkeypatch.setenv("RAGAS_SCORES_FILE", str(path))
+    from app.runtime.ragas_store import save_ragas_scores, clear_ragas_scores, get_ragas_scores
+    save_ragas_scores(
+        faithfulness=0.9, answer_relevancy=0.8,
+        context_precision=0.7, context_recall=0.6,
+        model="gpt-4o-mini", num_samples=3,
+    )
+    assert path.exists()
+    clear_ragas_scores()
+    assert not path.exists()
+    assert get_ragas_scores() is None
+
+
+def test_clear_ragas_scores_no_op_when_missing(tmp_path, monkeypatch):
+    """clear_ragas_scores is a no-op when no scores file exists."""
+    path = tmp_path / "ragas_scores.json"
+    monkeypatch.setenv("RAGAS_SCORES_FILE", str(path))
+    from app.runtime.ragas_store import clear_ragas_scores
+    clear_ragas_scores()  # must not raise
+    assert not path.exists()

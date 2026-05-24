@@ -1,0 +1,191 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Enterprise Production Hardening — API Contracts",
+  "description": "Security headers, readiness, and redaction endpoint contracts for spec 005.",
+  "version": "1.0.0",
+  "date": "2026-05-24",
+
+  "security_headers": {
+    "description": "Required response headers on every /api/* response",
+    "headers": {
+      "X-Content-Type-Options": { "value": "nosniff", "owasp": "A05" },
+      "X-Frame-Options": { "value": "DENY", "owasp": "A05" },
+      "X-XSS-Protection": { "value": "1; mode=block", "owasp": "A05" },
+      "Referrer-Policy": { "value": "strict-origin-when-cross-origin", "owasp": "A05" },
+      "Permissions-Policy": {
+        "value": "geolocation=(), microphone=(self), camera=()",
+        "owasp": "A05",
+        "note": "microphone=(self) allows voice chat on app origin only. microphone=() (deny-all) is incorrect and breaks voice."
+      },
+      "Content-Security-Policy": {
+        "value": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; object-src 'none'",
+        "owasp": "A05",
+        "note": "Backend API only — serves JSON, no HTML. Vite/nginx/Vercel serve the React SPA with their own CSP."
+      },
+      "X-Request-ID": {
+        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+        "description": "Echo of incoming X-Request-ID or server-generated UUID. Used for request correlation (FR-027)."
+      },
+      "Strict-Transport-Security": {
+        "value": "max-age=31536000; includeSubDomains",
+        "condition": "APP_ENV=production only",
+        "owasp": "A02"
+      }
+    }
+  },
+
+  "endpoints": {
+    "GET /api/health": {
+      "description": "Liveness probe — always 200 if process is running",
+      "response_200": {
+        "status": "ok"
+      },
+      "notes": "Never returns 503. Use /api/readiness for dependency checks."
+    },
+
+    "GET /api/readiness": {
+      "description": "Readiness probe — 503 when required production dependencies are unavailable",
+      "response_200": {
+        "status": "ready",
+        "components": {
+          "auth": { "status": "ready" },
+          "openai": { "status": "ready" },
+          "vector_store": { "status": "ready" },
+          "file_store": { "status": "ready" },
+          "speech": { "status": "ready" }
+        }
+      },
+      "response_503": {
+        "status": "degraded",
+        "components": {
+          "openai": {
+            "status": "degraded",
+            "detail": "OpenAI API key is not configured."
+          }
+        }
+      },
+      "notes": "Component detail strings MUST NOT contain secrets, API keys, or raw configuration values."
+    },
+
+    "POST /api/voice_export/redact": {
+      "description": "Backend-authoritative redaction — returns redacted transcript without generating audio",
+      "auth": "Bearer JWT (any role)",
+      "request_body": {
+        "oneOf": [
+          {
+            "messages": [
+              { "role": "string", "content": "string" }
+            ]
+          },
+          {
+            "transcript": "string"
+          },
+          {
+            "text": "string"
+          }
+        ]
+      },
+      "response_200": {
+        "transcript": "string — redacted text with [REDACTED_*] labels",
+        "original_length": "integer",
+        "redacted_length": "integer",
+        "redacted": "boolean — true if any substitution was made"
+      },
+      "pii_labels": [
+        "[REDACTED_PRIVATE_KEY]",
+        "[REDACTED_API_KEY]",
+        "[REDACTED_TOKEN]",
+        "[REDACTED_PASSWORD]",
+        "[REDACTED_SECRET]",
+        "[REDACTED_EMAIL]",
+        "[REDACTED_SSN]",
+        "[REDACTED_PHONE]",
+        "[REDACTED_PAYMENT_CARD]"
+      ]
+    }
+  },
+
+  "redaction_invariants": {
+    "description": "Rules that must hold at all application boundaries",
+    "rules": [
+      "All text inputs MUST be stripped of leading/trailing whitespace before processing",
+      "All text sent to LLM calls (retrieval_question, answer_instruction, context chunks) MUST pass through guardrail engine",
+      "Retrieval queries MUST NOT contain answer-language instructions (retrieval_question vs answer_instruction are separate)",
+      "All transcript export artifacts MUST pass through build_redacted_transcript before serialization",
+      "All audio synthesis inputs MUST pass through redact_sensitive_text before TTS submission",
+      "Audit log payloads MUST NOT contain raw prompt bodies, document content, or credential values",
+      "HTTP error responses MUST NOT contain exception messages, stack traces, or provider payloads"
+    ]
+  },
+
+  "guardrail_coverage_matrix": {
+    "description": "Which guardrail function covers which text surface",
+    "surfaces": [
+      {
+        "surface": "typed_input",
+        "backend_fn": "sanitize_query + guardrail_engine.check_input",
+        "redaction_applied": true,
+        "audit_logged": true,
+        "test_file": "tests/unit/test_guardrail_coverage_matrix.py"
+      },
+      {
+        "surface": "voice_transcript",
+        "backend_fn": "redact_sensitive_text (in voice_export.py before TTS)",
+        "redaction_applied": true,
+        "audit_logged": true,
+        "test_file": "tests/unit/test_guardrail_coverage_matrix.py"
+      },
+      {
+        "surface": "multilingual_input",
+        "backend_fn": "sanitize_query + guardrail_engine.check_input",
+        "redaction_applied": true,
+        "audit_logged": true,
+        "test_file": "tests/unit/test_guardrail_coverage_matrix.py"
+      },
+      {
+        "surface": "translated_query",
+        "backend_fn": "guardrail_engine.check_input (on retrieval_question)",
+        "redaction_applied": true,
+        "audit_logged": true,
+        "test_file": "tests/unit/test_guardrail_coverage_matrix.py"
+      },
+      {
+        "surface": "generated_answer",
+        "backend_fn": "guardrail_engine.check_output",
+        "redaction_applied": true,
+        "audit_logged": true,
+        "test_file": "tests/unit/test_guardrail_coverage_matrix.py"
+      },
+      {
+        "surface": "playback_text",
+        "backend_fn": "redact_sensitive_text (before browser TTS utterance)",
+        "redaction_applied": true,
+        "audit_logged": false,
+        "test_file": "tests/unit/test_guardrail_coverage_matrix.py"
+      },
+      {
+        "surface": "transcript_export",
+        "backend_fn": "build_redacted_transcript",
+        "redaction_applied": true,
+        "audit_logged": true,
+        "test_file": "tests/unit/test_guardrail_coverage_matrix.py"
+      },
+      {
+        "surface": "audio_synthesis_input",
+        "backend_fn": "redact_sensitive_text (before OpenAI TTS API)",
+        "redaction_applied": true,
+        "audit_logged": true,
+        "test_file": "tests/unit/test_guardrail_coverage_matrix.py"
+      }
+    ]
+  },
+
+  "export_limits": {
+    "max_export_transcript_chars": 8000,
+    "max_audio_duration_seconds": 240,
+    "export_artifact_ttl_seconds": 300,
+    "export_job_ttl_seconds": 600,
+    "vercel_payload_limit_bytes": 4718592,
+    "notes": "Audio at 128kbps MP3 ≈ 1 MB/min; 4 min ≈ 4 MB, just under Vercel limit. async mode activates automatically for production deployments via _should_defer_export()."
+  }
+}

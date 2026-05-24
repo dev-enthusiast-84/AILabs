@@ -26,9 +26,11 @@ settings = get_settings()
 _SIMPLE_RAG_PROMPT = ChatPromptTemplate.from_messages([
     (
         "system",
+        # Language instruction first so it is not overridden by subsequent rules.
+        "{answer_instruction}"
         "Answer the question using only the provided context. "
-        "If the context does not contain the answer, say so clearly.\n"
-        "{answer_instruction}",
+        "If the context does not contain the answer, say so clearly "
+        "in whatever language is specified above.",
     ),
     ("human", "Context:\n{context}\n\nQuestion: {question}"),
 ])
@@ -83,12 +85,15 @@ def run_simple_rag(
         sources = []
         citations = []
 
+    # Ensure language instruction ends with a newline so it stays separated from
+    # the rule sentence that follows it in the prompt template.
+    normalized_instruction = (answer_instruction.rstrip() + "\n") if answer_instruction else ""
     with get_usage_metadata_callback() as cb:
         chain = _SIMPLE_RAG_PROMPT | _llm() | StrOutputParser()
         answer: str = chain.invoke({
             "context": context,
             "question": question,
-            "answer_instruction": answer_instruction,
+            "answer_instruction": normalized_instruction,
         })
 
     return {

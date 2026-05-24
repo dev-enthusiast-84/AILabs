@@ -171,7 +171,7 @@ describe('RagasDashboardModal', () => {
     render(<RagasDashboardModal open={true} onClose={onClose} />)
 
     await waitFor(() => expect(screen.getByTestId('ragas-status-empty')).toBeTruthy())
-    expect(screen.getByText(/Evaluation runs automatically/)).toBeTruthy()
+    expect(screen.getByText(/Auto-evaluation samples/)).toBeTruthy()
   })
 
   it('shows 4 metric tiles when scores has valid data', async () => {

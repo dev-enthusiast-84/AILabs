@@ -1,0 +1,220 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Universal Redactions — Canonical Contract",
+  "description": "Defines the canonical label taxonomy, coverage matrix, and invariants for the universal redaction layer.",
+  "version": "1.0.0",
+  "date": "2026-05-24",
+
+  "canonical_label_taxonomy": {
+    "description": "The authoritative mapping between field type and redaction label. Backend and frontend MUST use identical labels.",
+    "patterns": [
+      {
+        "field_type": "PEM private key",
+        "label": "[REDACTED_PRIVATE_KEY]",
+        "regex_description": "-----BEGIN * PRIVATE KEY----- ... -----END * PRIVATE KEY-----",
+        "flags": ["IGNORECASE", "DOTALL"],
+        "evaluation_order": 1,
+        "backend": true,
+        "frontend": true
+      },
+      {
+        "field_type": "API key (sk- / sk-proj- prefix)",
+        "label": "[REDACTED_API_KEY]",
+        "regex_description": "\\bsk(?:-proj)?-[A-Za-z0-9_-]{20,}\\b",
+        "evaluation_order": 2,
+        "backend": true,
+        "frontend": true
+      },
+      {
+        "field_type": "Bearer header token",
+        "label": "[REDACTED_TOKEN]",
+        "regex_description": "\\bBearer\\s+[A-Za-z0-9._~+/=-]{16,}\\b",
+        "flags": ["IGNORECASE"],
+        "evaluation_order": 3,
+        "backend": true,
+        "frontend": true,
+        "frontend_fix": "Remove 'Bearer' prefix preservation — emit [REDACTED_TOKEN] not 'Bearer [REDACTED_TOKEN]'"
+      },
+      {
+        "field_type": "Password key=value pattern",
+        "label": "[REDACTED_PASSWORD]",
+        "regex_description": "\\b(password|passwd|pwd)\\s*[:=]\\s*([^\\s,;]+)",
+        "flags": ["IGNORECASE"],
+        "evaluation_order": 4,
+        "backend": true,
+        "frontend": true,
+        "frontend_fix": "Split from combined catch-all pattern into a dedicated [REDACTED_PASSWORD] match"
+      },
+      {
+        "field_type": "Access / refresh / id / api token key=value",
+        "label": "[REDACTED_TOKEN]",
+        "regex_description": "\\b(access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?token)\\s*[:=]\\s*([A-Za-z0-9._~+/=-]{12,})",
+        "flags": ["IGNORECASE"],
+        "evaluation_order": 5,
+        "backend": true,
+        "frontend": true,
+        "frontend_fix": "Split from combined catch-all into a dedicated match that emits [REDACTED_TOKEN]"
+      },
+      {
+        "field_type": "Secret / client_secret / api_secret key=value",
+        "label": "[REDACTED_SECRET]",
+        "regex_description": "\\b(secret|client[_-]?secret|api[_-]?secret)\\s*[:=]\\s*([A-Za-z0-9._~+/=-]{12,})",
+        "flags": ["IGNORECASE"],
+        "evaluation_order": 6,
+        "backend": true,
+        "frontend": true,
+        "frontend_fix": "Split from combined catch-all into a dedicated match that emits [REDACTED_SECRET]"
+      },
+      {
+        "field_type": "Email address",
+        "label": "[REDACTED_EMAIL]",
+        "regex_description": "\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b",
+        "flags": ["IGNORECASE"],
+        "evaluation_order": 7,
+        "backend": true,
+        "frontend": true
+      },
+      {
+        "field_type": "US Social Security Number (XXX-XX-XXXX)",
+        "label": "[REDACTED_SSN]",
+        "regex_description": "\\b\\d{3}-\\d{2}-\\d{4}\\b",
+        "evaluation_order": 8,
+        "backend": true,
+        "frontend": true,
+        "frontend_fix": "Change label from [REDACTED_GOV_ID] to [REDACTED_SSN]"
+      },
+      {
+        "field_type": "US phone number",
+        "label": "[REDACTED_PHONE]",
+        "regex_description": "(?<!\\w)(?:\\+?1[\\s.-]?)?(?:\\(?\\d{3}\\)?[\\s.-]?)\\d{3}[\\s.-]?\\d{4}(?!\\w)",
+        "evaluation_order": 9,
+        "backend": true,
+        "frontend": true
+      },
+      {
+        "field_type": "Payment card number (13–19 digits, optional separators)",
+        "label": "[REDACTED_PAYMENT_CARD]",
+        "regex_description": "\\b(?:\\d[ -]*?){13,19}\\b",
+        "evaluation_order": 10,
+        "backend": true,
+        "frontend": true,
+        "ordering_note": "MUST evaluate before pattern 11 (long-token catch-all) to prevent card numbers being masked as [REDACTED_SECRET]"
+      },
+      {
+        "field_type": "Long opaque token (≥32 alphanumeric chars — catch-all)",
+        "label": "[REDACTED_SECRET]",
+        "regex_description": "\\b[A-Za-z0-9_-]{32,}\\b",
+        "evaluation_order": 11,
+        "backend": true,
+        "frontend": true,
+        "ordering_note": "MUST evaluate last — catches any remaining secrets not matched by earlier specific patterns"
+      }
+    ]
+  },
+
+  "redaction_invariants": {
+    "description": "Rules that must hold across all surfaces",
+    "rules": [
+      "redact_sensitive_text() and maskSensitive() must produce identical output for any given input string",
+      "Pattern evaluation order is fixed and must not be changed without updating tests",
+      "Pattern 10 (payment card) must always precede pattern 11 (long-token catch-all)",
+      "redact_and_flag(text).text == redact_sensitive_text(text) for all inputs",
+      "REDACTION_LABELS (frontend) must be identical to the set of labels in _PATTERNS (backend)",
+      "maskSensitive(text) == text when text contains no sensitive values (no false positives for normal prose)",
+      "Trimming (.strip()) is applied BEFORE redaction at all API boundaries"
+    ]
+  },
+
+  "guardrail_coverage_matrix": {
+    "description": "All 9 text surfaces and the redaction/trimming function applied",
+    "surfaces": [
+      {
+        "surface": "typed_query_input",
+        "function": "sanitize_query() + _check_input_guardrail() → guardrail engine PII redaction",
+        "file": "backend/app/api/query.py",
+        "user_story": "US1",
+        "trimming": true,
+        "redaction": true,
+        "audit_logged": true
+      },
+      {
+        "surface": "query_history_items",
+        "function": "sanitize_query() + _check_input_guardrail(surface='history')",
+        "file": "backend/app/api/query.py",
+        "user_story": "US1",
+        "trimming": true,
+        "redaction": true,
+        "audit_logged": false
+      },
+      {
+        "surface": "answer_instruction",
+        "function": "_check_input_guardrail(surface='language_instruction')",
+        "file": "backend/app/api/query.py",
+        "user_story": "US1",
+        "trimming": false,
+        "redaction": true,
+        "audit_logged": false
+      },
+      {
+        "surface": "voice_transcript_export",
+        "function": "build_redacted_transcript()",
+        "file": "backend/app/api/voice_export.py",
+        "user_story": "US2",
+        "trimming": true,
+        "redaction": true,
+        "audit_logged": true
+      },
+      {
+        "surface": "audio_synthesis_input",
+        "function": "redact_sensitive_text()",
+        "file": "backend/app/api/voice_export.py",
+        "user_story": "US2",
+        "trimming": true,
+        "redaction": true,
+        "audit_logged": true
+      },
+      {
+        "surface": "query_api_boundary_trim",
+        "function": "sanitize_query() → bleach.clean(...).strip()",
+        "file": "backend/app/api/query.py",
+        "user_story": "US3",
+        "trimming": true,
+        "redaction": false,
+        "note": "Trim only — redaction is separate via guardrail engine"
+      },
+      {
+        "surface": "voice_export_api_boundary_trim",
+        "function": "Pydantic @field_validator _trim_content() / _trim_optional_text()",
+        "file": "backend/app/api/voice_export.py",
+        "user_story": "US3",
+        "trimming": true,
+        "redaction": false
+      },
+      {
+        "surface": "settings_api_boundary_trim",
+        "function": "Pydantic @field_validator(mode='before') bleach.clean(...).strip()",
+        "file": "backend/app/api/settings.py",
+        "user_story": "US3",
+        "trimming": true,
+        "redaction": false
+      },
+      {
+        "surface": "chat_message_render",
+        "function": "maskSensitive() from frontend/src/lib/redact.ts",
+        "file": "frontend/src/components/chat/ChatMessageList.tsx",
+        "user_story": "US4",
+        "trimming": false,
+        "redaction": true,
+        "audit_logged": false,
+        "note": "Defense-in-depth display masking — does not substitute for backend redaction"
+      }
+    ]
+  },
+
+  "out_of_scope_v1": [
+    "International PII formats (EU IBAN, UK NI numbers, non-US phone formats)",
+    "Document corpus redaction (retrieved chunks injected into generator prompt — operator content assumed trusted)",
+    "Streaming message masking (apply to final rendered state only)",
+    "Redaction of filenames or document metadata"
+  ]
+}

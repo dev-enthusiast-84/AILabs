@@ -94,14 +94,26 @@ class TestBM25Search:
         """When rank_bm25 is not installed, returns [] and logs a warning."""
         docs = [_make_doc("some content")]
 
-        with patch.dict(sys.modules, {"rank_bm25": None}):
-            # Re-import to trigger the lazy import inside bm25_search
-            if "app.rag.bm25" in sys.modules:
-                del sys.modules["app.rag.bm25"]
+        # Save and restore the app.rag.bm25 module around this test so the
+        # patch.dict context (which deletes and re-imports the module while
+        # rank_bm25 is None) does not leave a stale module entry in sys.modules
+        # for subsequent tests.
+        original_mod = sys.modules.get("app.rag.bm25")
+        try:
+            with patch.dict(sys.modules, {"rank_bm25": None}):
+                # Re-import to trigger the lazy import inside bm25_search
+                if "app.rag.bm25" in sys.modules:
+                    del sys.modules["app.rag.bm25"]
 
-            with caplog.at_level(logging.WARNING, logger="app.rag.bm25"):
-                from app.rag.bm25 import bm25_search
-                results = bm25_search("query", docs, k=5)
+                with caplog.at_level(logging.WARNING, logger="app.rag.bm25"):
+                    from app.rag.bm25 import bm25_search
+                    results = bm25_search("query", docs, k=5)
+        finally:
+            # Remove the module that was imported under rank_bm25=None so
+            # subsequent tests always import from a clean, unpatched environment.
+            sys.modules.pop("app.rag.bm25", None)
+            if original_mod is not None:
+                sys.modules["app.rag.bm25"] = original_mod
 
         assert results == []
         assert any("rank_bm25" in r.message for r in caplog.records)
@@ -119,13 +131,16 @@ class TestBM25Search:
     def test_bm25_cache_hit_on_same_corpus(self):
         """Second call with the same corpus reuses the cached index (line 48)."""
         # Force a fresh module import so we start with a clean _bm25_cache regardless
-        # of what the test_missing_rank_bm25_returns_empty_with_warning test left behind.
+        # of any cache state left by earlier tests in this session.
         if "app.rag.bm25" in sys.modules:
             del sys.modules["app.rag.bm25"]
         import app.rag.bm25 as bm25_mod
         from app.rag.bm25 import bm25_search
 
-        assert bm25_mod._bm25_cache is None  # fresh module starts cold
+        # Explicitly reset the cache — belt-and-suspenders for any warm state
+        # that could survive a module re-import via import hooks or coverage tools.
+        bm25_mod._bm25_cache = None
+        assert bm25_mod._bm25_cache is None  # confirmed cold
 
         docs = [_make_doc("cache hit test document alpha"), _make_doc("cache hit test document beta")]
 

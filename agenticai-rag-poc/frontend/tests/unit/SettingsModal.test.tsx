@@ -65,6 +65,12 @@ vi.mock('@/services/api', () => ({
     get: vi.fn().mockResolvedValue(mockSettings),
     update: vi.fn().mockResolvedValue({ ...mockSettings, api_key_source: 'runtime' }),
   },
+  documentsApi: {
+    triggerCleanup: vi.fn(),
+  },
+  notificationsApi: {
+    sendTest: vi.fn(),
+  },
   extractErrorMessage: (e: unknown) => String(e),
 }))
 
@@ -433,5 +439,285 @@ describe('API key format validation', () => {
 
   it('rejects SQL injection attempt', () => {
     expect(API_KEY_RE.test("'; DROP TABLE users; --")).toBe(false)
+  })
+})
+
+// ── T018: Document Retention section ─────────────────────────────────────────
+
+import userEvent from '@testing-library/user-event'
+import { settingsApi, documentsApi, notificationsApi } from '@/services/api'
+
+// Extended settings with all cleanup fields
+const cleanupSettings = vi.hoisted(() => ({
+  model: 'gpt-4o-mini',
+  embedding_model: 'text-embedding-3-small',
+  api_key_masked: 'sk-****...abcd',
+  api_key_source: 'environment' as const,
+  allowed_models: ['gpt-4o-mini'],
+  allowed_embedding_models: ['text-embedding-3-small'],
+  planner_model: '',
+  generator_model: '',
+  validator_model: '',
+  retriever_k: 4,
+  similarity_score_threshold: 0.0,
+  retriever_use_mmr: false,
+  retriever_fetch_k: 20,
+  max_context_chunks: 4,
+  max_completion_tokens: 1024,
+  token_budget_warning_threshold: 800,
+  langchain_tracing_v2: false,
+  langchain_api_key_masked: '',
+  langchain_project: 'agenticai-rag-poc',
+  vector_store_type: 'chroma' as const,
+  file_store_type: 'local',
+  pinecone_api_key_masked: '',
+  pinecone_api_key_source: 'not_configured' as const,
+  pinecone_index_name: 'agenticai-rag-poc-documents',
+  pinecone_namespace: 'agenticai-rag-poc',
+  pinecone_cloud: 'aws',
+  pinecone_region: 'us-east-1',
+  blob_read_write_token_masked: '',
+  blob_read_write_token_source: 'not_configured' as const,
+  guest_settings_locked: false,
+  guest_settings_recoverable: false,
+  guest_settings_reason: 'available',
+  retriever_hybrid_bm25: true,
+  relevance_grader_enabled: false,
+  ragas_evaluation_enabled: false,
+  reranker_type: 'none',
+  allowed_reranker_types: ['cross-encoder', 'none'],
+  reranker_judge_model: 'gpt-4o-mini',
+  allowed_judge_models: ['gpt-4o-mini'],
+  chunker_type: 'recursive',
+  chunk_size: 800,
+  chunk_overlap: 100,
+  allowed_chunker_types: ['recursive', 'semantic'],
+  // Cleanup / retention fields
+  admin_cleanup_cadence: 'monthly',
+  admin_cleanup_custom_value: 30,
+  admin_cleanup_custom_unit: 'days',
+  admin_cleanup_retention_hours: 720,
+  admin_doc_count: 5,
+  admin_doc_limit: 100,
+  admin_docs_near_limit: false,
+  // Notification fields
+  notification_enabled: false,
+  notification_email: '',
+  notification_ntfy_topic: '',
+}))
+
+describe('SettingsModal — Document Retention section (T018)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAuthStore.setState({
+      token: null,
+      username: null,
+      isGuest: false,
+      guestUploadedDocs: [],
+      guestSettingsUsed: false,
+    })
+    vi.mocked(settingsApi.get).mockResolvedValue(cleanupSettings)
+    vi.mocked(settingsApi.update).mockResolvedValue({ ...cleanupSettings, api_key_source: 'runtime' })
+  })
+
+  it('document retention section absent for guest user', async () => {
+    renderModal(true, true)
+    await waitFor(() => screen.getByTestId('model-select'))
+    expect(screen.queryByText(/document retention/i)).not.toBeInTheDocument()
+  })
+
+  it('renders Monthly as default cadence for admin', async () => {
+    renderModal(true, false)
+    await waitFor(() => {
+      const select = screen.getByTestId('cleanup-cadence-select')
+      expect(select).toHaveValue('monthly')
+    })
+  })
+
+  it('Document Retention section present for admin', async () => {
+    renderModal(true, false)
+    await waitFor(() => {
+      expect(screen.getByText('Document Retention')).toBeInTheDocument()
+    })
+  })
+
+  it('shows custom number input when Custom cadence selected', async () => {
+    renderModal(true, false)
+    await waitFor(() => screen.getByTestId('cleanup-cadence-select'))
+
+    await userEvent.selectOptions(screen.getByTestId('cleanup-cadence-select'), 'custom')
+    await waitFor(() => {
+      expect(screen.getByTestId('cleanup-custom-value-input')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('cleanup-custom-unit-select')).toBeInTheDocument()
+  })
+
+  it('custom inputs not visible when non-custom cadence is selected', async () => {
+    renderModal(true, false)
+    await waitFor(() => screen.getByTestId('cleanup-cadence-select'))
+
+    // Monthly is default — custom inputs must be hidden
+    expect(screen.queryByTestId('cleanup-custom-value-input')).not.toBeInTheDocument()
+  })
+
+  it('run cleanup button calls triggerCleanup(false) and shows result', async () => {
+    const mockResult = {
+      trigger: 'manual',
+      scope: 'admin',
+      force_mode: false,
+      deleted_count: 2,
+      eligible_count: 2,
+      cadence: 'monthly',
+      retention_hours: 720,
+      deleted_sources: ['file1.txt', 'file2.txt'],
+      errors: [],
+      ran_at: new Date().toISOString(),
+    }
+    vi.mocked(documentsApi.triggerCleanup).mockResolvedValue(mockResult as any)
+
+    renderModal(true, false)
+    await waitFor(() => screen.getByTestId('run-cleanup-btn'))
+
+    await userEvent.click(screen.getByTestId('run-cleanup-btn'))
+
+    await waitFor(() => {
+      expect(documentsApi.triggerCleanup).toHaveBeenCalledWith(false)
+    })
+    await waitFor(() => {
+      expect(screen.getByText(/2 document/i)).toBeInTheDocument()
+    })
+  })
+
+  it('run cleanup button disabled while request is in-flight', async () => {
+    let resolveCleanup!: (v: any) => void
+    vi.mocked(documentsApi.triggerCleanup).mockReturnValue(
+      new Promise((res) => { resolveCleanup = res }),
+    )
+
+    renderModal(true, false)
+    await waitFor(() => screen.getByTestId('run-cleanup-btn'))
+
+    await userEvent.click(screen.getByTestId('run-cleanup-btn'))
+    expect(screen.getByTestId('run-cleanup-btn')).toBeDisabled()
+
+    // Resolve to avoid unhandled promise
+    resolveCleanup({
+      trigger: 'manual', scope: 'admin', force_mode: false,
+      deleted_count: 0, eligible_count: 0, cadence: 'monthly',
+      retention_hours: 720, deleted_sources: [], errors: [],
+      ran_at: new Date().toISOString(),
+    })
+  })
+
+  it('amber count badge shown when admin_docs_near_limit=true', async () => {
+    vi.mocked(settingsApi.get).mockResolvedValue({
+      ...cleanupSettings,
+      admin_docs_near_limit: true,
+      admin_doc_count: 85,
+      admin_doc_limit: 100,
+    })
+
+    renderModal(true, false)
+    await waitFor(() => {
+      expect(screen.getByTestId('doc-count-badge')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('doc-count-badge').textContent).toMatch(/85/)
+    expect(screen.getByTestId('doc-count-badge').textContent).toMatch(/100/)
+  })
+})
+
+// ── T033: Notifications section ──────────────────────────────────────────────
+
+describe('SettingsModal — Notifications section (T033)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAuthStore.setState({
+      token: null,
+      username: null,
+      isGuest: false,
+      guestUploadedDocs: [],
+      guestSettingsUsed: false,
+    })
+    vi.mocked(settingsApi.get).mockResolvedValue(cleanupSettings)
+  })
+
+  it('notifications section absent for guest user', async () => {
+    renderModal(true, true) // isGuest=true
+    await waitFor(() => screen.getByTestId('model-select'))
+    expect(screen.queryByText(/^Notifications$/)).not.toBeInTheDocument()
+  })
+
+  it('notifications section present for admin', async () => {
+    renderModal(true, false)
+    await waitFor(() => {
+      expect(screen.getByText('Notifications')).toBeInTheDocument()
+    })
+  })
+
+  it('email and ntfy inputs disabled when notification toggle is off', async () => {
+    renderModal(true, false)
+    await waitFor(() => screen.getByTestId('notification-email-input'))
+
+    expect(screen.getByTestId('notification-email-input')).toBeDisabled()
+    expect(screen.getByTestId('notification-ntfy-input')).toBeDisabled()
+  })
+
+  it('send test notification button disabled when toggle off', async () => {
+    renderModal(true, false)
+    await waitFor(() => screen.getByTestId('send-test-notification-btn'))
+    expect(screen.getByTestId('send-test-notification-btn')).toBeDisabled()
+  })
+
+  it('inputs enabled after enabling notification toggle', async () => {
+    renderModal(true, false)
+    await waitFor(() => screen.getByTestId('notification-enabled-toggle'))
+
+    await userEvent.click(screen.getByTestId('notification-enabled-toggle'))
+
+    expect(screen.getByTestId('notification-email-input')).not.toBeDisabled()
+    expect(screen.getByTestId('notification-ntfy-input')).not.toBeDisabled()
+  })
+
+  it('shows success message on test notification success', async () => {
+    vi.mocked(settingsApi.get).mockResolvedValue({
+      ...cleanupSettings,
+      notification_enabled: true,
+    })
+    vi.mocked(notificationsApi.sendTest).mockResolvedValue({
+      email_sent: true,
+      ntfy_sent: false,
+      errors: [],
+    })
+
+    renderModal(true, false)
+    await waitFor(() => screen.getByTestId('send-test-notification-btn'))
+
+    await userEvent.click(screen.getByTestId('send-test-notification-btn'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('test-notif-result')).toBeInTheDocument()
+      expect(screen.getByTestId('test-notif-result').textContent).toMatch(/test notification sent/i)
+    })
+  })
+
+  it('shows error message on test notification failure', async () => {
+    vi.mocked(settingsApi.get).mockResolvedValue({
+      ...cleanupSettings,
+      notification_enabled: true,
+    })
+    vi.mocked(notificationsApi.sendTest).mockResolvedValue({
+      email_sent: false,
+      ntfy_sent: false,
+      errors: ['smtp: ConnectionRefusedError'],
+    })
+
+    renderModal(true, false)
+    await waitFor(() => screen.getByTestId('send-test-notification-btn'))
+
+    await userEvent.click(screen.getByTestId('send-test-notification-btn'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('test-notif-result').textContent).toMatch(/errors/i)
+    })
   })
 })

@@ -15,6 +15,7 @@ from app.auth.models import UserInDB
 from app.auth.utils import get_current_user
 from app.core.chat_languages import ChatLanguageCode
 from app.config import get_settings
+from app.runtime.runtime_settings_cookie import restore_runtime_settings_from_cookie
 from app.runtime.settings_store import get_effective_api_key, set_runtime_scope
 from app.voice.export_jobs import VoiceExportJob, VoiceExportJobStatus, VoiceExportJobStore
 from app.voice.redaction import build_redacted_transcript, redact_sensitive_text
@@ -394,6 +395,9 @@ async def export_chat_voice(
     user: UserInDB = Depends(get_current_user),
 ):
     """Generate playable audio from a redacted chat export transcript."""
+    # Restore API key and model settings from the encrypted cookie so that
+    # guest voice exports survive Vercel serverless cold starts.
+    restore_runtime_settings_from_cookie(request, user)
     set_runtime_scope(user.role, user.session_id)
     api_key = get_effective_api_key()
     if not api_key:

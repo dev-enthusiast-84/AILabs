@@ -451,7 +451,7 @@ def test_query_rejects_unsupported_language(client, auth_headers):
 
 def test_query_guardrails_evaluate_language_instruction_surface(client, auth_headers):
     with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
-         patch("app.api.query._check_input_guardrail") as mock_guardrail, \
+         patch("app.api.query._check_input_guardrail", side_effect=lambda text, **kw: text) as mock_guardrail, \
          patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT):
         resp = client.post(
             "/api/query/",
@@ -791,3 +791,71 @@ def test_query_ragas_auto_trigger_queued_at_interval(client, auth_headers, monke
 
     assert resp.status_code == 200
     mock_ragas.assert_called_once()
+
+
+# ── Input PII redaction: redacted text reaches agent, not original ─────────────
+
+def test_query_input_pii_email_redacted_before_agent(client, auth_headers):
+    """A query containing an email address must have the email redacted before
+    run_agent is called — the original PII must not reach the LLM."""
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT) as mock_agent:
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={"question": "What does the policy say for jane@acme.com?"},
+        )
+
+    assert resp.status_code == 200
+    # run_agent receives the clean (redacted) question as its first positional arg
+    called_question = mock_agent.call_args.args[0]
+    assert "jane@acme.com" not in called_question
+    assert "[EMAIL REDACTED]" in called_question
+
+
+def test_query_input_pii_phone_redacted_before_agent(client, auth_headers):
+    """A query containing a phone number must have it redacted before run_agent is called."""
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT) as mock_agent:
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={"question": "Who manages the team that can be reached at 416-555-0199?"},
+        )
+
+    assert resp.status_code == 200
+    called_question = mock_agent.call_args.args[0]
+    assert "416-555-0199" not in called_question
+    assert "[PHONE REDACTED]" in called_question
+
+
+def test_query_input_pii_ssn_redacted_before_agent(client, auth_headers):
+    """A query containing an SSN must have it redacted before run_agent is called."""
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT) as mock_agent:
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={"question": "What benefits apply to SSN 123-45-6789?"},
+        )
+
+    assert resp.status_code == 200
+    called_question = mock_agent.call_args.args[0]
+    assert "123-45-6789" not in called_question
+    assert "[SSN REDACTED]" in called_question
+
+
+def test_query_input_pci_card_redacted_before_agent(client, auth_headers):
+    """A query containing a Visa card number must have it redacted before run_agent is called."""
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT) as mock_agent:
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={"question": "What is the payment policy for card 4111111111111111?"},
+        )
+
+    assert resp.status_code == 200
+    called_question = mock_agent.call_args.args[0]
+    assert "4111111111111111" not in called_question
+    assert "[CARD REDACTED]" in called_question

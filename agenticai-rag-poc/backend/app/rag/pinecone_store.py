@@ -63,14 +63,28 @@ class _PineconeStore:
         self._pc_index_key: tuple[str, str] | None = None
 
     def _get_index(self):
-        index_key = (get_effective_pinecone_api_key(), get_effective_pinecone_index_name())
-        if self._pc_index is not None and self._pc_index_key == index_key:
-            return self._pc_index
+        current_key = get_effective_pinecone_api_key()
+        current_name = get_effective_pinecone_index_name()
+        if self._pc_index is not None:
+            # No key available for this request context (e.g. guest user without
+            # the admin's settings cookie): reuse the already-connected index
+            # rather than attempting reconnection with an empty credential.
+            if not current_key:
+                return self._pc_index
+            if (current_key, current_name) == self._pc_index_key:
+                return self._pc_index
 
+        if not current_key:
+            raise RuntimeError(
+                "Pinecone API key is not configured. "
+                "Set it in the Settings UI or as the PINECONE_API_KEY environment variable."
+            )
+
+        index_key = (current_key, current_name)
         from pinecone import Pinecone, ServerlessSpec
 
-        pc = Pinecone(api_key=get_effective_pinecone_api_key())
-        name = get_effective_pinecone_index_name()
+        pc = Pinecone(api_key=current_key)
+        name = current_name
         existing = [idx.name for idx in pc.list_indexes()]
 
         if name not in existing:
@@ -100,6 +114,17 @@ class _PineconeStore:
 
     def _ns(self) -> str | None:
         return get_effective_pinecone_namespace() or None
+
+    def _active_filter(self) -> dict | None:
+        """Return the current retrieval filter for server-side Pinecone filtering.
+
+        Lazy import avoids a circular dependency: vector_store imports _PineconeStore,
+        so pinecone_store cannot import vector_store at module level.  By the time
+        any similarity_search method is called, vector_store is fully initialised and
+        the lazy import is safe.
+        """
+        from app.rag.vector_store import _retrieval_metadata_filter  # noqa: PLC0415
+        return _retrieval_metadata_filter.get() or None
 
     def _query_metadata_matches(self, filter: dict | None = None, top_k: int = _QUERY_TOP_K):
         """Fetch vectors by metadata query.
@@ -203,10 +228,15 @@ class _PineconeStore:
     def similarity_search_with_relevance_scores(
         self, query: str, k: int = 4
     ) -> list[tuple[Document, float]]:
+        # Pass the retrieval filter to Pinecone so that server-side filtering
+        # runs before top-k selection.  Without this, all top-k results can be
+        # admin docs and the Python-side _apply_retrieval_filter returns 0 docs
+        # for the guest — the "could not find information" bug.
         query_vec = self.embedding.embed_query(query)
         resp = self._get_index().query(
             vector=query_vec,
             top_k=k,
+            filter=self._active_filter(),
             include_metadata=True,
             include_values=False,
             namespace=self._ns(),
@@ -228,6 +258,7 @@ class _PineconeStore:
         resp = self._get_index().query(
             vector=query_vec,
             top_k=fetch_k,
+            filter=self._active_filter(),
             include_metadata=True,
             include_values=True,  # vectors needed for MMR cosine scoring
             namespace=self._ns(),

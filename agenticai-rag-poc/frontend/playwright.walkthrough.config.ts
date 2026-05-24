@@ -16,7 +16,7 @@ const isLocal = walkthroughEnv === 'local'
 
 export default defineConfig({
   testDir: './tests/walkthrough',
-  timeout: 300_000,
+  timeout: 480_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
   retries: 0,

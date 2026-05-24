@@ -74,11 +74,19 @@ def test_blob_setting_without_token_falls_back_to_memory(monkeypatch):
 
 
 def test_memory_setting_on_vercel_with_blob_token_uses_blob(monkeypatch):
+    """On Vercel with a UI-set blob token (runtime), vector store falls back to blob.
+
+    On Vercel, account_env_fallback_allowed() is False, so the blob token must
+    come from the runtime settings (UI), not from env/Settings object attributes.
+    """
     import app.rag.vector_store as vs
+    import app.runtime.settings_store as store
 
     monkeypatch.setattr(vs.settings, "vector_store_type", "memory")
-    monkeypatch.setattr(vs.settings, "blob_read_write_token", "vercel_blob_rw_test")
     monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("BLOB_READ_WRITE_TOKEN", raising=False)
+    # Simulate UI-set blob token (not env-sourced).
+    monkeypatch.setattr(store, "_runtime_blob_read_write_token", "vercel_blob_rw_test")
 
     assert vs._vector_store_type() == "blob"
 

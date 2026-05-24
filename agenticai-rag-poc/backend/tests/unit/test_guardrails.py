@@ -312,6 +312,9 @@ def test_builtin_rules_loaded_by_default():
         "prompt-injection",
         "sql-injection",
         "input-pii-email",
+        "input-pii-phone",
+        "input-pii-ssn",
+        "input-pci-card",
         "input-profanity",
         "output-pii-email",
         "output-pii-phone",
@@ -486,3 +489,61 @@ def test_rule_matches_returns_false_for_unknown_type():
     rule = MagicMock()
     rule.type = "unknown_rule_type_xyz"
     assert engine._rule_matches(rule, "some text") is False
+
+
+# ── Input PII/PCI redaction (built-in rules) ─────────────────────────────────
+
+def test_input_pii_email_redacted_by_default():
+    """input-pii-email built-in must redact email addresses from input."""
+    engine = GuardrailEngine()
+    result = engine.check("Contact me at user@example.com for help", "input")
+    assert result.allowed is True
+    assert "[EMAIL REDACTED]" in result.modified_text
+    assert "user@example.com" not in result.modified_text
+
+
+def test_input_pii_phone_redacted_by_default():
+    """input-pii-phone built-in must redact phone numbers from input."""
+    engine = GuardrailEngine()
+    result = engine.check("Call me at 555-867-5309 anytime", "input")
+    assert result.allowed is True
+    assert "[PHONE REDACTED]" in result.modified_text
+    assert "555-867-5309" not in result.modified_text
+
+
+def test_input_pii_ssn_redacted_by_default():
+    """input-pii-ssn built-in must redact SSNs from input."""
+    engine = GuardrailEngine()
+    result = engine.check("My SSN is 123-45-6789 for verification", "input")
+    assert result.allowed is True
+    assert "[SSN REDACTED]" in result.modified_text
+    assert "123-45-6789" not in result.modified_text
+
+
+def test_input_pci_card_redacted_by_default():
+    """input-pci-card built-in must redact Visa card numbers from input."""
+    engine = GuardrailEngine()
+    result = engine.check("My card is 4111111111111111 please charge it", "input")
+    assert result.allowed is True
+    assert "[CARD REDACTED]" in result.modified_text
+    assert "4111111111111111" not in result.modified_text
+
+
+def test_input_pii_email_rule_is_redact_action():
+    """input-pii-email must have action='redact', not 'flag'."""
+    from app.guardrails.store import GuardrailStore
+    store = GuardrailStore()
+    rule = store.get_rule("input-pii-email")
+    assert rule is not None
+    assert rule.action == "redact"
+
+
+def test_input_pii_rules_are_all_redact():
+    """All input-pii-* and input-pci-* rules must use action='redact'."""
+    from app.guardrails.store import GuardrailStore
+    store = GuardrailStore()
+    for rule_id in ("input-pii-email", "input-pii-phone", "input-pii-ssn", "input-pci-card"):
+        rule = store.get_rule(rule_id)
+        assert rule is not None, f"Missing rule: {rule_id}"
+        assert rule.action == "redact", f"{rule_id} should be 'redact', got '{rule.action}'"
+        assert rule.enabled is True, f"{rule_id} should be enabled by default"

@@ -34,7 +34,10 @@ from app.core.audit import audit_event
 from app.auth.utils import get_current_user
 from app.auth.models import UserInDB
 from app.config import get_settings
-from app.runtime.runtime_settings_cookie import set_runtime_settings_cookie
+from app.runtime.runtime_settings_cookie import (
+    restore_runtime_settings_from_cookie,
+    set_runtime_settings_cookie,
+)
 from app.runtime.settings_store import (
     ALLOWED_MODELS,
     ALLOWED_EMBEDDING_MODELS,
@@ -65,6 +68,12 @@ from app.runtime.settings_store import (
     get_effective_retriever_hybrid_bm25,
     get_effective_relevance_grader_enabled,
     get_effective_ragas_evaluation_enabled,
+    get_effective_ragas_auto_trigger_interval,
+    get_effective_admin_doc_retention_days,
+    get_effective_cleanup_retention_hours,
+    get_effective_notification_enabled,
+    get_effective_notification_email,
+    get_effective_notification_ntfy_topic,
     get_effective_reranker_type,
     get_effective_reranker_judge_model,
     get_effective_chunker_type,
@@ -163,11 +172,23 @@ class SettingsUpdateRequest(BaseModel):
     retriever_hybrid_bm25: bool | None = None
     relevance_grader_enabled: bool | None = None
     ragas_evaluation_enabled: bool | None = None
+    ragas_auto_trigger_interval: int | None = None
+    admin_doc_retention_days: int | None = None
     reranker_type: str | None = None
     reranker_judge_model: str | None = None
     chunker_type: str | None = None
     chunk_size: int | None = None
     chunk_overlap: int | None = None
+
+    # Cleanup cadence (admin only)
+    admin_cleanup_cadence: str | None = None
+    admin_cleanup_custom_value: int | None = None
+    admin_cleanup_custom_unit: str | None = None
+
+    # Notifications (admin only)
+    notification_enabled: bool | None = None
+    notification_email: str | None = None
+    notification_ntfy_topic: str | None = None
 
     @field_validator(
         "api_key", "model", "embedding_model", "planner_model", "generator_model",
@@ -175,6 +196,8 @@ class SettingsUpdateRequest(BaseModel):
         "pinecone_api_key", "pinecone_index_name",
         "pinecone_namespace", "pinecone_cloud", "pinecone_region",
         "blob_read_write_token", "reranker_type", "reranker_judge_model", "chunker_type",
+        "admin_cleanup_cadence", "admin_cleanup_custom_unit",
+        "notification_email", "notification_ntfy_topic",
         mode="before",
     )
     @classmethod
@@ -247,6 +270,26 @@ class SettingsResponse(BaseModel):
     guest_settings_recoverable: bool = False
     guest_settings_reason: str = "admin"
 
+    # Configurable admin document cleanup
+    ragas_auto_trigger_interval: int = 50
+    admin_doc_retention_days: int = 30
+
+    # Cleanup cadence
+    admin_cleanup_cadence: str = "monthly"
+    admin_cleanup_custom_value: int | None = None
+    admin_cleanup_custom_unit: str = "days"
+    admin_cleanup_retention_hours: int = 720
+
+    # Doc count (read-only)
+    admin_doc_count: int = 0
+    admin_doc_limit: int = 100
+    admin_docs_near_limit: bool = False
+
+    # Notifications
+    notification_enabled: bool = False
+    notification_email: str = ""
+    notification_ntfy_topic: str = ""
+
     # Informational — read-only, not user-editable
     retriever_fusion_mode: str = "rrf"
     reranker_top_k: int = 4
@@ -297,6 +340,21 @@ def _guest_lock_state(user: UserInDB | None = None) -> tuple[bool, bool, str]:
     return False, True, "settings_lost_after_restart"
 
 
+def _mask_email(email: str) -> str:
+    """Mask an email address for display (OWASP A02)."""
+    if not email or "@" not in email:
+        return email
+    local, domain = email.split("@", 1)
+    return f"{local[0]}**@{domain}"
+
+
+def _mask_ntfy_topic(topic: str) -> str:
+    """Mask an ntfy topic for display (OWASP A02 — treat as shared secret)."""
+    if not topic:
+        return ""
+    return f"{topic[:4]}***" if len(topic) > 4 else "***"
+
+
 def _build_response(user: UserInDB | None = None) -> SettingsResponse:
     """Build a SettingsResponse from current effective runtime state."""
     guest_locked, guest_recoverable, guest_reason = _guest_lock_state(user)
@@ -323,6 +381,33 @@ def _build_response(user: UserInDB | None = None) -> SettingsResponse:
         blob_source = "environment"
     else:
         blob_source = "not_configured"
+
+    # Compute admin doc count (T022)
+    try:
+        from app.rag.vector_store import get_all_documents
+        all_docs = get_all_documents()
+        seen_sources: set[str] = set()
+        for doc in all_docs:
+            meta = doc.metadata or {}
+            if meta.get("owner_role") == "admin":
+                src = meta.get("source", "")
+                if src:
+                    seen_sources.add(src)
+        admin_doc_count = len(seen_sources)
+    except Exception:
+        admin_doc_count = 0
+
+    admin_doc_limit = settings.admin_max_indexed_documents
+    admin_docs_near_limit = admin_doc_count >= admin_doc_limit * 0.8
+
+    # Resolve effective cadence for display
+    try:
+        from app.rag.cleanup import CADENCE_HOURS as _CADENCE_HOURS
+        _cadence_cfg = settings.admin_cleanup_cadence
+        _admin_cleanup_retention_hours = get_effective_cleanup_retention_hours()
+    except Exception:
+        _cadence_cfg = "monthly"
+        _admin_cleanup_retention_hours = 720
 
     return SettingsResponse(
         model=get_effective_model(),
@@ -357,6 +442,8 @@ def _build_response(user: UserInDB | None = None) -> SettingsResponse:
         retriever_hybrid_bm25=get_effective_retriever_hybrid_bm25(),
         relevance_grader_enabled=get_effective_relevance_grader_enabled(),
         ragas_evaluation_enabled=get_effective_ragas_evaluation_enabled(),
+        ragas_auto_trigger_interval=get_effective_ragas_auto_trigger_interval(),
+        admin_doc_retention_days=get_effective_admin_doc_retention_days(),
         reranker_type=get_effective_reranker_type(),
         allowed_reranker_types=sorted(ALLOWED_RERANKER_TYPES),
         reranker_judge_model=get_effective_reranker_judge_model(),
@@ -380,14 +467,28 @@ def _build_response(user: UserInDB | None = None) -> SettingsResponse:
         guest_doc_retention_hours=settings.guest_doc_retention_seconds / 3600,
         is_vercel=bool(os.environ.get("VERCEL")),
         supports_cross_encoder=importlib.util.find_spec("sentence_transformers") is not None,
+        # Cleanup cadence
+        admin_cleanup_cadence=settings.admin_cleanup_cadence,
+        admin_cleanup_custom_value=settings.admin_cleanup_custom_value,
+        admin_cleanup_custom_unit=settings.admin_cleanup_custom_unit,
+        admin_cleanup_retention_hours=_admin_cleanup_retention_hours,
+        # Doc count
+        admin_doc_count=admin_doc_count,
+        admin_doc_limit=admin_doc_limit,
+        admin_docs_near_limit=admin_docs_near_limit,
+        # Notifications (masked)
+        notification_enabled=get_effective_notification_enabled(),
+        notification_email=_mask_email(get_effective_notification_email()),
+        notification_ntfy_topic=_mask_ntfy_topic(get_effective_notification_ntfy_topic()),
     )
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.get("/", response_model=SettingsResponse)
-async def get_settings_view(_user=Depends(get_current_user)):
+async def get_settings_view(request: Request, _user=Depends(get_current_user)):
     """Return current effective settings. API key and LangSmith key are always masked."""
+    restore_runtime_settings_from_cookie(request, _user)
     set_runtime_scope(_user.role, _user.session_id)
     return _build_response(_user)
 
@@ -459,8 +560,11 @@ async def update_settings(
             "max_completion_tokens", "token_budget_warning_threshold",
             "langchain_tracing_v2", "langchain_api_key", "langchain_project",
             "retriever_hybrid_bm25", "relevance_grader_enabled", "ragas_evaluation_enabled",
+            "ragas_auto_trigger_interval", "admin_doc_retention_days",
             "reranker_type", "reranker_judge_model",
             "chunker_type", "chunk_size", "chunk_overlap",
+            "admin_cleanup_cadence", "admin_cleanup_custom_value", "admin_cleanup_custom_unit",
+            "notification_enabled", "notification_email", "notification_ntfy_topic",
         }
         if any(getattr(body, f) is not None for f in non_guest_fields):
             audit_event("settings_update", status="rejected", request=request, user=user, error_category="guest_forbidden_fields")
@@ -482,8 +586,11 @@ async def update_settings(
         "pinecone_namespace", "pinecone_cloud", "pinecone_region",
         "blob_read_write_token",
         "retriever_hybrid_bm25", "relevance_grader_enabled", "ragas_evaluation_enabled",
+        "ragas_auto_trigger_interval", "admin_doc_retention_days",
         "reranker_type", "reranker_judge_model",
         "chunker_type", "chunk_size", "chunk_overlap",
+        "admin_cleanup_cadence", "admin_cleanup_custom_value", "admin_cleanup_custom_unit",
+        "notification_enabled", "notification_email", "notification_ntfy_topic",
     ]
     if all(getattr(body, f) is None for f in all_fields):
         audit_event("settings_update", status="rejected", request=request, user=user, error_category="empty_update")
@@ -655,6 +762,20 @@ async def update_settings(
     validated_relevance_grader_enabled: bool | None = body.relevance_grader_enabled
     validated_ragas_evaluation_enabled: bool | None = body.ragas_evaluation_enabled
 
+    validated_ragas_auto_trigger_interval: int | None = None
+    if body.ragas_auto_trigger_interval is not None:
+        if body.ragas_auto_trigger_interval < 1 or body.ragas_auto_trigger_interval > 10000:
+            errors["ragas_auto_trigger_interval"] = "Must be between 1 and 10000."
+        else:
+            validated_ragas_auto_trigger_interval = body.ragas_auto_trigger_interval
+
+    validated_admin_doc_retention_days: int | None = None
+    if body.admin_doc_retention_days is not None:
+        if body.admin_doc_retention_days < 1 or body.admin_doc_retention_days > 3650:
+            errors["admin_doc_retention_days"] = "Must be between 1 and 3650 days (10 years)."
+        else:
+            validated_admin_doc_retention_days = body.admin_doc_retention_days
+
     validated_reranker_type: str | None = None
     if body.reranker_type is not None:
         try:
@@ -690,6 +811,49 @@ async def update_settings(
             validated_chunk_overlap = validate_chunk_overlap(body.chunk_overlap, effective_size)
         except ValueError as exc:
             errors["chunk_overlap"] = str(exc)
+
+    # Cleanup cadence validation
+    ALLOWED_CADENCES = {"hourly", "daily", "weekly", "biweekly", "monthly", "custom"}
+
+    validated_admin_cleanup_cadence: str | None = None
+    if body.admin_cleanup_cadence is not None:
+        if body.admin_cleanup_cadence not in ALLOWED_CADENCES:
+            errors["admin_cleanup_cadence"] = "Must be one of: hourly, daily, weekly, biweekly, monthly, custom."
+        else:
+            validated_admin_cleanup_cadence = body.admin_cleanup_cadence
+
+    validated_admin_cleanup_custom_value: int | None = None
+    if body.admin_cleanup_custom_value is not None:
+        if not (1 <= body.admin_cleanup_custom_value <= 8760):
+            errors["admin_cleanup_custom_value"] = "Must be between 1 and 8760."
+        else:
+            validated_admin_cleanup_custom_value = body.admin_cleanup_custom_value
+
+    validated_admin_cleanup_custom_unit: str | None = None
+    if body.admin_cleanup_custom_unit is not None:
+        if body.admin_cleanup_custom_unit not in ("hours", "days"):
+            errors["admin_cleanup_custom_unit"] = "Must be 'hours' or 'days'."
+        else:
+            validated_admin_cleanup_custom_unit = body.admin_cleanup_custom_unit
+
+    # Notification validation
+    validated_notification_enabled: bool | None = body.notification_enabled
+
+    validated_notification_email: str | None = None
+    if body.notification_email is not None:
+        import re as _re
+        if body.notification_email and not _re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', body.notification_email):
+            errors["notification_email"] = "Invalid email format."
+        else:
+            validated_notification_email = body.notification_email
+
+    validated_notification_ntfy_topic: str | None = None
+    if body.notification_ntfy_topic is not None:
+        import re as _re
+        if body.notification_ntfy_topic and not _re.match(r'^[A-Za-z0-9\-]+$', body.notification_ntfy_topic):
+            errors["notification_ntfy_topic"] = "Must contain only alphanumeric characters and hyphens."
+        else:
+            validated_notification_ntfy_topic = body.notification_ntfy_topic
 
     if errors:
         audit_event(
@@ -731,6 +895,14 @@ async def update_settings(
         retriever_hybrid_bm25=validated_retriever_hybrid_bm25,
         relevance_grader_enabled=validated_relevance_grader_enabled,
         ragas_evaluation_enabled=validated_ragas_evaluation_enabled,
+        ragas_auto_trigger_interval=validated_ragas_auto_trigger_interval,
+        admin_doc_retention_days=validated_admin_doc_retention_days,
+        admin_cleanup_cadence=validated_admin_cleanup_cadence,
+        admin_cleanup_custom_value=validated_admin_cleanup_custom_value,
+        admin_cleanup_custom_unit=validated_admin_cleanup_custom_unit,
+        notification_enabled=validated_notification_enabled,
+        notification_email=validated_notification_email,
+        notification_ntfy_topic=validated_notification_ntfy_topic,
         reranker_type=validated_reranker_type,
         reranker_judge_model=validated_reranker_judge_model,
         chunker_type=validated_chunker_type,
@@ -927,9 +1099,20 @@ async def trigger_ragas_eval(
             detail="Admin only.",
         )
 
-    # Check that at least one document is indexed before starting
+    # Restore runtime credentials from cookie so has_documents() and the
+    # background task can reach Pinecone/Blob on Vercel (credentials are
+    # stored in the encrypted cookie, not in env vars).
+    restore_runtime_settings_from_cookie(request, user)
+
+    # Check that at least one document is indexed before starting.
+    # Guard against vector store unavailability (e.g. Vercel cold start with
+    # ephemeral ChromaDB) — treat as "no documents" rather than propagating a 500.
     from app.rag.vector_store import has_documents
-    if not has_documents():
+    try:
+        docs_exist = has_documents()
+    except Exception:
+        docs_exist = False
+    if not docs_exist:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No documents indexed. Upload documents first.",
@@ -941,6 +1124,25 @@ async def trigger_ragas_eval(
         status="started",
         message="Ragas evaluation running in background",
     )
+
+
+@router.delete("/ragas-scores", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_ragas_scores_view(
+    user: UserInDB = Depends(get_current_user),
+):
+    """Delete stored Ragas evaluation scores, resetting evaluation history. Admin only.
+
+    OWASP A01 — admin role enforced; guests receive 403.
+    """
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin only.",
+        )
+    from app.runtime.ragas_store import clear_ragas_scores
+    clear_ragas_scores()
+    _log.info("ragas_scores.cleared", user=user.username)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/ragas-scores", response_model=RagasScoresResponse)

@@ -44,6 +44,8 @@ export default function RagasDashboardModal({ open, onClose }: Props) {
   const [scores, setScores] = useState<RagasScores | null>(null)
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
   // True while we are polling after triggering an evaluation
   const [polling, setPolling] = useState(false)
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -101,6 +103,20 @@ export default function RagasDashboardModal({ open, onClose }: Props) {
 
   if (!open) return null
 
+  const clearHistory = async () => {
+    setClearing(true)
+    try {
+      await settingsApi.clearRagasScores()
+      setScores(null)
+      setConfirmClear(false)
+      toast.success('Evaluation history cleared.')
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    } finally {
+      setClearing(false)
+    }
+  }
+
   const runEvaluation = async () => {
     if (settings?.api_key_source === 'not_configured') {
       toast.error('OpenAI API key is required before running Ragas evaluation.')
@@ -154,12 +170,9 @@ export default function RagasDashboardModal({ open, onClose }: Props) {
       return 'Configure an OpenAI API key in Settings first to run evaluations.'
     }
     if (settings?.ragas_evaluation_enabled === false) {
-      return 'No evaluation results yet. Auto-evaluation is off — click Run to evaluate manually, or enable Auto-eval in Settings → Pipeline.'
+      return 'No results yet. Auto-evaluation is off — enable it in Settings → Pipeline, or click Run to evaluate now (admin only).'
     }
-    if (settings?.ragas_evaluation_enabled === true) {
-      return 'No results yet. Evaluation runs automatically every 50 queries, or click Run now.'
-    }
-    return 'No Ragas evaluation results yet.'
+    return 'No results yet. Auto-evaluation samples 1 in 50 queries. Run a manual evaluation to see scores immediately.'
   }
 
   return (
@@ -236,6 +249,48 @@ export default function RagasDashboardModal({ open, onClose }: Props) {
                 })}{' '}
                 · {scores.model} · {scores.num_samples} samples
               </p>
+              {/* Cleanup info — admin only */}
+              {!isGuest && (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-2">
+                  <div>
+                    <p className="text-xs font-medium text-slate-600">Cleanup</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Scores are replaced each time evaluation runs (auto: 1 in 50 queries; manual: on demand).
+                      Clear history to reset results — the next evaluation will populate fresh scores.
+                    </p>
+                  </div>
+                  {confirmClear ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-rose-700 font-medium">Clear all scores?</span>
+                      <button
+                        type="button"
+                        onClick={() => void clearHistory()}
+                        disabled={clearing}
+                        className="btn-secondary text-xs text-rose-600 border-rose-300 hover:border-rose-400 disabled:opacity-50"
+                        data-testid="ragas-clear-confirm-btn"
+                      >
+                        {clearing ? 'Clearing…' : 'Yes, clear'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClear(false)}
+                        className="text-xs text-slate-500 underline"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClear(true)}
+                      className="btn-secondary text-xs"
+                      data-testid="ragas-clear-btn"
+                    >
+                      Clear history
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <>

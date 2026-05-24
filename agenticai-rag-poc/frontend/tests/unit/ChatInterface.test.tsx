@@ -365,9 +365,8 @@ describe('ChatInterface — multilingual chat', () => {
     })
 
     await renderChat()
-    fireEvent.change(screen.getByRole('combobox', { name: /chat language/i }), {
-      target: { value: 'es' },
-    })
+    fireEvent.click(screen.getByTestId('chat-language-select'))
+    fireEvent.mouseDown(screen.getByText('Spanish'))
     await submitQuery('¿Cuál es la política?')
 
     await waitFor(() => expect(queryApi.ask).toHaveBeenCalledOnce())
@@ -394,9 +393,8 @@ describe('ChatInterface — multilingual chat', () => {
     })
 
     await renderChat()
-    fireEvent.change(screen.getByRole('combobox', { name: /chat language/i }), {
-      target: { value: 'fr' },
-    })
+    fireEvent.click(screen.getByTestId('chat-language-select'))
+    fireEvent.mouseDown(screen.getByText('French'))
     await submitQuery('Quelle est la politique?')
     fireEvent.click(await screen.findByRole('button', { name: /export transcript/i }))
 
@@ -830,9 +828,8 @@ describe('ChatInterface — voice chat', () => {
       tokens_used: 100,
     })
     await renderChat()
-    fireEvent.change(screen.getByRole('combobox', { name: /chat language/i }), {
-      target: { value: 'es' },
-    })
+    fireEvent.click(screen.getByTestId('chat-language-select'))
+    fireEvent.mouseDown(screen.getByText('Spanish'))
     await waitFor(() => expect(screen.getByRole('button', { name: /start voice input/i })).not.toBeDisabled())
     fireEvent.click(screen.getByRole('button', { name: /start voice input/i }))
     await act(async () => {
@@ -963,7 +960,7 @@ describe('ChatInterface — voice chat', () => {
     const utteranceCalls = vi.mocked(window.SpeechSynthesisUtterance).mock.calls
     const spokenText = utteranceCalls[utteranceCalls.length - 1]?.[0] as string
     expect(spokenText).toContain('[REDACTED_EMAIL]')
-    expect(spokenText).toContain('Bearer [REDACTED_TOKEN]')
+    expect(spokenText).toContain('[REDACTED_TOKEN]')
     expect(spokenText).toContain('[REDACTED_PAYMENT_CARD]')
     expect(spokenText).not.toContain('jane@example.com')
     expect(spokenText).not.toContain('4111 1111 1111 1111')

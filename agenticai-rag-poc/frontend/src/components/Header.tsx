@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowRightStartOnRectangleIcon,
   BeakerIcon,
+  BugAntIcon,
   Cog6ToothIcon,
   DocumentMagnifyingGlassIcon,
   UserIcon,
@@ -14,6 +15,7 @@ import { authApi, settingsApi } from '@/services/api'
 import SettingsModal from '@/components/SettingsModal'
 import GuardrailsModal from '@/components/GuardrailsModal'
 import RagasDashboardModal from '@/components/RagasDashboardModal'
+import TroubleshootModal from '@/components/TroubleshootModal'
 
 function useSessionCountdown(token: string | null): string {
   const [label, setLabel] = useState('')
@@ -68,6 +70,7 @@ export default function Header({
   const [internalOpen, setInternalOpen] = useState(false)
   const [guardrailsOpen, setGuardrailsOpen] = useState(false)
   const [ragasDashboardOpen, setRagasDashboardOpen] = useState(false)
+  const [troubleshootOpen, setTroubleshootOpen] = useState(false)
   const [guestUploadMb, setGuestUploadMb] = useState(3)
   const [guestMaxDocs, setGuestMaxDocs] = useState(1)
   const [adminUploadMb, setAdminUploadMb] = useState(20)
@@ -143,6 +146,18 @@ export default function Header({
                   Signed in as <span className="font-semibold text-sky-600">{username}</span>
                 </span>
               )}
+
+              {/* Troubleshooting agent — visible to all */}
+              <Tip label="Troubleshoot">
+                <button
+                  onClick={() => setTroubleshootOpen(true)}
+                  className={iconBtn}
+                  aria-label="Open troubleshooting agent"
+                  data-testid="troubleshoot-btn"
+                >
+                  <BugAntIcon className="h-4 w-4" />
+                </button>
+              </Tip>
 
               {/* RAGAS dashboard — visible to all; modal restricts trigger to admins */}
               <Tip label="RAGAS Dashboard">
@@ -220,7 +235,7 @@ export default function Header({
               >
                 Sign in
               </button>{' '}
-              for PDF/CSV/XLSX + {adminUploadMb} MB
+              for PDF, TXT, CSV, XLSX + {adminUploadMb} MB
             </p>
           </div>
         )}
@@ -240,6 +255,10 @@ export default function Header({
       <RagasDashboardModal
         open={ragasDashboardOpen}
         onClose={() => setRagasDashboardOpen(false)}
+      />
+      <TroubleshootModal
+        open={troubleshootOpen}
+        onClose={() => setTroubleshootOpen(false)}
       />
     </>
   )

@@ -6,7 +6,10 @@ import { getWalkthroughDocSet, getGuestDocSet, type AdminDocSet, type DemoDoc } 
 const username = process.env.WALKTHROUGH_USERNAME
 const password = process.env.WALKTHROUGH_PASSWORD
 const interactiveSettings = process.env.WALKTHROUGH_INTERACTIVE_SETTINGS === 'true'
-const interactiveTimeoutMs = Number(process.env.WALKTHROUGH_INTERACTIVE_TIMEOUT_MS ?? 600_000)
+// Default: 3 minutes for remote live demos. Set WALKTHROUGH_INTERACTIVE_TIMEOUT_MS to override.
+// Keeping this well below the 5-minute test timeout prevents the browser from hanging
+// on a failed recording when the operator does not close the settings dialog.
+const interactiveTimeoutMs = Number(process.env.WALKTHROUGH_INTERACTIVE_TIMEOUT_MS ?? 180_000)
 
 // Local: credentials come from env vars; ChromaDB + local file storage.
 // Remote: credentials must be entered via Settings UI; Pinecone/Blob storage.
@@ -14,7 +17,7 @@ const isRemote = (process.env.WALKTHROUGH_ENV ?? 'local') === 'remote'
 
 // Remote LLM + vector-store calls take longer due to network round-trips.
 // Increase timeouts to avoid intermittent failures on cold remote deployments.
-const QUERY_RESPONSE_TIMEOUT = isRemote ? 60_000 : 40_000
+const QUERY_RESPONSE_TIMEOUT = isRemote ? 90_000 : 45_000
 // 4-doc admin upload takes longer to index; remote Pinecone/Blob adds extra latency.
 const uploadPostWaitMs = (role: 'guest' | 'admin') =>
   role === 'admin' ? (isRemote ? 6_000 : 4_000) : 2_500
@@ -538,6 +541,24 @@ async function runWalkthrough(
   await queryInput.click().catch(() => null)
   await page.waitForTimeout(300)
 
+  // Fetch current pipeline settings to compose dynamic captions
+  let pipelineDesc = 'Seven-node pipeline: planner → HyDE → retrieval → grader → reranker → generator → validator, with full trace and grounded sources.'
+  let voiceAgenticDesc = 'The spoken question enters the full seven-node pipeline with graded retrieval and self-validation — combining natural speech with explainable AI.'
+  try {
+    const settingsResp = await page.request.get('/api/settings', {
+      headers: { 'Cookie': await page.context().cookies().then(cs => cs.map(c => `${c.name}=${c.value}`).join('; ')) }
+    }).catch(() => null)
+    if (settingsResp?.ok()) {
+      const s = await settingsResp.json()
+      const nodes = ['planner', 'HyDE', 'retrieval']
+      if (s.relevance_grader_enabled) nodes.push('grader')
+      if (s.reranker_type && s.reranker_type !== 'none') nodes.push('reranker')
+      nodes.push('generator', 'validator')
+      pipelineDesc = `${nodes.length}-node pipeline: ${nodes.join(' → ')}, with full trace and grounded sources.`
+      voiceAgenticDesc = `The spoken question enters the full ${nodes.length}-node pipeline with graded retrieval and self-validation — combining natural speech with explainable AI.`
+    }
+  } catch { /* keep defaults */ }
+
   // ── 1. Text chat — Simple RAG ─────────────────────────────────────────────
   await caption(
     page,
@@ -574,7 +595,7 @@ async function runWalkthrough(
   await caption(
     page,
     'Text chat — Agentic AI',
-    'Seven-node pipeline: planner → HyDE → retrieval → grader → reranker → generator → validator, with full trace and grounded sources.',
+    pipelineDesc,
   )
   await switchRagMode(page, 'agentic')
   await queryInput.fill(resolvedQuestions.agenticText)
@@ -702,7 +723,7 @@ async function runWalkthrough(
   await caption(
     page,
     'Voice chat — Agentic AI',
-    'The spoken question enters the full seven-node pipeline with graded retrieval and self-validation — combining natural speech with explainable AI.',
+    voiceAgenticDesc,
   )
   await switchRagMode(page, 'agentic')
   await setVoiceTranscript(page, resolvedQuestions.voiceAgentic)
@@ -758,9 +779,10 @@ async function runWalkthrough(
     await caption(
       page,
       'Captivating feature: multilingual RAG',
-      'Switch the response language — the retrieval and ranking pipeline stays grounded in the original document while the LLM presents the answer in Spanish (or French, German, Hindi, and more).',
+      'Switch the response language — the retrieval and ranking pipeline stays grounded in the original document while the LLM presents the answer in your chosen language.',
     )
-    await languageSelect.selectOption('es')
+    await languageSelect.click()
+    await page.getByRole('option', { name: 'Spanish' }).click()
     await page.waitForTimeout(400)
     await queryInput.fill(resolvedQuestions.multilingual)
     await queryInput.press('Enter')
@@ -768,7 +790,7 @@ async function runWalkthrough(
     if (multilingualResult === 'found') {
       await caption(
         page,
-        'Respuesta en español',
+        'Spanish-language response',
         'The RAG pipeline retrieved English context and the LLM generated a Spanish answer — the same document grounding, a different output language. Source filenames remain visible in the original language.',
       )
     } else {
@@ -779,14 +801,17 @@ async function runWalkthrough(
       )
     }
     await page.waitForTimeout(1_200)
-    // Reset to English so subsequent steps are unaffected
-    await languageSelect.selectOption('en')
+    // Reset to English so subsequent steps are unaffected.
+    // SelectInput is a custom portal component (button + listbox), not a native
+    // <select> — use click-based selection instead of selectOption().
+    await languageSelect.click()
+    await page.getByRole('option', { name: 'English' }).click()
     await page.waitForTimeout(300)
   } else {
     await caption(
       page,
       'Multilingual output — skipped',
-      'The language selector enables answers in Spanish, French, German, Hindi, and more while keeping retrieval grounded to the indexed document. It was not visible at this point.',
+      'The language selector enables multilingual answers while keeping retrieval grounded to the indexed document. It was not visible at this point.',
     )
     await page.waitForTimeout(1_000)
   }
@@ -834,6 +859,27 @@ async function runWalkthrough(
   }
   await page.waitForTimeout(600)
 
+  // ── PII / PCI redaction demo ──────────────────────────────────────────────
+  // Embed a PII pattern in the query to show the guardrail engine redacts it
+  // before the question reaches the LLM. The redacted version is still routed
+  // through the full pipeline — the answer is grounded as normal.
+  await caption(
+    page,
+    'Guardrails in action: PII redaction',
+    'Queries containing PII (emails, phones, SSNs, card numbers) are automatically redacted before reaching the LLM. The [REDACTED] placeholder is forwarded; the document answer is unaffected.',
+  )
+  await switchRagMode(page, 'simple')
+  const piiDemoQuery = `${resolvedQuestions.simpleText.replace(/[?!]$/, '')} (contact: demo@example.com or call 555-867-5309)?`
+  await queryInput.fill(piiDemoQuery)
+  await queryInput.press('Enter')
+  await waitForQueryResponse(page, QUERY_RESPONSE_TIMEOUT)
+  await caption(
+    page,
+    'PII stripped — answer unaffected',
+    'The email address and phone number were redacted to [REDACTED] before the query reached the LLM. The pipeline answers from grounded document context as normal.',
+  )
+  await page.waitForTimeout(1200)
+
   // ── Ragas evaluation ──────────────────────────────────────────────────────
   // Show caption BEFORE opening the dialog so no DOM injection occurs while
   // the modal is open (avoids potential focus-trap disruption).
@@ -877,6 +923,37 @@ async function runWalkthrough(
       'The Ragas dashboard button was not visible at this point. It requires at least one indexed document and a configured provider key.',
     )
     await page.waitForTimeout(1000)
+  }
+
+  // ── Document cleanup (admin only) ─────────────────────────────────────────
+  // Show the cleanup button in the document list to demonstrate the retention
+  // management feature. Guests cannot trigger cleanup — skip for guest role.
+  if (role === 'admin') {
+    await caption(
+      page,
+      'Document cleanup — retention management',
+      'Admin feature: documents older than the configured retention window (default 30 days, adjustable to 1–3,650 days in Settings) can be removed manually or on a cadence schedule.',
+      'top',
+    )
+    const cleanupBtn = page.getByTestId('cleanup-btn')
+    const cleanupBtnVisible = await cleanupBtn.isVisible({ timeout: 4000 }).catch(() => false)
+    if (cleanupBtnVisible) {
+      await cleanupBtn.scrollIntoViewIfNeeded().catch(() => null)
+      await page.waitForTimeout(1000)
+      await caption(
+        page,
+        'Cleanup button',
+        'Removes stale admin documents that exceed the retention threshold. Results are logged; optional email or ntfy.sh notification can alert the operator when cleanup runs.',
+      )
+      await page.waitForTimeout(1800)
+    } else {
+      await caption(
+        page,
+        'Document cleanup',
+        'The cleanup button appears in the document list. Configure the retention period and cadence (hourly → monthly or custom) in the Settings panel → Cleanup section.',
+      )
+      await page.waitForTimeout(1500)
+    }
   }
 
   // ── Final ─────────────────────────────────────────────────────────────────

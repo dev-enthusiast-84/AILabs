@@ -41,8 +41,8 @@ User question
 | **Retriever** | Fans out across primary + 2 variants + HyDE (up to 4 searches); fuses results with Reciprocal Rank Fusion (RRF); optional BM25 adds a 5th lexical list; supports MMR and score-threshold | `RETRIEVER_K`, `RETRIEVER_FUSION_MODE`, `RETRIEVER_HYBRID_BM25`, `RETRIEVER_USE_MMR`, `SIMILARITY_SCORE_THRESHOLD` | queries → `retrieved_docs` + `sources` |
 | **Grader** | Self-RAG relevance filter — presents all chunks to an LLM in one call; drops irrelevant chunks before generation; keeps full set if all graded irrelevant | `RELEVANCE_GRADER_ENABLED`, `PLANNER_MODEL` | docs → filtered `retrieved_docs` + `chunks_after_grading` |
 | **Reranker** | Two modes: **llm-judge** (default) — single OpenAI batch call scores all chunks 0–10 using `RERANKER_JUDGE_MODEL` (default `gpt-4.1-mini`); structured output via `_LLMJudgeScores`; 8 s timeout with graceful fallback; works on Vercel. **cross-encoder** — `sentence_transformers.CrossEncoder` scores (question, chunk) pairs; lazy-imports; silently disabled if package absent; not available on Vercel (~80 MB model); `_cross_encoder_cache` dict keyed by model name prevents repeated downloads. Cross-encoder authentication: passes `token=HF_TOKEN` (if set) or `token=False` (explicit opt-out) to suppress unauthenticated-request warnings. `RERANKER_JUDGE_MODEL` is configurable at runtime via Settings UI without restart. | `RERANKER_TYPE`, `RERANKER_JUDGE_MODEL`, `RERANKER_MODEL`, `RERANKER_TOP_K`, `HF_TOKEN` | filtered docs → reordered docs + `chunks_after_rerank` |
-| **Generator** | Grounded answer constrained strictly to retrieved context; refuses fabrication; prepends revision hint on retries; token budget enforced | `GENERATOR_MODEL`, `MAX_COMPLETION_TOKENS` | context + question → answer text |
-| **Validator** | Structured output (`_ValidationResult`) classifies `VALID` or `NEEDS_REVISION`; routes back to Generator via conditional edge up to `_MAX_RETRIES = 2` | `VALIDATOR_MODEL` | answer + context → `validation` + `validation_reason` |
+| **Generator** | Grounded answer constrained strictly to retrieved context; refuses fabrication; prepends revision hint on retries; token budget enforced. When `answer_instruction` is set (e.g. a language directive), it is placed at the **top** of the system prompt — before the rules block — so the LLM processes the language instruction first. On retries the hint reads: *"Maintain the output language specified in the system prompt."* | `GENERATOR_MODEL`, `MAX_COMPLETION_TOKENS` | context + question → answer text |
+| **Validator** | Structured output (`_ValidationResult`) classifies `VALID` or `NEEDS_REVISION`; routes back to Generator via conditional edge up to `_MAX_RETRIES = 2`. When `answer_instruction` is non-empty, the validator receives a `language_note` field instructing it not to mark non-English answers as faithfulness errors. | `VALIDATOR_MODEL` | answer + context → `validation` + `validation_reason` |
 
 ---
 
@@ -65,6 +65,16 @@ Seven complementary techniques are layered into the agentic pipeline. All featur
 ## Simple RAG Mode
 
 `mode="simple"` bypasses all seven nodes. `run_simple_rag()` in `app/rag/pipeline.py` executes a single retrieve → generate pass. `validation` is always `"N/A"`. LLM cost is roughly one-third of agentic mode. Use for fast, low-cost queries where hallucination risk is acceptable.
+
+---
+
+## Multilingual Support
+
+When a language directive is required (e.g. "Reply in French"), the pipeline applies three coordinated fixes:
+
+1. **Generator system prompt ordering** — `answer_instruction` is placed at the **top** of the system prompt, before the grounding rules block. This ensures the LLM sees and honours the language directive before any other instruction.
+2. **Validator `language_note`** — when `answer_instruction` is non-empty, the validator prompt includes a `language_note` field such as *"The user requested a non-English response. Do not mark non-English answers as faithfulness errors."* This prevents the validator from incorrectly flagging valid multilingual answers as `NEEDS_REVISION`.
+3. **Retry hint** — on `NEEDS_REVISION` retries, the revision hint appended to the generator prompt includes: *"Maintain the output language specified in the system prompt."*
 
 ---
 

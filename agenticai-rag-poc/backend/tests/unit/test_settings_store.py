@@ -2129,3 +2129,49 @@ def test_get_masked_api_key_env_fallback_masked_when_no_runtime_key(monkeypatch)
     store._runtime_api_key = prev
     # With env key set, should return masked with "(from environment)"
     assert "from environment" in result or "****" in result
+
+
+def test_vercel_env_blocks_provider_env_fallbacks(monkeypatch):
+    """On Vercel, account_env_fallback_allowed() returns False even if app_env != production."""
+    import app.runtime.settings_store as store
+    from unittest.mock import patch
+
+    reset_runtime_settings(monkeypatch)
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("BLOB_READ_WRITE_TOKEN", raising=False)
+
+    with patch("app.runtime.settings_store.get_settings") as mock_settings:
+        mock_settings.return_value.app_env = "development"
+        mock_settings.return_value.openai_api_key = "sk-env-key-should-be-ignored"
+        mock_settings.return_value.pinecone_api_key = "pc-env-key-should-be-ignored"
+        mock_settings.return_value.blob_read_write_token = "vercel_blob_rw_env_should_be_ignored"
+        mock_settings.return_value.vercel_blob_read_write_token = ""
+
+        from app.runtime.settings_store import account_env_fallback_allowed
+        assert account_env_fallback_allowed() is False
+
+        assert get_effective_api_key() == ""
+        assert get_effective_pinecone_api_key() == ""
+        assert get_effective_blob_read_write_token() == ""
+
+
+def test_non_vercel_dev_env_allows_provider_env_fallbacks(monkeypatch):
+    """Outside Vercel with app_env=development, env fallback is allowed."""
+    import app.runtime.settings_store as store
+    from unittest.mock import patch
+
+    reset_runtime_settings(monkeypatch)
+    monkeypatch.delenv("VERCEL", raising=False)
+
+    with patch("app.runtime.settings_store.get_settings") as mock_settings:
+        mock_settings.return_value.app_env = "development"
+        mock_settings.return_value.openai_api_key = "sk-dev-env-key"
+        mock_settings.return_value.pinecone_api_key = "pc-dev-key"
+        mock_settings.return_value.blob_read_write_token = ""
+        mock_settings.return_value.vercel_blob_read_write_token = ""
+
+        from app.runtime.settings_store import account_env_fallback_allowed
+        assert account_env_fallback_allowed() is True
+
+        assert get_effective_api_key() == "sk-dev-env-key"
+        assert get_effective_pinecone_api_key() == "pc-dev-key"

@@ -1,0 +1,265 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Document Cleanup API",
+    "description": "Admin manual cleanup with cadence-based retention and force mode. Guest cleanup is automatic and has no public endpoint.",
+    "version": "1.1.0"
+  },
+  "paths": {
+    "/api/documents/cleanup": {
+      "post": {
+        "summary": "Trigger admin document cleanup",
+        "description": "Starts a background sweep that deletes admin-owned documents. Normal mode: deletes docs older than the configured cadence threshold. Force mode (force=true): deletes all admin docs regardless of age — use when the upload limit is reached. Rate-limited to 2 requests/minute.",
+        "operationId": "trigger_cleanup",
+        "security": [{ "bearerAuth": [] }],
+        "tags": ["documents", "cleanup"],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CleanupRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cleanup completed (sync) or started (async background)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CleanupResult" },
+                "examples": {
+                  "normal": {
+                    "summary": "Normal cadence cleanup",
+                    "value": {
+                      "trigger": "manual",
+                      "scope": "admin",
+                      "force_mode": false,
+                      "deleted_count": 2,
+                      "eligible_count": 2,
+                      "cadence": "monthly",
+                      "retention_hours": 720,
+                      "deleted_sources": ["old-report.pdf", "draft-notes.txt"],
+                      "errors": [],
+                      "ran_at": "2026-05-24T14:00:00Z"
+                    }
+                  },
+                  "force": {
+                    "summary": "Force cleanup (limit reached)",
+                    "value": {
+                      "trigger": "manual",
+                      "scope": "admin",
+                      "force_mode": true,
+                      "deleted_count": 8,
+                      "eligible_count": 8,
+                      "cadence": "monthly",
+                      "retention_hours": null,
+                      "deleted_sources": ["doc1.pdf", "doc2.txt", "doc3.pdf"],
+                      "errors": [],
+                      "ran_at": "2026-05-24T14:05:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid JWT" },
+          "403": { "description": "Guest JWT — admin required" },
+          "429": { "description": "Rate limit exceeded (2/minute)" },
+          "503": { "description": "Vector store or file store unavailable" }
+        }
+      }
+    },
+    "/api/documents/cleanup/status": {
+      "get": {
+        "summary": "Get last cleanup result",
+        "description": "Returns the cached result of the most recent cleanup run since server start.",
+        "operationId": "get_cleanup_status",
+        "security": [{ "bearerAuth": [] }],
+        "tags": ["documents", "cleanup"],
+        "responses": {
+          "200": {
+            "description": "Last cleanup result or empty status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CleanupStatusResponse" }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid JWT" },
+          "403": { "description": "Guest JWT — admin required" }
+        }
+      }
+    },
+    "/api/notifications/test": {
+      "post": {
+        "summary": "Send a test notification",
+        "description": "Sends a test email and/or ntfy.sh push notification using the currently configured notification settings. Admin only.",
+        "operationId": "send_test_notification",
+        "security": [{ "bearerAuth": [] }],
+        "tags": ["notifications"],
+        "responses": {
+          "200": {
+            "description": "Test notification dispatched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "email_sent": { "type": "boolean" },
+                    "ntfy_sent": { "type": "boolean" },
+                    "errors": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid JWT" },
+          "403": { "description": "Guest JWT — admin required" },
+          "422": { "description": "No notification channels configured" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "schemas": {
+      "CleanupRequest": {
+        "type": "object",
+        "properties": {
+          "force": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, bypass the cadence age threshold and delete all admin docs regardless of upload date. Use when upload limit is reached."
+          }
+        }
+      },
+      "CleanupResult": {
+        "type": "object",
+        "required": ["trigger", "scope", "force_mode", "deleted_count", "eligible_count", "deleted_sources", "errors", "ran_at"],
+        "properties": {
+          "trigger": {
+            "type": "string",
+            "enum": ["manual", "session_start"],
+            "description": "What initiated this cleanup"
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["admin", "guest"],
+            "description": "Which role's documents were evaluated"
+          },
+          "force_mode": {
+            "type": "boolean",
+            "description": "True when age threshold was bypassed (limit-hit scenario)"
+          },
+          "deleted_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "eligible_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cadence": {
+            "type": ["string", "null"],
+            "enum": ["hourly", "daily", "weekly", "biweekly", "monthly", "custom", null],
+            "description": "Cadence preset used; null for guest session-based cleanup"
+          },
+          "retention_hours": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "description": "Effective age threshold in hours; null when force_mode=true or guest sweep"
+          },
+          "deleted_sources": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Display filenames of deleted documents"
+          },
+          "errors": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Safe error descriptions for partial failures"
+          },
+          "ran_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CleanupStatusResponse": {
+        "type": "object",
+        "required": ["has_result"],
+        "properties": {
+          "has_result": { "type": "boolean" },
+          "result": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/CleanupResult" },
+              { "type": "null" }
+            ]
+          }
+        }
+      },
+      "SettingsResponseAdditions": {
+        "description": "Fields added to the existing GET /api/settings response",
+        "type": "object",
+        "properties": {
+          "admin_cleanup_cadence": {
+            "type": "string",
+            "enum": ["hourly", "daily", "weekly", "biweekly", "monthly", "custom"],
+            "description": "Active cadence preset"
+          },
+          "admin_cleanup_custom_value": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "description": "Custom cadence number (only when cadence=custom)"
+          },
+          "admin_cleanup_custom_unit": {
+            "type": "string",
+            "enum": ["hours", "days"],
+            "description": "Unit for custom_value"
+          },
+          "admin_cleanup_retention_hours": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Read-only derived retention age in hours"
+          },
+          "admin_doc_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Current admin-owned document count"
+          },
+          "admin_doc_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Upload-limit warning threshold"
+          },
+          "admin_docs_near_limit": {
+            "type": "boolean",
+            "description": "True when admin_doc_count >= admin_doc_limit * 0.8"
+          },
+          "notification_enabled": { "type": "boolean" },
+          "notification_email": {
+            "type": "string",
+            "description": "Masked recipient email (e.g. o**@example.com)"
+          },
+          "notification_ntfy_topic": {
+            "type": "string",
+            "description": "Masked ntfy.sh topic"
+          }
+        }
+      },
+      "AllowedCadences": {
+        "description": "Valid cadence preset values and their effective retention hours",
+        "type": "object",
+        "properties": {
+          "hourly":   { "type": "integer", "const": 1 },
+          "daily":    { "type": "integer", "const": 24 },
+          "weekly":   { "type": "integer", "const": 168 },
+          "biweekly": { "type": "integer", "const": 336 },
+          "monthly":  { "type": "integer", "const": 720 }
+        }
+      }
+    }
+  }
+}

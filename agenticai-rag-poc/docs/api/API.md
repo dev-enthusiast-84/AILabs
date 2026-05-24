@@ -84,15 +84,19 @@ grep ADMIN_PASSWORD backend/.env
 | `GET`  | `/api/documents/{filename}/file` | Bearer | ✅ | Original uploaded file bytes (correct MIME) |
 | `POST` | `/api/documents/upload` | Bearer | ✅ TXT/3MB | Upload + index a document. **409** if filename already indexed. |
 | `DELETE` | `/api/documents/{filename}` | Bearer | ❌ 403 | Remove document + all vector-store chunks. **404** if not found. |
+| `POST` | `/api/documents/cleanup` | Bearer | ❌ 403 | Trigger admin document cleanup. Body: `CleanupRequest`. Returns `CleanupResult`. Rate-limited 2/minute. **Admin only.** |
+| `GET` | `/api/documents/cleanup/status` | Bearer | ❌ 403 | Return the last cleanup result (`CleanupStatusResponse`). **Admin only.** |
+| `POST` | `/api/notifications/test` | Bearer | ❌ 403 | Send test notification via all configured channels. Returns `{email_sent, ntfy_sent, errors}`. **Admin only.** **422** if no channels configured. |
 | `POST` | `/api/query/` | Bearer | ✅ | Run RAG query (`mode="agentic"` default or `mode="simple"`). **422** for unknown mode. |
 | `POST` | `/api/chat/voice/redact` | Bearer | ✅ | Return backend-redacted export transcript without generating audio. |
 | `POST` | `/api/chat/voice/export` | Bearer | ✅ | Generate redacted MP3 audio synchronously for small non-production exports, or return **202** deferred job metadata for production/large/deferred exports. |
 | `GET` | `/api/chat/voice/export/jobs/{job_id}` | Bearer | ✅ | Poll a deferred voice export job. Succeeded jobs include an in-memory MP3 artifact until expiration. |
 | `DELETE` | `/api/chat/voice/export/jobs/{job_id}` | Bearer | ✅ | Cancel a queued/running deferred voice export job and suppress any later artifact. |
-| `GET`  | `/api/settings/` | Bearer | ✅ | Active model, masked API key, and pipeline flags (including `ragas_evaluation_enabled`) |
-| `POST` | `/api/settings/` | Bearer | ✅ limited | Update API key (any time) or model (once per guest session). `ragas_evaluation_enabled` flag requires admin. |
+| `GET`  | `/api/settings/` | Bearer | ✅ | Active model, masked API key, and pipeline flags. Includes cleanup cadence (`admin_cleanup_cadence`, `admin_cleanup_retention_hours`), doc-count fields (`admin_doc_count`, `admin_doc_limit`, `admin_docs_near_limit`), masked notification fields, and admin-only fields `ragas_auto_trigger_interval` and `admin_doc_retention_days`. |
+| `POST` | `/api/settings/` | Bearer | ✅ limited | Update API key (any time) or model (once per guest session). Cleanup cadence (`admin_cleanup_cadence`, `admin_cleanup_custom_value`, `admin_cleanup_custom_unit`), notification fields (`notification_enabled`, `notification_email`, `notification_ntfy_topic`), `ragas_auto_trigger_interval`, and `admin_doc_retention_days` require admin. |
 | `POST` | `/api/settings/ragas-trigger` | Bearer | ❌ 403 | Trigger an async Ragas evaluation run (admin only). Rate-limited to 1 per 5 min per IP. |
 | `GET`  | `/api/settings/ragas-scores` | Bearer | ❌ 403 | Last Ragas evaluation scores. **200** with `has_results: false` when no run yet. |
+| `DELETE` | `/api/settings/ragas-scores` | Bearer | ❌ 403 | Clear stored Ragas evaluation scores. Returns **204 No Content**. **Admin only.** |
 | `GET`  | `/api/guardrails/` | Bearer | ✅ | List all guardrail rules |
 | `GET`  | `/api/guardrails/{id}` | Bearer | ✅ | Get a single guardrail rule |
 | `POST` | `/api/guardrails/` | Bearer | ❌ 403 | Create a new guardrail rule |

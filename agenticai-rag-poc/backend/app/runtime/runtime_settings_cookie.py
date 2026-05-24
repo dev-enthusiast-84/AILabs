@@ -19,7 +19,7 @@ from fastapi import Request, Response
 
 from app.auth.models import UserInDB
 from app.config import get_settings
-from app.runtime.settings_store import set_request_runtime_settings
+from app.runtime.settings_store import persist_infra_credentials, set_request_runtime_settings
 
 COOKIE_NAME = "rag_ui_settings"
 HEADER_NAME = "X-Runtime-Settings"
@@ -145,14 +145,20 @@ def restore_runtime_settings_from_token(raw: str | None, user: UserInDB) -> bool
     }
     set_request_runtime_settings(restored)
 
-    # If the cookie carries a blob token, reset the vector store singleton so the
-    # next call builds BlobVectorStore with the restored token.  On a cold Vercel
-    # start the cache may already hold an InMemoryVectorStore (built by an earlier
-    # unauthenticated request); clearing it here costs one store rebuild but
-    # ensures durable Blob-backed retrieval for all authenticated requests.
-    # BlobVectorStore is stateless on init (all data lives in Vercel Blob), so no
-    # indexed documents are lost by this reset.
-    if restored.get("blob_read_write_token"):
+    # Promote admin infra credentials (Pinecone key, blob token) to module-level
+    # globals so subsequent requests on the same Vercel function instance —
+    # including guest requests that have no settings cookie — can reach the
+    # vector store and file store without needing the admin's cookie themselves.
+    if payload.get("role") == "admin":
+        persist_infra_credentials(restored)
+
+    # Clear the vector store singleton whenever durable storage credentials are
+    # restored from the cookie.  On a cold Vercel start the cache may already
+    # hold an InMemoryVectorStore (built before the cookie was read); clearing it
+    # here costs one store rebuild but ensures the correct durable backend is used.
+    # Both BlobVectorStore and PineconeStore are stateless on init (all data lives
+    # in external storage), so no indexed documents are lost by this reset.
+    if restored.get("blob_read_write_token") or restored.get("pinecone_api_key"):
         try:
             import app.rag.vector_store as _vs_mod
             _vs_mod.get_vector_store.cache_clear()

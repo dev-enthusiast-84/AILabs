@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { RefObject } from 'react'
 import {
   CheckBadgeIcon,
@@ -11,6 +11,7 @@ import {
   SparklesIcon,
 } from '@heroicons/react/24/outline'
 import type { ChatMessage, Citation } from '@/types'
+import { maskSensitive } from '@/lib/redact'
 
 interface ChatMessageListProps {
   bottomRef: RefObject<HTMLDivElement>
@@ -104,22 +105,24 @@ function EmptyChatState({
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-100 to-indigo-100 border border-sky-200 flex items-center justify-center mb-4">
             <CpuChipIcon className="h-7 w-7 text-sky-600" />
           </div>
-          <p className="text-sm text-slate-500 mb-4">Ask a question about your documents:</p>
           {suggestionsLoading ? (
             <p className="text-xs text-slate-400">Reading uploaded content…</p>
           ) : suggestions.length > 0 ? (
-            <div className="flex flex-wrap gap-2 justify-center max-w-md">
-              {suggestions.map((question) => (
-                <button
-                  key={question}
-                  data-testid="suggestion-btn"
-                  onClick={() => onSuggestionClick(question)}
-                  className="text-xs px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 hover:border-sky-300 transition-colors"
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
+            <>
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">Suggested questions</p>
+              <div className="flex flex-wrap gap-2 justify-center max-w-md">
+                {suggestions.map((question) => (
+                  <button
+                    key={question}
+                    data-testid="suggestion-btn"
+                    onClick={() => onSuggestionClick(question)}
+                    className="text-xs px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 hover:border-sky-300 transition-colors"
+                  >
+                    {question}
+                  </button>
+                ))}
+              </div>
+            </>
           ) : (
             <p className="text-xs text-slate-400 max-w-sm">
               Type your question in the box below to get started.
@@ -229,23 +232,23 @@ function AssistantMessageFooter({
 
           {expandedTraces.has(message.id) && (
             <div className="mt-2 rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs font-mono space-y-1.5" data-testid={`trace-panel-${message.id}`}>
-              <TraceRow label="Planner" value={message.trace.refined_query} sub={`${message.trace.planner_model} · ${message.trace.planner_tokens} tok · ${message.trace.planner_latency_ms}ms`} />
+              <TraceRow label="Planner" value={maskSensitive(message.trace.refined_query)} sub={`${message.trace.planner_model} · ${message.trace.planner_tokens} tok · ${message.trace.planner_latency_ms}ms`} />
               {message.trace.original_question && message.trace.refined_query && message.trace.original_question !== message.trace.refined_query && (
-                <div className="text-xs text-slate-400 mt-0.5 truncate" title={message.trace.original_question}>
-                  ← <span className="italic">{message.trace.original_question.slice(0, 80)}{message.trace.original_question.length > 80 ? '…' : ''}</span>
+                <div className="text-xs text-slate-400 mt-0.5 truncate" title={maskSensitive(message.trace.original_question)}>
+                  ← <span className="italic">{maskSensitive(message.trace.original_question).slice(0, 80)}{message.trace.original_question.length > 80 ? '…' : ''}</span>
                 </div>
               )}
               {message.trace.hypothetical_answer && (
                 <TraceRow
                   label="HyDE"
-                  value={message.trace.hypothetical_answer}
+                  value={maskSensitive(message.trace.hypothetical_answer)}
                   sub={`${message.trace.hyde_tokens} tok · ${message.trace.hyde_latency_ms}ms`}
                 />
               )}
               {message.trace.query_variants && message.trace.query_variants.length > 0 && (
                 <TraceRow
                   label="Variants"
-                  value={message.trace.query_variants.join(' · ')}
+                  value={message.trace.query_variants.map(maskSensitive).join(' · ')}
                 />
               )}
               <TraceRow label="Retriever" value={`${message.trace.chunks_found} chunk${message.trace.chunks_found !== 1 ? 's' : ''} from: ${message.sources?.join(', ') || '—'}`} />
@@ -270,7 +273,7 @@ function AssistantMessageFooter({
               />
               <TraceRow
                 label="Validator"
-                value={message.trace.validation_reason}
+                value={maskSensitive(message.trace.validation_reason)}
                 sub={`${message.trace.validator_model} · ${message.trace.validator_tokens} tok · ${message.trace.validator_latency_ms}ms`}
               />
             </div>
@@ -294,6 +297,7 @@ function MessageBubble({
   message: ChatMessage
 }) {
   const isError = message.role === 'assistant' && message.error
+  const maskedContent = useMemo(() => maskSensitive(message.content), [message.content])
 
   return (
     <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -306,7 +310,7 @@ function MessageBubble({
               : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm'
         }`}
       >
-        <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+        <p className="whitespace-pre-wrap leading-relaxed">{maskedContent}</p>
 
         {message.role === 'assistant' && !isError && (message.citations?.length || message.sources?.length) ? (
           <div className="mt-2.5 pt-2.5 border-t border-slate-200">

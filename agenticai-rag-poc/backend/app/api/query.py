@@ -19,7 +19,7 @@ from app.core.chat_languages import SUPPORTED_LANGUAGES, ChatLanguageCode
 from app.config import get_settings
 from app.core.errors import SafeAppError, safe_app_error_from_exception
 from app.runtime.runtime_settings_cookie import restore_runtime_settings_from_cookie
-from app.runtime.settings_store import get_effective_ragas_evaluation_enabled, is_runtime_key_set
+from app.runtime.settings_store import get_effective_ragas_evaluation_enabled, get_effective_ragas_auto_trigger_interval, is_runtime_key_set
 from app.guardrails.engine import GuardrailEngine
 from app.guardrails.store import get_guardrail_store
 from app.guardrails.safety import sanitize_query
@@ -34,7 +34,6 @@ limiter = Limiter(key_func=get_remote_address)
 
 _guardrail_engine = GuardrailEngine()
 
-_RAGAS_AUTO_TRIGGER_INTERVAL: int = 50
 
 
 def _retrieval_filter_for_user(user: UserInDB) -> dict:
@@ -90,19 +89,26 @@ def _answer_instruction_for_language(language: str) -> str:
     )
 
 
-def _check_input_guardrail(text: str, *, surface: str) -> None:
+def _check_input_guardrail(text: str, *, surface: str) -> str:
+    """Run the input guardrail and return the (possibly PII-redacted) text.
+
+    Raises HTTP 400 when a block rule fires. Returns modified_text which
+    is the input with any redact rules applied (PII, PCI, secrets stripped).
+    """
     result = _guardrail_engine.check(text, "input")
     if not result.allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Query blocked by content policy.",
         )
-    if result.flagged:
-        log.warning(
-            "query_flagged",
+    if result.flagged or result.modified_text != text:
+        log.info(
+            "query_input_guardrail_applied",
             surface=surface,
             violations=[v.rule_id for v in result.violations],
+            redacted=result.modified_text != text,
         )
+    return result.modified_text
 
 
 _RAG_ACRONYM_RE = re.compile(r"\brag\b", re.IGNORECASE)
@@ -196,13 +202,15 @@ async def query_documents(request: Request, body: QueryRequest, background_tasks
         )
 
     clean_question = sanitize_query(body.question)
-    retrieval_question = _contextual_retrieval_question(clean_question, body.history)
     answer_instruction = _answer_instruction_for_language(body.language)
 
     # ── Input guardrail check ─────────────────────────────────────────────────
     # Must run after sanitize_query so HTML/injection already stripped.
-    # Applied to BOTH modes — sanitise_query + guardrail run BEFORE the mode branch.
-    _check_input_guardrail(clean_question, surface="original")
+    # Returns modified_text with PII/PCI redacted (email, phone, SSN, card).
+    # Applied to BOTH modes and BOTH roles (admin + guest).
+    clean_question = _check_input_guardrail(clean_question, surface="original")
+    # Build retrieval question AFTER redaction so context uses the clean version.
+    retrieval_question = _contextual_retrieval_question(clean_question, body.history)
     for message in body.history:
         if message.role == "user":
             _check_input_guardrail(sanitize_query(message.content), surface="history")
@@ -272,7 +280,7 @@ async def query_documents(request: Request, body: QueryRequest, background_tasks
     # Stateless — no shared counter — so trigger rate is correct across multiple
     # workers or serverless instances without any coordination overhead.
     if (
-        random.random() < 1.0 / _RAGAS_AUTO_TRIGGER_INTERVAL
+        random.random() < 1.0 / get_effective_ragas_auto_trigger_interval()
         and get_effective_ragas_evaluation_enabled()
         and is_runtime_key_set()
     ):

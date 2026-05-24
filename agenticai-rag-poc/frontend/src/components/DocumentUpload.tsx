@@ -20,8 +20,6 @@ const ACCEPTED_GUEST = {
   'text/plain': ['.txt'],
 }
 
-// Vercel serverless body limit is ~4.5 MB; cap admin uploads at 4 MB when deployed there.
-const MAX_SIZE_ADMIN = (__IS_VERCEL__ ? 4 : 20) * 1024 * 1024
 
 interface Props {
   onUploaded: () => void
@@ -57,7 +55,7 @@ export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
   const adminLimitMb = settingsMaxUploadMb ?? (__IS_VERCEL__ ? 4 : 20)
 
   const accept  = isGuest ? ACCEPTED_GUEST : ACCEPTED_ADMIN
-  const maxSize = isGuest ? guestMaxUploadMb * 1024 * 1024 : MAX_SIZE_ADMIN
+  const maxSize = isGuest ? guestMaxUploadMb * 1024 * 1024 : adminLimitMb * 1024 * 1024
 
   const onDrop = useCallback(
     async (accepted: File[]) => {

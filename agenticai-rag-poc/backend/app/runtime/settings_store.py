@@ -111,6 +111,14 @@ _GUEST_SETTINGS_TTL = 3600.0  # 1 hour — matches guest token expiry
 _runtime_retriever_hybrid_bm25: bool | None = None
 _runtime_relevance_grader_enabled: bool | None = None
 _runtime_ragas_evaluation_enabled: bool | None = None
+_runtime_ragas_auto_trigger_interval: int | None = None
+_runtime_admin_doc_retention_days: int | None = None
+_runtime_cleanup_cadence: str = ""          # empty = use config default
+_runtime_cleanup_custom_value: int | None = None
+_runtime_cleanup_custom_unit: str = ""       # empty = use config default
+_runtime_notification_enabled: bool | None = None
+_runtime_notification_email: str = ""
+_runtime_notification_ntfy_topic: str = ""
 _runtime_reranker_type: str | None = None
 _runtime_reranker_judge_model: str = ""   # empty = fall back to .env config
 _runtime_chunker_type: str | None = None
@@ -188,10 +196,16 @@ def _request_value(name: str, default: Any = "") -> Any:
 def account_env_fallback_allowed() -> bool:
     """Return whether billing-bearing env values may be used.
 
-    Local development/test environments may read .env for convenience. In
-    production, effective provider credentials and cost-shaping knobs must come
-    from runtime Settings UI overrides only.
+    Local/Docker environments may read .env for convenience.
+    Fallback is blocked when:
+      - APP_ENV=production is explicitly set, OR
+      - the VERCEL env var is present (Vercel sets this automatically).
+    In both cases all billable credentials (API keys, tokens) must be supplied
+    exclusively through the Settings UI — no silent env-var reads.
     """
+    import os
+    if os.environ.get("VERCEL"):
+        return False
     return get_settings().app_env != "production"
 
 
@@ -907,6 +921,63 @@ def get_effective_ragas_evaluation_enabled() -> bool:
         )
 
 
+def get_effective_ragas_auto_trigger_interval() -> int:
+    """Return the 1-in-N query probability denominator for auto-triggering Ragas."""
+    with _lock:
+        return (
+            _runtime_ragas_auto_trigger_interval
+            if _runtime_ragas_auto_trigger_interval is not None
+            else get_settings().ragas_auto_trigger_interval
+        )
+
+
+def get_effective_admin_doc_retention_days() -> int:
+    """Return the number of days after which stale admin documents are eligible for cleanup."""
+    with _lock:
+        return (
+            _runtime_admin_doc_retention_days
+            if _runtime_admin_doc_retention_days is not None
+            else get_settings().admin_doc_retention_days
+        )
+
+
+def get_effective_cleanup_retention_hours() -> int:
+    """Return the effective admin document retention threshold in hours.
+
+    Resolves the named cadence preset or custom value → hours.
+    Falls back to the config default when no runtime override is set.
+    """
+    from app.rag.cleanup import CADENCE_HOURS
+    with _lock:
+        cfg = get_settings()
+        cadence = _runtime_cleanup_cadence or cfg.admin_cleanup_cadence
+        if cadence == "custom":
+            value = _runtime_cleanup_custom_value if _runtime_cleanup_custom_value is not None else cfg.admin_cleanup_custom_value
+            unit = _runtime_cleanup_custom_unit or cfg.admin_cleanup_custom_unit
+            return value if unit == "hours" else value * 24
+        return CADENCE_HOURS.get(cadence, CADENCE_HOURS["monthly"])
+
+
+def get_effective_notification_enabled() -> bool:
+    """Return whether notification delivery is enabled."""
+    with _lock:
+        if _runtime_notification_enabled is not None:
+            return _runtime_notification_enabled
+        return get_settings().notification_enabled
+
+
+def get_effective_notification_email() -> str:
+    """Return the effective notification email address."""
+    with _lock:
+        return _runtime_notification_email or get_settings().notification_email
+
+
+def get_effective_notification_ntfy_topic() -> str:
+    """Return the effective ntfy.sh topic (treated as shared secret — OWASP A02)."""
+    with _lock:
+        return _runtime_notification_ntfy_topic or get_settings().notification_ntfy_topic
+
+
 def _smart_default_reranker_type() -> str:
     """Return the best reranker default for this deployment.
 
@@ -977,6 +1048,49 @@ def get_effective_chunk_overlap() -> int:
         )
 
 
+# ── Cookie credential warm-up ──────────────────────────────────────────────────
+
+def persist_infra_credentials(settings: dict) -> None:
+    """Promote validated cookie credentials to module-level globals.
+
+    Called when an admin's encrypted cookie is restored so that subsequent
+    requests on the same Vercel function instance (including guest requests
+    that have no settings cookie) can reach the vector store and file store
+    without needing the admin's cookie themselves.
+
+    Only non-empty values are written; existing globals are not cleared.
+    Guest credentials are intentionally excluded (they stay ContextVar-scoped).
+    """
+    global _runtime_pinecone_api_key, _runtime_pinecone_index_name
+    global _runtime_pinecone_namespace, _runtime_pinecone_cloud, _runtime_pinecone_region
+    global _runtime_blob_read_write_token
+    global _runtime_api_key, _runtime_model
+    global _runtime_cleanup_cadence, _runtime_cleanup_custom_value, _runtime_cleanup_custom_unit
+    with _lock:
+        if settings.get("pinecone_api_key"):
+            _runtime_pinecone_api_key = str(settings["pinecone_api_key"])
+        if settings.get("pinecone_index_name"):
+            _runtime_pinecone_index_name = str(settings["pinecone_index_name"])
+        if settings.get("pinecone_namespace"):
+            _runtime_pinecone_namespace = str(settings["pinecone_namespace"])
+        if settings.get("pinecone_cloud"):
+            _runtime_pinecone_cloud = str(settings["pinecone_cloud"])
+        if settings.get("pinecone_region"):
+            _runtime_pinecone_region = str(settings["pinecone_region"])
+        if settings.get("blob_read_write_token"):
+            _runtime_blob_read_write_token = str(settings["blob_read_write_token"])
+        if settings.get("api_key"):
+            _runtime_api_key = str(settings["api_key"])
+        if settings.get("model"):
+            _runtime_model = str(settings["model"])
+        if settings.get("admin_cleanup_cadence"):
+            _runtime_cleanup_cadence = str(settings["admin_cleanup_cadence"])
+        if settings.get("admin_cleanup_custom_value") is not None:
+            _runtime_cleanup_custom_value = int(settings["admin_cleanup_custom_value"])
+        if settings.get("admin_cleanup_custom_unit"):
+            _runtime_cleanup_custom_unit = str(settings["admin_cleanup_custom_unit"])
+
+
 # ── Mutator — called by the settings API endpoint ─────────────────────────────
 
 def apply_runtime_settings(
@@ -1005,6 +1119,14 @@ def apply_runtime_settings(
     retriever_hybrid_bm25: bool | None = None,
     relevance_grader_enabled: bool | None = None,
     ragas_evaluation_enabled: bool | None = None,
+    ragas_auto_trigger_interval: int | None = None,
+    admin_doc_retention_days: int | None = None,
+    admin_cleanup_cadence: str | None = None,
+    admin_cleanup_custom_value: int | None = None,
+    admin_cleanup_custom_unit: str | None = None,
+    notification_enabled: bool | None = None,
+    notification_email: str | None = None,
+    notification_ntfy_topic: str | None = None,
     reranker_type: str | None = None,
     reranker_judge_model: str | None = None,
     chunker_type: str | None = None,
@@ -1030,6 +1152,9 @@ def apply_runtime_settings(
     global _runtime_blob_read_write_token
     global _runtime_retriever_hybrid_bm25, _runtime_relevance_grader_enabled
     global _runtime_ragas_evaluation_enabled
+    global _runtime_ragas_auto_trigger_interval, _runtime_admin_doc_retention_days
+    global _runtime_cleanup_cadence, _runtime_cleanup_custom_value, _runtime_cleanup_custom_unit
+    global _runtime_notification_enabled, _runtime_notification_email, _runtime_notification_ntfy_topic
     global _runtime_reranker_type, _runtime_reranker_judge_model
     global _runtime_chunker_type, _runtime_chunk_size, _runtime_chunk_overlap
 
@@ -1096,6 +1221,14 @@ def apply_runtime_settings(
         if retriever_hybrid_bm25 is not None:         _runtime_retriever_hybrid_bm25 = retriever_hybrid_bm25
         if relevance_grader_enabled is not None:      _runtime_relevance_grader_enabled = relevance_grader_enabled
         if ragas_evaluation_enabled is not None:      _runtime_ragas_evaluation_enabled = ragas_evaluation_enabled
+        if ragas_auto_trigger_interval is not None:   _runtime_ragas_auto_trigger_interval = ragas_auto_trigger_interval
+        if admin_doc_retention_days is not None:      _runtime_admin_doc_retention_days = admin_doc_retention_days
+        if admin_cleanup_cadence is not None:         _runtime_cleanup_cadence = admin_cleanup_cadence
+        if admin_cleanup_custom_value is not None:    _runtime_cleanup_custom_value = admin_cleanup_custom_value
+        if admin_cleanup_custom_unit is not None:     _runtime_cleanup_custom_unit = admin_cleanup_custom_unit
+        if notification_enabled is not None:          _runtime_notification_enabled = notification_enabled
+        if notification_email is not None:            _runtime_notification_email = notification_email
+        if notification_ntfy_topic is not None:       _runtime_notification_ntfy_topic = notification_ntfy_topic
         if reranker_type is not None:                 _runtime_reranker_type = reranker_type
         if reranker_judge_model is not None:          _runtime_reranker_judge_model = reranker_judge_model
         if chunker_type is not None:                  _runtime_chunker_type = chunker_type

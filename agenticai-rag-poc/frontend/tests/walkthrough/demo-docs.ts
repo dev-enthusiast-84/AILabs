@@ -624,7 +624,7 @@ async function buildPdfBuffer(topic: TopicContent): Promise<Buffer> {
 
   // Title
   writeLine(topic.label.toUpperCase() + ' — REFERENCE DOCUMENT', 13, true)
-  writeLine('Generated for Agentic RAG Demo | Version 1.0 | 2025', 9)
+  writeLine(`${topic.label} — Reference Document | Version 1.0 | ${new Date().getFullYear()}`, 9)
   y -= 6
 
   // Main content

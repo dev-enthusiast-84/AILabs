@@ -122,7 +122,7 @@ describe('ChatMessageList', () => {
 
   it('renders empty state with suggestions prompt when documents exist but messages are empty', () => {
     renderList({ messages: [], documentsCount: 2 })
-    expect(screen.getByText(/Ask a question about your documents/)).toBeTruthy()
+    expect(screen.getByText(/Type your question in the box below/)).toBeTruthy()
   })
 
   it('renders a user message bubble with correct content', () => {
@@ -281,5 +281,61 @@ describe('ChatMessageList', () => {
     expect(cards.length).toBe(2)
     expect(screen.getByText('doc1.pdf')).toBeTruthy()
     expect(screen.getByText('doc2.pdf')).toBeTruthy()
+  })
+})
+
+describe('ChatMessageList — display masking (US4 defense-in-depth)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('masks email address in user message content', () => {
+    const msg = makeUserMessage({ content: 'email me at secret@example.com please' })
+    renderList({ messages: [msg] })
+    expect(screen.queryByText(/secret@example\.com/)).toBeNull()
+    expect(screen.getByText(/\[REDACTED_EMAIL\]/)).toBeTruthy()
+  })
+
+  it('masks SSN in user message content and uses [REDACTED_SSN] not [REDACTED_GOV_ID]', () => {
+    const msg = makeUserMessage({ content: 'my SSN is 123-45-6789' })
+    renderList({ messages: [msg] })
+    expect(screen.queryByText(/123-45-6789/)).toBeNull()
+    expect(screen.getByText(/\[REDACTED_SSN\]/)).toBeTruthy()
+    expect(screen.queryByText(/\[REDACTED_GOV_ID\]/)).toBeNull()
+  })
+
+  it('masks API key in assistant message content', () => {
+    const msg = makeAssistantMessage({ content: 'use key sk-abcdefghijklmnopqrstuvwxyz12345 to authenticate' })
+    renderList({ messages: [msg] })
+    expect(screen.queryByText(/sk-abcde/)).toBeNull()
+    expect(screen.getByText(/\[REDACTED_API_KEY\]/)).toBeTruthy()
+  })
+
+  it('passes through normal prose unchanged', () => {
+    const msg = makeUserMessage({ content: 'What is the remote work policy?' })
+    renderList({ messages: [msg] })
+    expect(screen.getByText('What is the remote work policy?')).toBeTruthy()
+  })
+
+  it('masks email in Agent Trace refined_query field', () => {
+    const trace = {
+      ...baseTrace,
+      refined_query: 'contact admin@company.com for details',
+    }
+    const msg = makeAssistantMessage({ id: 'msg-trace-mask', mode: 'agentic', trace })
+    renderList({ messages: [msg], expandedTraces: new Set(['msg-trace-mask']) })
+    expect(screen.queryByText(/admin@company\.com/)).toBeNull()
+    expect(screen.getByText(/\[REDACTED_EMAIL\]/)).toBeTruthy()
+  })
+
+  it('masks SSN in Agent Trace validation_reason field', () => {
+    const trace = {
+      ...baseTrace,
+      validation_reason: 'SSN 987-65-4321 was mentioned in the answer',
+    }
+    const msg = makeAssistantMessage({ id: 'msg-trace-ssn', mode: 'agentic', trace })
+    renderList({ messages: [msg], expandedTraces: new Set(['msg-trace-ssn']) })
+    expect(screen.queryByText(/987-65-4321/)).toBeNull()
+    expect(screen.getByText(/\[REDACTED_SSN\]/)).toBeTruthy()
   })
 })

@@ -524,7 +524,7 @@ HTML = f'''<!DOCTYPE html>
       w.dataset.placeholder==='true'?probe(w):attachClick(w);
     }});
   }});
-}());
+}}());
 </script>
 </body>
 </html>'''

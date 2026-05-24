@@ -10,15 +10,16 @@
 #                         GUARDRAILS.md, SECURITY.md, TESTING.md, SDD.md,
 #                         requirements/edureka-project.pdf +
 #                         README.md)
-#   - Pitch deck (pitch.html)
+#   - Capstone overview (docs/capstone-project-overview.html)
 #
 # What is excluded (intentionally):
+#   - artifacts/            — walkthrough videos, Playwright reports, and trace assets
 #   - backend/.env          — contains real API keys / secrets
 #   - .env/.env.local       — local environment files with secrets/tokens
 #   - real env files       — backend/.env, .env.local, and deployment-specific env files
 #   - private keys/certificates (*.pem, *.key, *.p12, *.pfx, *.crt)
 #   - backend/.venv/        — recreated by setup.sh
-#   - backend/chroma_db/    — runtime data, not source
+#   - chroma_db/            — runtime vector DB data, not source (root and backend/)
 #   - backend/uploads/      — runtime user-uploaded files, not source
 #   - backend/__pycache__/  — compiled bytecode
 #   - backend/.coverage     — generated test artefact
@@ -28,12 +29,6 @@
 #   - test-reports/         — generated HTML reports
 #   - frontend/playwright-report/ and frontend/test-results/ — generated browser test artefacts
 #   - coverage/, htmlcov/, .coverage* — generated coverage artefacts
-#   - artifacts/walkthrough/local/   — local demo walkthrough videos + Playwright report
-#   - artifacts/walkthrough/remote/  — remote/Vercel demo walkthrough videos + Playwright report
-#   - artifacts/walkthrough/         — any legacy results at the top-level path
-#
-# What is excluded (intentionally, within artifacts/):
-#   - artifacts/walkthrough/*/report/trace/  — Playwright trace-viewer JS/CSS assets (~150 MB, not needed for submission)
 #   - .vercel/              — local Vercel project metadata
 #   - .git/                 — version control internals
 #   - .claude/              — local Claude Code settings
@@ -41,7 +36,7 @@
 #   - assistant discovery folders (.agents/, .cursor/, .clinerules/, .roo/,
 #                                  .windsurf/, .continue/) — local AI tooling
 #   - .github/copilot-instructions.md — local AI assistant instructions
-#   - CLAUDE.md/PENDING_TASKS.md — internal working notes, not submission material
+#   - CLAUDE.md/PENDING_TASKS.md/ONBOARDING.md — internal working notes, not submission material
 #   - local IDE/editor folders and transient logs/caches
 
 set -euo pipefail
@@ -125,6 +120,7 @@ zip -r "${OUTPUT_PATH}" . \
     --exclude ".github/copilot-instructions.md" \
     --exclude "CLAUDE.md" \
     --exclude "PENDING_TASKS.md" \
+    --exclude "ONBOARDING.md" \
     --exclude ".env*" \
     --exclude "backend/.env" \
     --exclude "*/.env" \
@@ -143,7 +139,10 @@ zip -r "${OUTPUT_PATH}" . \
     --exclude "id_ed25519" \
     --exclude "backend/.venv/*" \
     --exclude "backend/.venv" \
+    --exclude "chroma_db/*" \
+    --exclude "chroma_db" \
     --exclude "backend/chroma_db/*" \
+    --exclude "backend/chroma_db" \
     --exclude "backend/uploads/*" \
     --exclude "backend/.coverage*" \
     --exclude "backend/.pytest_cache/*" \
@@ -168,14 +167,17 @@ zip -r "${OUTPUT_PATH}" . \
     --exclude "test-reports" \
     --exclude "coverage/*" \
     --exclude "coverage" \
-    --exclude "artifacts/walkthrough/local/report/trace/*" \
-    --exclude "artifacts/walkthrough/remote/report/trace/*" \
-    --exclude "artifacts/walkthrough/report/trace/*" \
+    --exclude "artifacts/*" \
+    --exclude "artifacts" \
     --exclude "htmlcov/*" \
     --exclude "htmlcov" \
     --exclude ".coverage*" \
     --exclude ".pytest_cache/*" \
     --exclude ".pytest_cache" \
+    --exclude ".benchmarks/*" \
+    --exclude ".benchmarks" \
+    --exclude "*/.benchmarks/*" \
+    --exclude "*/.benchmarks" \
     --exclude ".mypy_cache/*" \
     --exclude ".mypy_cache" \
     --exclude ".ruff_cache/*" \
@@ -210,7 +212,7 @@ unzip -Z1 "${OUTPUT_PATH}" > "${ARCHIVE_LIST}"
 
 # Key source files
 for f in \
-    "docs/pitch.html" \
+    "docs/capstone-project-overview.html" \
     "docs/README.md" \
     "scripts/local/setup.sh" \
     "scripts/local/dev.sh" \
@@ -236,20 +238,6 @@ for f in \
 done
 
 
-# Walkthrough artifact presence check (warn but don't fail)
-LOCAL_VIDEOS=$(grep -cE 'artifacts/walkthrough/(local/)?results/.*\.webm$' "${ARCHIVE_LIST}" || true)
-REMOTE_VIDEOS=$(grep -cE 'artifacts/walkthrough/remote/results/.*\.webm$' "${ARCHIVE_LIST}" || true)
-if [[ "${LOCAL_VIDEOS}" -gt 0 ]]; then
-    echo "  [OK]   local walkthrough artifacts (${LOCAL_VIDEOS} video(s))"
-else
-    echo "  [WARN] no local walkthrough videos found — run: bash scripts/record-walkthrough.sh --url http://localhost:5173 ..."
-fi
-if [[ "${REMOTE_VIDEOS}" -gt 0 ]]; then
-    echo "  [OK]   remote walkthrough artifacts (${REMOTE_VIDEOS} video(s))"
-else
-    echo "  [WARN] no remote walkthrough videos found — run: bash scripts/record-walkthrough.sh --url <vercel-url> ..."
-fi
-
 echo ""
 
 # Exclusion checks (must NOT be present)
@@ -264,7 +252,8 @@ for pat in \
     '(^|/)frontend/playwright-report/' \
     '(^|/)frontend/test-results/' \
     '(^|/)test-reports/' \
-    '(^|/)artifacts/walkthrough/.*/report/trace/' \
+    '(^|/)artifacts/' \
+    '(^|/)chroma_db/' \
     '(^|/)\.claude/' \
     '(^|/)\.agents/' \
     '(^|/)\.cursor/' \
@@ -321,6 +310,11 @@ allowed_fragments = (
     "\"sk-\" +",
     "'sk-' +",
     "OPENAI_API_KEY",
+    # Deterministic test fixtures used in redaction unit tests — not real credentials
+    "sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "MIIEpAIBAAKCAQEA...",
+    "BEGIN EC PRIVATE KEY-----\ndata",
+    "BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA",
 )
 
 findings: list[str] = []
@@ -338,6 +332,10 @@ with zipfile.ZipFile(archive) as zf:
         except Exception:
             continue
         for label, pattern in patterns:
+            # Private-key scan is skipped for test fixture files — fake keys are
+            # deliberately embedded in redaction unit tests and are not real credentials.
+            if label == "private key block" and "/tests/" in name:
+                continue
             for match in pattern.finditer(text):
                 line_start = text.rfind("\n", 0, match.start()) + 1
                 line_end = text.find("\n", match.end())

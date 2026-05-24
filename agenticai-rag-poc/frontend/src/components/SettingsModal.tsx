@@ -13,9 +13,9 @@ import {
 } from '@heroicons/react/24/outline'
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import { settingsApi, extractErrorMessage } from '@/services/api'
+import { settingsApi, documentsApi, notificationsApi, extractErrorMessage } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
-import type { SettingsResponse, SettingsUpdateRequest } from '@/types'
+import type { SettingsResponse, SettingsUpdateRequest, CleanupResult, CleanupCadence } from '@/types'
 
 const SOURCE_LABEL: Record<string, string> = {
   runtime: 'set via UI',
@@ -98,6 +98,32 @@ function validatePineconeRegion(region: string): string | null {
   if (trimmed.length > 50) return 'Pinecone region must be 50 characters or fewer.'
   if (!PINECONE_REGION_RE.test(trimmed)) return 'Use lowercase letters, numbers, and hyphens.'
   return null
+}
+
+// ── Cleanup result card ────────────────────────────────────────────────────────
+function CleanupResultCard({ result }: { result: CleanupResult }) {
+  const triggerLabel = result.trigger === 'manual' ? 'Manual' : 'Session start'
+  const modeLabel = result.force_mode ? 'Force' : 'Normal'
+  const modeColor = result.force_mode ? 'text-amber-600' : 'text-green-600'
+  return (
+    <div className="mt-3 rounded-md border border-gray-200 p-3 text-sm space-y-2">
+      <div className="flex gap-2 flex-wrap">
+        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700">{triggerLabel}</span>
+        <span className={`px-2 py-0.5 rounded bg-gray-100 ${modeColor}`}>{modeLabel}</span>
+        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700">{result.scope}</span>
+        {result.cadence && <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700">{result.cadence}</span>}
+      </div>
+      <div>{result.deleted_count} document(s) deleted</div>
+      {result.deleted_sources.length > 0 && (
+        <ul className="list-disc list-inside text-gray-600">
+          {result.deleted_sources.map(s => <li key={s}>{s}</li>)}
+        </ul>
+      )}
+      {result.errors.length > 0 && (
+        <div className="text-red-600">Errors: {result.errors.join(', ')}</div>
+      )}
+    </div>
+  )
 }
 
 // ── Accordion section wrapper ──────────────────────────────────────────────────
@@ -251,11 +277,27 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
   const [hybridBm25, setHybridBm25] = useState(true)
   const [relevanceGrader, setRelevanceGrader] = useState(false)
   const [ragasAutoEval, setRagasAutoEval] = useState(false)
+  const [ragasAutoTriggerInterval, setRagasAutoTriggerInterval] = useState(50)
+  const [adminDocRetentionDays, setAdminDocRetentionDays] = useState(30)
   const [rerankerType, setRerankerType] = useState('llm-judge')
   const [rerankerJudgeModel, setRerankerJudgeModel] = useState('gpt-4.1-mini')
   const [chunkerType, setChunkerType] = useState('recursive')
   const [chunkSize, setChunkSize] = useState(800)
   const [chunkOverlap, setChunkOverlap] = useState(100)
+
+  // Section 8 — Document Retention (admin only) — T017, T026
+  const [cleanupCadence, setCleanupCadence] = useState<string>('monthly')
+  const [cleanupCustomValue, setCleanupCustomValue] = useState<number>(30)
+  const [cleanupCustomUnit, setCleanupCustomUnit] = useState<string>('days')
+  const [cleanupRunning, setCleanupRunning] = useState(false)
+  const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null)
+
+  // Section 9 — Notifications (admin only) — T032
+  const [notificationEnabled, setNotificationEnabled] = useState(false)
+  const [notificationEmail, setNotificationEmail] = useState('')
+  const [notificationNtfyTopic, setNotificationNtfyTopic] = useState('')
+  const [testNotifRunning, setTestNotifRunning] = useState(false)
+  const [testNotifResult, setTestNotifResult] = useState<string | null>(null)
 
   const [openSections, toggleSection] = useToggleSet(['vector-store'])
 
@@ -370,11 +412,23 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
         setHybridBm25(data.retriever_hybrid_bm25 ?? true)
         setRelevanceGrader(data.relevance_grader_enabled ?? false)
         setRagasAutoEval(data.ragas_evaluation_enabled ?? false)
+        setRagasAutoTriggerInterval(data.ragas_auto_trigger_interval ?? 50)
+        setAdminDocRetentionDays(data.admin_doc_retention_days ?? 30)
         setRerankerType(data.reranker_type ?? 'llm-judge')
         setRerankerJudgeModel(data.reranker_judge_model ?? 'gpt-4.1-mini')
         setChunkerType(data.chunker_type ?? 'recursive')
         setChunkSize(data.chunk_size ?? 800)
         setChunkOverlap(data.chunk_overlap ?? 100)
+        // Section 8 — Document Retention
+        setCleanupCadence(data.admin_cleanup_cadence ?? 'monthly')
+        setCleanupCustomValue(data.admin_cleanup_custom_value ?? 30)
+        setCleanupCustomUnit(data.admin_cleanup_custom_unit ?? 'days')
+        setCleanupResult(null)
+        // Section 9 — Notifications
+        setNotificationEnabled(data.notification_enabled ?? false)
+        setNotificationEmail(data.notification_email ?? '')
+        setNotificationNtfyTopic(data.notification_ntfy_topic ?? '')
+        setTestNotifResult(null)
       })
       .catch(() => toast.error('Could not load settings.'))
       .finally(() => setLoading(false))
@@ -456,6 +510,10 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
         payload.relevance_grader_enabled = relevanceGrader
       if (ragasAutoEval !== (current?.ragas_evaluation_enabled ?? false))
         payload.ragas_evaluation_enabled = ragasAutoEval
+      if (ragasAutoTriggerInterval !== (current?.ragas_auto_trigger_interval ?? 50))
+        payload.ragas_auto_trigger_interval = ragasAutoTriggerInterval
+      if (adminDocRetentionDays !== (current?.admin_doc_retention_days ?? 30))
+        payload.admin_doc_retention_days = adminDocRetentionDays
       if (rerankerType !== (current?.reranker_type ?? 'llm-judge'))
         payload.reranker_type = rerankerType
       if (rerankerJudgeModel !== (current?.reranker_judge_model ?? 'gpt-4.1-mini'))
@@ -466,6 +524,20 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
         payload.chunk_size = chunkSize
       if (chunkOverlap !== (current?.chunk_overlap ?? 100))
         payload.chunk_overlap = chunkOverlap
+      // Section 8 — Document Retention (T017)
+      if (cleanupCadence && cleanupCadence !== (current?.admin_cleanup_cadence ?? 'monthly'))
+        payload.admin_cleanup_cadence = cleanupCadence as CleanupCadence
+      if (cleanupCadence === 'custom') {
+        payload.admin_cleanup_custom_value = cleanupCustomValue
+        payload.admin_cleanup_custom_unit = cleanupCustomUnit as 'hours' | 'days'
+      }
+      // Section 9 — Notifications (T032)
+      if (notificationEnabled !== (current?.notification_enabled ?? false))
+        payload.notification_enabled = notificationEnabled
+      if (notificationEmail !== (current?.notification_email ?? ''))
+        payload.notification_email = notificationEmail || undefined
+      if (notificationNtfyTopic !== (current?.notification_ntfy_topic ?? ''))
+        payload.notification_ntfy_topic = notificationNtfyTopic || undefined
     }
 
     // Pinecone settings are available to admins and guests. VECTOR_STORE_TYPE is
@@ -584,6 +656,35 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
       }
     } finally {
       setSaving(false)
+    }
+  }
+
+  // T017/T026 — Run cleanup handler
+  const handleRunCleanup = async () => {
+    setCleanupRunning(true)
+    setCleanupResult(null)
+    try {
+      const isNearLimit = current?.admin_docs_near_limit ?? false
+      const result = await documentsApi.triggerCleanup(isNearLimit)
+      setCleanupResult(result)
+    } catch (e) {
+      toast.error(extractErrorMessage(e))
+    } finally {
+      setCleanupRunning(false)
+    }
+  }
+
+  // T032 — Send test notification handler
+  const handleSendTestNotification = async () => {
+    setTestNotifRunning(true)
+    setTestNotifResult(null)
+    try {
+      const result = await notificationsApi.sendTest()
+      setTestNotifResult(result.errors.length > 0 ? `Errors: ${result.errors.join(', ')}` : 'Test notification sent!')
+    } catch {
+      setTestNotifResult('Failed to send test notification.')
+    } finally {
+      setTestNotifRunning(false)
     }
   }
 
@@ -1116,11 +1217,11 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                     </div>
 
                     {/* Auto-evaluate with Ragas */}
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-start justify-between">
                       <div>
                         <p className="text-xs font-medium text-slate-600">Auto-evaluate with Ragas</p>
                         <p className="text-xs text-slate-400">
-                          Runs Ragas quality evaluation automatically every 50 queries. Requires API key. Admin only.
+                          Probabilistically samples queries (1 in 50) and evaluates retrieval quality. Requires API key.
                         </p>
                       </div>
                       <button
@@ -1130,13 +1231,50 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                         data-testid="ragas-auto-eval-toggle"
                         onClick={() => setRagasAutoEval((v) => !v)}
                         disabled={isGuest}
-                        className={`relative w-9 h-5 rounded-full transition-colors ${ragasAutoEval ? 'bg-sky-500' : 'bg-slate-200'} ${isGuest ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`relative shrink-0 mt-0.5 w-9 h-5 rounded-full transition-colors ${ragasAutoEval ? 'bg-sky-500' : 'bg-slate-200'} ${isGuest ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <span
                           className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${ragasAutoEval ? 'translate-x-4' : ''}`}
                         />
                       </button>
                     </div>
+                    {!isGuest && (
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1">
+                            Auto-trigger interval (queries)
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={10000}
+                            value={ragasAutoTriggerInterval}
+                            onChange={(e) => setRagasAutoTriggerInterval(Number(e.target.value))}
+                            className="input text-sm w-24"
+                            data-testid="ragas-trigger-interval-input"
+                          />
+                          <p className="text-xs text-slate-400 mt-0.5">Evaluate 1 in N queries. Default: 50. Env: RAGAS_AUTO_TRIGGER_INTERVAL.</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1">
+                            Admin doc retention (days)
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={3650}
+                            value={adminDocRetentionDays}
+                            onChange={(e) => setAdminDocRetentionDays(Number(e.target.value))}
+                            className="input text-sm w-24"
+                            data-testid="admin-doc-retention-input"
+                          />
+                          <p className="text-xs text-slate-400 mt-0.5">Documents older than this are eligible for cleanup. Default: 30. Env: ADMIN_DOC_RETENTION_DAYS.</p>
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-400">
+                      Use the <span className="font-medium text-slate-500">Ragas Dashboard</span> button in the header to view scores, trigger manual evaluations (admin), and clear history.
+                    </p>
 
                     {/* Reranker type */}
                     <div>
@@ -1495,6 +1633,113 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                       </p>
                     )}
                   </SettingsSection>
+
+            {/* ── Section 8: Document Retention (admin only) — T017, T026 ── */}
+            {!isGuest && (
+              <section id="document-retention" className="border-t pt-4 mt-4">
+                <h3 className="font-semibold text-gray-800 mb-3 text-sm">Document Retention</h3>
+                <div className="flex items-center gap-3 mb-3">
+                  <label className="text-sm text-gray-600 w-28 shrink-0">Cleanup cadence</label>
+                  <select
+                    value={cleanupCadence}
+                    onChange={e => setCleanupCadence(e.target.value)}
+                    className="border rounded px-2 py-1 text-sm"
+                    data-testid="cleanup-cadence-select"
+                  >
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Bi-weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                  {current && (
+                    <span className={`text-sm font-medium px-2 py-0.5 rounded ${current.admin_docs_near_limit ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`} data-testid="doc-count-badge">
+                      {current.admin_doc_count ?? 0} / {current.admin_doc_limit ?? 100}
+                    </span>
+                  )}
+                </div>
+                {cleanupCadence === 'custom' && (
+                  <div className="flex items-center gap-2 mb-3 ml-32">
+                    <input
+                      type="number"
+                      min={1}
+                      max={8760}
+                      value={cleanupCustomValue}
+                      onChange={e => setCleanupCustomValue(Number(e.target.value))}
+                      className="border rounded px-2 py-1 text-sm w-20"
+                      data-testid="cleanup-custom-value-input"
+                    />
+                    <select value={cleanupCustomUnit} onChange={e => setCleanupCustomUnit(e.target.value)} className="border rounded px-2 py-1 text-sm" data-testid="cleanup-custom-unit-select">
+                      <option value="hours">Hours</option>
+                      <option value="days">Days</option>
+                    </select>
+                  </div>
+                )}
+                <button
+                  onClick={handleRunCleanup}
+                  disabled={cleanupRunning}
+                  className={`px-3 py-1.5 rounded text-sm text-white ${current?.admin_docs_near_limit ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'} disabled:opacity-50`}
+                  data-testid="run-cleanup-btn"
+                >
+                  {cleanupRunning ? 'Running...' : current?.admin_docs_near_limit ? 'Force cleanup (limit reached)' : 'Run cleanup'}
+                </button>
+                {cleanupResult && <CleanupResultCard result={cleanupResult} />}
+              </section>
+            )}
+
+            {/* ── Section 9: Notifications (admin only) — T032 ── */}
+            {!isGuest && (
+              <section className="border-t pt-4 mt-4">
+                <h3 className="font-semibold text-gray-800 mb-3 text-sm">Notifications</h3>
+                <div className="flex items-center gap-3 mb-3">
+                  <label className="text-sm text-gray-600 w-28 shrink-0">Enable</label>
+                  <input
+                    type="checkbox"
+                    checked={notificationEnabled}
+                    onChange={e => setNotificationEnabled(e.target.checked)}
+                    data-testid="notification-enabled-toggle"
+                  />
+                </div>
+                <div className="flex items-center gap-3 mb-2">
+                  <label className="text-sm text-gray-600 w-28 shrink-0">Email</label>
+                  <input
+                    type="email"
+                    value={notificationEmail}
+                    onChange={e => setNotificationEmail(e.target.value)}
+                    disabled={!notificationEnabled}
+                    placeholder="you@example.com"
+                    className="border rounded px-2 py-1 text-sm flex-1 disabled:opacity-50"
+                    data-testid="notification-email-input"
+                  />
+                </div>
+                <div className="flex items-center gap-3 mb-3">
+                  <label className="text-sm text-gray-600 w-28 shrink-0">ntfy topic</label>
+                  <input
+                    type="text"
+                    value={notificationNtfyTopic}
+                    onChange={e => setNotificationNtfyTopic(e.target.value)}
+                    disabled={!notificationEnabled}
+                    placeholder="my-secret-topic-slug"
+                    className="border rounded px-2 py-1 text-sm flex-1 disabled:opacity-50"
+                    data-testid="notification-ntfy-input"
+                  />
+                </div>
+                <button
+                  onClick={handleSendTestNotification}
+                  disabled={testNotifRunning || !notificationEnabled}
+                  className="px-3 py-1.5 rounded text-sm text-white bg-gray-600 hover:bg-gray-700 disabled:opacity-50"
+                  data-testid="send-test-notification-btn"
+                >
+                  {testNotifRunning ? 'Sending...' : 'Send test notification'}
+                </button>
+                {testNotifResult && (
+                  <p className={`mt-2 text-sm ${testNotifResult.startsWith('Test') ? 'text-green-600' : 'text-red-600'}`} data-testid="test-notif-result">
+                    {testNotifResult}
+                  </p>
+                )}
+              </section>
+            )}
 
             {hasCostImpactingChanges && (
               <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">

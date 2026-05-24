@@ -56,6 +56,22 @@ def production_settings(**overrides):
         "guest_max_indexed_documents": 1,
         "guest_token_expire_minutes": 15,
         "guest_doc_retention_seconds": 3600,
+        # Cleanup / retention fields (spec 012)
+        "admin_doc_retention_days": 30,
+        "admin_cleanup_cadence": "monthly",
+        "admin_cleanup_custom_value": 30,
+        "admin_cleanup_custom_unit": "days",
+        "admin_max_indexed_documents": 100,
+        # Notification fields (spec 012)
+        "notification_enabled": False,
+        "notification_email": "",
+        "notification_smtp_host": "",
+        "notification_smtp_port": 587,
+        "notification_smtp_user": "",
+        "notification_smtp_password": "",
+        "notification_ntfy_topic": "",
+        # Ragas auto-trigger
+        "ragas_auto_trigger_interval": 50,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -89,33 +105,52 @@ def reset_runtime_settings(monkeypatch):
         "_runtime_chunker_type": None,
         "_runtime_chunk_size": None,
         "_runtime_chunk_overlap": None,
+        # Cleanup / notification runtime overrides (spec 012)
+        "_runtime_admin_doc_retention_days": None,
+        "_runtime_cleanup_cadence": "",
+        "_runtime_cleanup_custom_value": None,
+        "_runtime_cleanup_custom_unit": "",
+        "_runtime_notification_enabled": None,
+        "_runtime_notification_email": "",
+        "_runtime_notification_ntfy_topic": "",
     }
     for name, value in runtime_values.items():
         monkeypatch.setattr(store, name, value)
 
 
 @pytest.fixture(autouse=True)
-def reset_settings_rate_limit():
-    """Reset the in-memory rate-limit counter and runtime ragas flag before each test.
+def reset_settings_rate_limit(client):
+    """Reset the in-memory rate-limit counter and runtime globals before each test.
 
     POST /api/settings/ is capped at 20/min per IP. The new test suite
     now has >20 POST tests so without a reset, later tests get 429.
-    ragas_evaluation_enabled is reset to None so each test starts from the
-    config default (False) rather than inheriting a previous test's POST.
+    Runtime globals are reset so each test starts from the config default
+    rather than inheriting state set by a previous test's POST.
+
+    The session-scoped TestClient preserves the rag_ui_settings cookie across
+    tests. The middleware reads this cookie and populates _request_runtime_settings
+    (a ContextVar) per-request, making is_runtime_key_set() return True even after
+    resetting the module-level _runtime_api_key global. We delete the cookie here
+    so tests that expect "not_configured" get a clean slate.
     """
     from app.api.settings import limiter
     import app.api.settings as settings_api
     import app.runtime.settings_store as store
     from app.auth.router import limiter as auth_limiter
+    from app.runtime.runtime_settings_cookie import COOKIE_NAME
     limiter._storage.reset()
     auth_limiter._storage.reset()
     settings_api._guest_settings_used.clear()
     store._runtime_ragas_evaluation_enabled = None
+    store._runtime_api_key = ""
+    client.cookies.delete(COOKIE_NAME)
     yield
     limiter._storage.reset()
     auth_limiter._storage.reset()
     settings_api._guest_settings_used.clear()
     store._runtime_ragas_evaluation_enabled = None
+    store._runtime_api_key = ""
+    client.cookies.delete(COOKIE_NAME)
 
 
 # ── GET /api/settings ──────────────────────────────────────────────────────────
@@ -702,6 +737,15 @@ def test_update_langchain_tracing_without_key_logs_warning(client, auth_headers)
         mock_settings.return_value.chunker_type = "recursive"
         mock_settings.return_value.chunk_size = 800
         mock_settings.return_value.chunk_overlap = 100
+        # Spec 012 fields required by settings_store runtime getters
+        mock_settings.return_value.admin_doc_retention_days = 30
+        mock_settings.return_value.admin_cleanup_cadence = "monthly"
+        mock_settings.return_value.admin_cleanup_custom_value = 30
+        mock_settings.return_value.admin_cleanup_custom_unit = "days"
+        mock_settings.return_value.notification_enabled = False
+        mock_settings.return_value.notification_email = ""
+        mock_settings.return_value.notification_ntfy_topic = ""
+        mock_settings.return_value.ragas_auto_trigger_interval = 50
 
         resp = client.post(
             "/api/settings/",
@@ -1332,6 +1376,110 @@ def test_allowed_reranker_and_chunker_types_returned(client, auth_headers):
     assert sorted(body["allowed_chunker_types"]) == ["recursive", "semantic"]
 
 
+# ── Cleanup cadence validation tests ─────────────────────────────────────────
+
+def test_update_cadence_valid(client, auth_headers, monkeypatch):
+    """POST admin_cleanup_cadence='daily' should succeed (returns 200)."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_cleanup_cadence", "")
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"admin_cleanup_cadence": "daily"}
+    )
+    assert resp.status_code == 200
+    # Runtime override stored but response shows config value (static from .env)
+    monkeypatch.setattr(store, "_runtime_cleanup_cadence", "")
+
+
+def test_update_cadence_invalid(client, auth_headers):
+    """POST admin_cleanup_cadence='fortnightly' (invalid) should return 422."""
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"admin_cleanup_cadence": "fortnightly"}
+    )
+    assert resp.status_code == 422
+    assert "admin_cleanup_cadence" in str(resp.json())
+
+
+def test_update_cleanup_custom_value_valid(client, auth_headers, monkeypatch):
+    """POST admin_cleanup_custom_value=48 should succeed."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_cleanup_custom_value", None)
+    resp = client.post(
+        "/api/settings/", headers=auth_headers,
+        json={"admin_cleanup_cadence": "custom", "admin_cleanup_custom_value": 48, "admin_cleanup_custom_unit": "hours"}
+    )
+    assert resp.status_code == 200
+    monkeypatch.setattr(store, "_runtime_cleanup_custom_value", None)
+
+
+def test_update_cleanup_custom_value_too_large(client, auth_headers):
+    """POST admin_cleanup_custom_value=9000 (>8760) should return 422."""
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"admin_cleanup_custom_value": 9000}
+    )
+    assert resp.status_code == 422
+    assert "admin_cleanup_custom_value" in str(resp.json())
+
+
+def test_update_cleanup_custom_unit_valid(client, auth_headers, monkeypatch):
+    """POST admin_cleanup_custom_unit='hours' should succeed."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_cleanup_custom_unit", "")
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"admin_cleanup_custom_unit": "hours"}
+    )
+    assert resp.status_code == 200
+    monkeypatch.setattr(store, "_runtime_cleanup_custom_unit", "")
+
+
+def test_update_cleanup_custom_unit_invalid(client, auth_headers):
+    """POST admin_cleanup_custom_unit='weeks' (invalid) should return 422."""
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"admin_cleanup_custom_unit": "weeks"}
+    )
+    assert resp.status_code == 422
+    assert "admin_cleanup_custom_unit" in str(resp.json())
+
+
+def test_update_notification_email_valid(client, auth_headers, monkeypatch):
+    """POST notification_email='user@example.com' should succeed."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_notification_email", "")
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"notification_email": "admin@example.com"}
+    )
+    assert resp.status_code == 200
+    monkeypatch.setattr(store, "_runtime_notification_email", "")
+
+
+def test_update_notification_email_invalid(client, auth_headers):
+    """POST notification_email='not-an-email' should return 422."""
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"notification_email": "not-an-email"}
+    )
+    assert resp.status_code == 422
+    assert "notification_email" in str(resp.json())
+
+
+def test_update_notification_ntfy_topic_valid(client, auth_headers, monkeypatch):
+    """POST notification_ntfy_topic='my-alerts' should succeed."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_notification_ntfy_topic", "")
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"notification_ntfy_topic": "my-alerts"}
+    )
+    assert resp.status_code == 200
+    monkeypatch.setattr(store, "_runtime_notification_ntfy_topic", "")
+
+
+def test_update_notification_ntfy_topic_invalid(client, auth_headers):
+    """POST notification_ntfy_topic='bad topic!' (spaces/punctuation) should return 422."""
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"notification_ntfy_topic": "bad topic!"}
+    )
+    assert resp.status_code == 422
+    assert "notification_ntfy_topic" in str(resp.json())
+
+
 # ── ragas_evaluation_enabled tests ───────────────────────────────────────────
 
 def test_get_settings_includes_ragas_evaluation_enabled(client, auth_headers):
@@ -1673,6 +1821,10 @@ def test_build_response_pinecone_source_environment(monkeypatch):
     fake_settings.guest_max_upload_size_mb = 3
     fake_settings.guest_token_expire_minutes = 15
     fake_settings.guest_doc_retention_seconds = 3600
+    fake_settings.admin_max_indexed_documents = 100  # spec 012: avoids TypeError in '>=' comparison
+    fake_settings.admin_cleanup_cadence = "monthly"
+    fake_settings.admin_cleanup_custom_value = 30
+    fake_settings.admin_cleanup_custom_unit = "days"
     monkeypatch.setattr(settings_api, "settings", fake_settings)
 
     resp = settings_api._build_response(user=None)
@@ -1703,6 +1855,10 @@ def test_build_response_blob_source_environment(monkeypatch):
     fake_settings.guest_max_upload_size_mb = 3
     fake_settings.guest_token_expire_minutes = 15
     fake_settings.guest_doc_retention_seconds = 3600
+    fake_settings.admin_max_indexed_documents = 100
+    fake_settings.admin_cleanup_cadence = "monthly"
+    fake_settings.admin_cleanup_custom_value = 30
+    fake_settings.admin_cleanup_custom_unit = "days"
     monkeypatch.setattr(settings_api, "settings", fake_settings)
 
     resp = settings_api._build_response(user=None)
@@ -1737,10 +1893,116 @@ def test_build_response_blob_source_not_configured(monkeypatch):
     fake_settings.guest_max_upload_size_mb = 3
     fake_settings.guest_token_expire_minutes = 15
     fake_settings.guest_doc_retention_seconds = 3600
+    fake_settings.admin_max_indexed_documents = 100
+    fake_settings.admin_cleanup_cadence = "monthly"
+    fake_settings.admin_cleanup_custom_value = 30
+    fake_settings.admin_cleanup_custom_unit = "days"
     monkeypatch.setattr(settings_api, "settings", fake_settings)
 
     resp = settings_api._build_response(user=None)
     assert resp.blob_read_write_token_source == "not_configured"
+
+
+# ── _mask_email / _mask_ntfy_topic helpers ───────────────────────────────────
+
+def test_mask_email_with_valid_address():
+    """_mask_email masks everything before @ except first char."""
+    from app.api.settings import _mask_email
+    assert _mask_email("admin@example.com") == "a**@example.com"
+
+
+def test_mask_email_empty_string():
+    """_mask_email returns empty string for empty input."""
+    from app.api.settings import _mask_email
+    assert _mask_email("") == ""
+
+
+def test_mask_ntfy_topic_long_returns_truncated():
+    """_mask_ntfy_topic returns first 4 chars + *** for long topics."""
+    from app.api.settings import _mask_ntfy_topic
+    assert _mask_ntfy_topic("my-secret-topic") == "my-s***"
+
+
+def test_mask_ntfy_topic_short_returns_stars():
+    """_mask_ntfy_topic returns *** for topics with ≤ 4 chars."""
+    from app.api.settings import _mask_ntfy_topic
+    assert _mask_ntfy_topic("ab") == "***"
+
+
+def test_build_response_admin_doc_count_with_admin_docs(monkeypatch):
+    """_build_response counts unique admin sources from the vector store."""
+    import app.api.settings as settings_api
+    from unittest.mock import MagicMock
+
+    admin_doc = MagicMock()
+    admin_doc.metadata = {"owner_role": "admin", "source": "admin-report.txt"}
+
+    fake_settings = MagicMock()
+    fake_settings.openai_api_key = ""
+    fake_settings.pinecone_api_key = ""
+    fake_settings.blob_read_write_token = ""
+    fake_settings.vercel_blob_read_write_token = ""
+    fake_settings.retriever_fusion_mode = "rrf"
+    fake_settings.reranker_top_k = 4
+    fake_settings.semantic_breakpoint_threshold_type = "percentile"
+    fake_settings.max_query_length = 1000
+    fake_settings.query_rate_limit_per_minute = 10
+    fake_settings.effective_max_upload_size_mb = 20
+    fake_settings.guest_max_upload_size_mb = 3
+    fake_settings.guest_token_expire_minutes = 15
+    fake_settings.guest_doc_retention_seconds = 3600
+    fake_settings.admin_max_indexed_documents = 100
+    fake_settings.admin_cleanup_cadence = "monthly"
+    fake_settings.admin_cleanup_custom_value = 30
+    fake_settings.admin_cleanup_custom_unit = "days"
+
+    monkeypatch.setattr(settings_api, "settings", fake_settings)
+    monkeypatch.setattr(settings_api, "is_runtime_key_set", lambda: False)
+    monkeypatch.setattr(settings_api, "is_runtime_pinecone_key_set", lambda: False)
+    monkeypatch.setattr(settings_api, "is_runtime_blob_token_set", lambda: False)
+    monkeypatch.setattr(settings_api, "account_env_fallback_allowed", lambda: False)
+
+    with patch("app.rag.vector_store.get_all_documents", return_value=[admin_doc]):
+        resp = settings_api._build_response(user=None)
+
+    assert resp.admin_doc_count == 1
+    assert resp.admin_docs_near_limit is False
+
+
+def test_build_response_admin_doc_count_exception_returns_zero(monkeypatch):
+    """_build_response falls back to 0 when get_all_documents raises."""
+    import app.api.settings as settings_api
+    from unittest.mock import MagicMock
+
+    fake_settings = MagicMock()
+    fake_settings.openai_api_key = ""
+    fake_settings.pinecone_api_key = ""
+    fake_settings.blob_read_write_token = ""
+    fake_settings.vercel_blob_read_write_token = ""
+    fake_settings.retriever_fusion_mode = "rrf"
+    fake_settings.reranker_top_k = 4
+    fake_settings.semantic_breakpoint_threshold_type = "percentile"
+    fake_settings.max_query_length = 1000
+    fake_settings.query_rate_limit_per_minute = 10
+    fake_settings.effective_max_upload_size_mb = 20
+    fake_settings.guest_max_upload_size_mb = 3
+    fake_settings.guest_token_expire_minutes = 15
+    fake_settings.guest_doc_retention_seconds = 3600
+    fake_settings.admin_max_indexed_documents = 100
+    fake_settings.admin_cleanup_cadence = "monthly"
+    fake_settings.admin_cleanup_custom_value = 30
+    fake_settings.admin_cleanup_custom_unit = "days"
+
+    monkeypatch.setattr(settings_api, "settings", fake_settings)
+    monkeypatch.setattr(settings_api, "is_runtime_key_set", lambda: False)
+    monkeypatch.setattr(settings_api, "is_runtime_pinecone_key_set", lambda: False)
+    monkeypatch.setattr(settings_api, "is_runtime_blob_token_set", lambda: False)
+    monkeypatch.setattr(settings_api, "account_env_fallback_allowed", lambda: False)
+
+    with patch("app.rag.vector_store.get_all_documents", side_effect=RuntimeError("vs down")):
+        resp = settings_api._build_response(user=None)
+
+    assert resp.admin_doc_count == 0
 
 
 # ── trigger_ragas_eval endpoint (lines 780+) ─────────────────────────────────
@@ -1816,3 +2078,169 @@ def test_run_ragas_eval_mock_mode_saves_scores(monkeypatch):
     assert "context_precision" in saved
     assert "context_recall" in saved
     assert "(mock)" in saved.get("model", "")
+
+
+# ── DELETE /api/settings/ragas-scores ──────────────────────────────────────
+
+def test_clear_ragas_scores_as_guest_returns_403(client):
+    """DELETE /api/settings/ragas-scores as guest must return 403."""
+    guest_resp = client.post("/api/auth/guest")
+    assert guest_resp.status_code == 200
+    headers = {"Authorization": f"Bearer {guest_resp.json()['access_token']}"}
+    resp = client.delete("/api/settings/ragas-scores", headers=headers)
+    assert resp.status_code == 403
+
+
+def test_clear_ragas_scores_as_admin_returns_204(client, auth_headers, tmp_path, monkeypatch):
+    """DELETE /api/settings/ragas-scores as admin deletes the scores file."""
+    import app.runtime.ragas_store as ragas_store
+    path = tmp_path / "ragas_scores.json"
+    monkeypatch.setenv("RAGAS_SCORES_FILE", str(path))
+    ragas_store.save_ragas_scores(
+        faithfulness=0.9, answer_relevancy=0.85,
+        context_precision=0.8, context_recall=0.75,
+        model="gpt-4o-mini", num_samples=3,
+    )
+    assert path.exists()
+    resp = client.delete("/api/settings/ragas-scores", headers=auth_headers)
+    assert resp.status_code == 204
+    assert not path.exists()
+
+
+def test_clear_ragas_scores_no_file_returns_204(client, auth_headers, tmp_path, monkeypatch):
+    """DELETE /api/settings/ragas-scores is idempotent when no file exists."""
+    path = tmp_path / "ragas_scores.json"
+    monkeypatch.setenv("RAGAS_SCORES_FILE", str(path))
+    assert not path.exists()
+    resp = client.delete("/api/settings/ragas-scores", headers=auth_headers)
+    assert resp.status_code == 204
+
+
+def test_clear_ragas_scores_unauthenticated_returns_403(client):
+    """DELETE /api/settings/ragas-scores without auth returns 403."""
+    resp = client.delete("/api/settings/ragas-scores")
+    assert resp.status_code == 403
+
+
+# ── ragas_auto_trigger_interval tests ─────────────────────────────────────────
+
+def test_get_settings_includes_ragas_auto_trigger_interval(client, auth_headers):
+    """GET /api/settings/ must include ragas_auto_trigger_interval as an int."""
+    resp = client.get("/api/settings/", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "ragas_auto_trigger_interval" in body
+    assert isinstance(body["ragas_auto_trigger_interval"], int)
+    assert body["ragas_auto_trigger_interval"] >= 1
+
+
+def test_update_ragas_auto_trigger_interval_valid(client, auth_headers, monkeypatch):
+    """POST ragas_auto_trigger_interval=25 as admin must succeed and reflect new value."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_ragas_auto_trigger_interval", None)
+
+    resp = client.post(
+        "/api/settings/",
+        headers=auth_headers,
+        json={"ragas_auto_trigger_interval": 25},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ragas_auto_trigger_interval"] == 25
+
+    monkeypatch.setattr(store, "_runtime_ragas_auto_trigger_interval", None)
+
+
+def test_update_ragas_auto_trigger_interval_too_low_returns_422(client, auth_headers):
+    """POST ragas_auto_trigger_interval=0 must return 422 (below minimum of 1)."""
+    resp = client.post(
+        "/api/settings/",
+        headers=auth_headers,
+        json={"ragas_auto_trigger_interval": 0},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_ragas_auto_trigger_interval_too_high_returns_422(client, auth_headers):
+    """POST ragas_auto_trigger_interval=99999 must return 422 (above maximum of 10000)."""
+    resp = client.post(
+        "/api/settings/",
+        headers=auth_headers,
+        json={"ragas_auto_trigger_interval": 99999},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_ragas_auto_trigger_interval_as_guest_returns_403(client):
+    """Guests may not change ragas_auto_trigger_interval (non-guest-only field)."""
+    guest_resp = client.post("/api/auth/guest")
+    assert guest_resp.status_code == 200
+    headers = {"Authorization": f"Bearer {guest_resp.json()['access_token']}"}
+
+    resp = client.post(
+        "/api/settings/",
+        headers=headers,
+        json={"ragas_auto_trigger_interval": 10},
+    )
+    assert resp.status_code == 403
+
+
+# ── admin_doc_retention_days tests ────────────────────────────────────────────
+
+def test_get_settings_includes_admin_doc_retention_days(client, auth_headers):
+    """GET /api/settings/ must include admin_doc_retention_days as an int."""
+    resp = client.get("/api/settings/", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "admin_doc_retention_days" in body
+    assert isinstance(body["admin_doc_retention_days"], int)
+    assert body["admin_doc_retention_days"] >= 1
+
+
+def test_update_admin_doc_retention_days_valid(client, auth_headers, monkeypatch):
+    """POST admin_doc_retention_days=90 as admin must succeed and reflect new value."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_admin_doc_retention_days", None)
+
+    resp = client.post(
+        "/api/settings/",
+        headers=auth_headers,
+        json={"admin_doc_retention_days": 90},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["admin_doc_retention_days"] == 90
+
+    monkeypatch.setattr(store, "_runtime_admin_doc_retention_days", None)
+
+
+def test_update_admin_doc_retention_days_too_low_returns_422(client, auth_headers):
+    """POST admin_doc_retention_days=0 must return 422 (below minimum of 1)."""
+    resp = client.post(
+        "/api/settings/",
+        headers=auth_headers,
+        json={"admin_doc_retention_days": 0},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_admin_doc_retention_days_too_high_returns_422(client, auth_headers):
+    """POST admin_doc_retention_days=9999 must return 422 (above maximum of 3650)."""
+    resp = client.post(
+        "/api/settings/",
+        headers=auth_headers,
+        json={"admin_doc_retention_days": 9999},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_admin_doc_retention_days_as_guest_returns_403(client):
+    """Guests may not change admin_doc_retention_days (admin-only field)."""
+    guest_resp = client.post("/api/auth/guest")
+    assert guest_resp.status_code == 200
+    headers = {"Authorization": f"Bearer {guest_resp.json()['access_token']}"}
+
+    resp = client.post(
+        "/api/settings/",
+        headers=headers,
+        json={"admin_doc_retention_days": 60},
+    )
+    assert resp.status_code == 403

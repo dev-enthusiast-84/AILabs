@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { voiceApi } from '@/services/api'
 import type { ChatMessage, ChatVoiceExportMessage } from '@/types'
 import type { ChatLanguageCode } from '@/lib/chatLanguages'
+import { maskSensitive } from '@/lib/redact'
 
 export interface ChatExportLanguage {
   code: ChatLanguageCode
@@ -10,19 +11,9 @@ export interface ChatExportLanguage {
 
 export const EXPORT_REDACTION_UNAVAILABLE = 'EXPORT_REDACTION_UNAVAILABLE'
 
+/** Backward-compatible alias — delegates to the canonical maskSensitive() from lib/redact.ts. */
 export function redactSensitiveText(text: string): string {
-  return text
-    .replace(/-----BEGIN [\s\S]+? PRIVATE KEY-----[\s\S]+?-----END [\s\S]+? PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')
-    .replace(/\bsk(?:-proj)?-[A-Za-z0-9_-]{20,}\b/g, '[REDACTED_API_KEY]')
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b/gi, 'Bearer [REDACTED_TOKEN]')
-    .replace(/\b(?:api[_-]?key|access[_-]?token|secret|password|pwd)\s*[:=]\s*["']?[^"'\s,;]{6,}/gi, (match) => {
-      const key = match.split(/[:=]/)[0].trim()
-      return `${key}: [REDACTED_SECRET]`
-    })
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[REDACTED_EMAIL]')
-    .replace(/\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b/g, '[REDACTED_PHONE]')
-    .replace(/\b(?:\d[ -]*?){13,19}\b/g, '[REDACTED_PAYMENT_CARD]')
-    .replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[REDACTED_GOV_ID]')
+  return maskSensitive(text)
 }
 
 export function toVoiceExportMessages(messages: ChatMessage[]): ChatVoiceExportMessage[] {

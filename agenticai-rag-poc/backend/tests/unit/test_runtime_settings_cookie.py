@@ -451,3 +451,36 @@ def test_restore_runtime_settings_from_cookie_reads_header(monkeypatch):
     restore_runtime_settings_from_cookie(mock_request, user)
     assert len(captured) == 1
     assert captured[0].get("model") == "gpt-4o"
+
+
+def test_get_settings_view_restores_cookie_before_reporting_source(monkeypatch):
+    """GET /settings must restore the encrypted cookie so api_key_source reflects the
+    recovered value, not 'not_configured'.
+
+    Regression: before this fix, get_settings_view did not accept request: Request and
+    never called restore_runtime_settings_from_cookie, causing the settings modal to open
+    with a spurious 'restart' warning whenever in-memory runtime settings were absent
+    (e.g. after a Vercel cold start) even though the browser still held a valid cookie.
+    """
+    from unittest.mock import MagicMock, patch
+    from app.api.settings import get_settings_view
+    from app.auth.models import UserInDB
+    import asyncio
+
+    user = UserInDB(username="admin", hashed_password="x", role="admin", session_id=None)
+    mock_request = MagicMock()
+
+    restore_calls: list[tuple] = []
+
+    def fake_restore(req, usr):
+        restore_calls.append((req, usr))
+
+    monkeypatch.setattr("app.api.settings.restore_runtime_settings_from_cookie", fake_restore)
+    monkeypatch.setattr("app.api.settings.set_runtime_scope", lambda *a, **kw: None)
+    monkeypatch.setattr("app.api.settings._build_response", lambda *a, **kw: MagicMock())
+
+    asyncio.run(get_settings_view(request=mock_request, _user=user))
+
+    assert len(restore_calls) == 1, "restore_runtime_settings_from_cookie must be called once"
+    assert restore_calls[0][0] is mock_request
+    assert restore_calls[0][1] is user

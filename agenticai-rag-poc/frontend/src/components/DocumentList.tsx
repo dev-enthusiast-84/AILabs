@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import { DocumentTextIcon, EyeIcon, TrashIcon, DocumentIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline'
+import { DocumentTextIcon, EyeIcon, TrashIcon, DocumentIcon, ArrowDownTrayIcon, SparklesIcon } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
-import { documentsApi, extractErrorMessage } from '@/services/api'
+import { documentsApi, settingsApi, extractErrorMessage } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import DocumentViewerModal from '@/components/DocumentViewerModal'
 import type { DocumentMetadataItem } from '@/types'
+
 
 interface Props {
   refreshKey: number
@@ -32,6 +33,15 @@ export default function DocumentList({ refreshKey, onDocumentsChange }: Props) {
   const [chunkCounts, setChunkCounts] = useState<Record<string, number>>({})
   const [downloading, setDownloading] = useState<string | null>(null)
   const [metadata, setMetadata] = useState<Record<string, DocumentMetadataItem>>({})
+  const [cleaning, setCleaning] = useState(false)
+  const [retentionDays, setRetentionDays] = useState<number>(30)
+  // T010 — guest session-pruned banner
+  const [prunedCount, setPrunedCount] = useState(0)
+  const [showPrunedBanner, setShowPrunedBanner] = useState(false)
+  // T025 — admin near-limit banner
+  const [showNearLimitBanner, setShowNearLimitBanner] = useState(false)
+  const [adminDocCount, setAdminDocCount] = useState(0)
+  const [adminDocLimit, setAdminDocLimit] = useState(100)
   const isGuest = useAuthStore((s) => s.isGuest)
 
   const removeDocumentFromState = (filename: string) => {
@@ -42,6 +52,52 @@ export default function DocumentList({ refreshKey, onDocumentsChange }: Props) {
     })
   }
 
+  const handleCleanup = async () => {
+    setCleaning(true)
+    try {
+      const result = await documentsApi.triggerCleanup(false)
+      if (result.deleted_count === 0) {
+        toast.success('No stale or expired documents found.')
+      } else {
+        toast.success(`Removed ${result.deleted_count} document${result.deleted_count !== 1 ? 's' : ''}: ${result.deleted_sources.join(', ')}`)
+        result.deleted_sources.forEach((name: string) => removeDocumentFromState(name))
+      }
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    } finally {
+      setCleaning(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!isGuest) {
+      settingsApi.get().then((s) => setRetentionDays(s.admin_doc_retention_days ?? 30)).catch(() => {})
+    }
+  }, [isGuest])
+
+  // T010 — auto-dismiss guest session-pruned banner after 5 s
+  useEffect(() => {
+    if (prunedCount > 0) {
+      setShowPrunedBanner(true)
+      const timer = setTimeout(() => setShowPrunedBanner(false), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [prunedCount])
+
+  // T025 — admin near-limit banner (persistent, dismissible via sessionStorage)
+  useEffect(() => {
+    if (isGuest) return
+    const dismissed = sessionStorage.getItem('doc_limit_banner_dismissed')
+    if (dismissed) return
+    settingsApi.get().then((s) => {
+      if (s.admin_docs_near_limit) {
+        setAdminDocCount(s.admin_doc_count ?? 0)
+        setAdminDocLimit(s.admin_doc_limit ?? 100)
+        setShowNearLimitBanner(true)
+      }
+    }).catch(() => {})
+  }, [isGuest])
+
   useEffect(() => {
     const load = async () => {
       setLoading(true)
@@ -49,6 +105,7 @@ export default function DocumentList({ refreshKey, onDocumentsChange }: Props) {
         const data = await documentsApi.list()
         setDocuments(data.documents)
         onDocumentsChange?.(data.documents)
+        setPrunedCount(data.pruned_previous_session_count ?? 0)
         const counts: Record<string, number> = {}
         await Promise.allSettled(
           data.documents.map((doc) =>
@@ -130,12 +187,53 @@ export default function DocumentList({ refreshKey, onDocumentsChange }: Props) {
   return (
     <>
       <div className="card p-5">
-        <h2 className="text-base font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          Indexed Documents
-          <span className="text-xs font-normal text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
-            {documents.length}
-          </span>
-        </h2>
+        {/* T010 — Guest session-pruned info banner */}
+        {showPrunedBanner && isGuest && (
+          <div className="mb-3 rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-700 flex items-center justify-between">
+            <span>Previous session documents have been cleared.</span>
+            <button onClick={() => setShowPrunedBanner(false)} className="ml-2 text-blue-500 hover:text-blue-700">✕</button>
+          </div>
+        )}
+
+        {/* T025 — Admin near-limit amber banner */}
+        {showNearLimitBanner && !isGuest && (
+          <div className="mb-3 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700 flex items-center justify-between">
+            <span>You have {adminDocCount}/{adminDocLimit} documents indexed. Consider running cleanup.</span>
+            <div className="flex items-center gap-2">
+              <a href="#document-retention" className="underline">Go to Settings →</a>
+              <button onClick={() => { sessionStorage.setItem('doc_limit_banner_dismissed', '1'); setShowNearLimitBanner(false) }} className="text-amber-500 hover:text-amber-700">✕</button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+            Indexed Documents
+            <span className="text-xs font-normal text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+              {documents.length}
+            </span>
+          </h2>
+          {!isGuest && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Auto-cleanup: {retentionDays}d</span>
+              <button
+                type="button"
+                onClick={() => void handleCleanup()}
+                disabled={cleaning}
+                title={`Remove stale and documents older than ${retentionDays} days`}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                data-testid="cleanup-btn"
+              >
+                {cleaning ? (
+                  <div className="h-3 w-3 rounded-full border border-slate-400 border-t-transparent animate-spin" />
+                ) : (
+                  <SparklesIcon className="h-3 w-3" />
+                )}
+                {cleaning ? 'Cleaning…' : 'Clean up'}
+              </button>
+            </div>
+          )}
+        </div>
         {documents.length === 0 ? (
           <div className="py-6 text-center">
             <DocumentIcon className="h-8 w-8 text-slate-300 mx-auto mb-2" />

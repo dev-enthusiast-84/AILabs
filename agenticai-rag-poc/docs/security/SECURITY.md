@@ -19,7 +19,7 @@ OWASP Top 10 controls, authentication, input validation, upload safety, and secr
 | **A01 Broken Access Control** | `require_full_access` dependency blocks guests on write/admin endpoints (HTTP 403). Guest JWT carries `role: "guest"`. | `auth/utils.py`, `api/documents.py`, `api/settings.py`, `api/guardrails.py` |
 | **A02 Cryptographic Failures** | Passwords hashed with bcrypt. JWT HS256 signed with `SECRET_KEY`; raises `RuntimeError` at startup if left as default in non-development. | `auth/utils.py`, `main.py` |
 | **A03 Injection** | bleach strips XSS. Regex patterns detect prompt/SQL injection before any LLM or DB operation. Filename sanitisation blocks path traversal. Guardrail regex validated with `re.compile` at creation. | `guardrails/safety.py`, `guardrails/engine.py` |
-| **A04 Insecure Design** | Token budget hard cap (`MAX_COMPLETION_TOKENS`). Per-IP rate limits on auth (10/min), queries (10/min), guest uploads (5/min). Guest uploads capped at 3 MB per file; admin batch capped at 20 MB total (4 MB on Vercel). Indexed-document caps bound file/vector storage growth. | `config.py`, `api/query.py`, `api/documents.py` |
+| **A04 Insecure Design** | Token budget hard cap (`MAX_COMPLETION_TOKENS`). Per-IP rate limits on auth (10/min), queries (10/min), guest uploads (5/min). Guest uploads capped at 3 MB per file; admin batch upload size is configurable via `MAX_UPLOAD_SIZE_MB` (default 20 MB). Indexed-document caps bound file/vector storage growth. | `config.py`, `api/query.py`, `api/documents.py` |
 | **A05 Security Misconfiguration** | HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, strict CSP via Vercel headers. `Server` header stripped. Swagger UI disabled when `APP_ENV=production`. | `main.py`, `vercel.json` |
 | **A06 Vulnerable Components** | Dependencies pinned in `requirements.txt`. ClamAV daemon (optional) scans uploads against current malware signatures. | `requirements.txt`, `rag/scanner.py` |
 | **A07 Auth Failures** | Login rate-limited to 10 req/min per IP. Uniform error on auth failure (no username enumeration). Guest tokens expire after 15 min. JWT JTI enforces one-time guest settings gate. | `auth/router.py`, `auth/utils.py` |
@@ -52,6 +52,7 @@ All user-supplied text passes through `sanitize_query()` in `guardrails/safety.p
 1. **bleach strip** — removes HTML tags and dangerous attributes (XSS)
 2. **Injection regex** — blocks prompt-injection (`ignore previous`, `you are now`, `system:`) and SQL injection patterns (`DROP TABLE`, `SELECT *`, `OR 1=1`)
 3. **Length cap** — queries over `MAX_QUERY_LENGTH` (default 1000 chars) → HTTP 422
+4. **PII/PCI redact pass** — built-in guardrail rules redact emails (`input-pii-email`), phone numbers (`input-pii-phone`), SSNs (`input-pii-ssn`), and credit card numbers (`input-pci-card`) before the query reaches the LLM. Matched values are replaced with `[REDACTED]` in-place; the sanitised text is forwarded downstream.
 
 Filename inputs pass through `validate_filename()`: rejects `..`, `/`, `\`, null bytes, absolute paths, and names over 255 characters.
 
@@ -172,3 +173,32 @@ The cookie payload includes all Tier 1 and Tier 2 parameters. Tier 3 infrastruct
 | Guardrail redact | INFO | Client receives redacted text; no rule detail leaked |
 | Upload rejected (type/size/AV) | WARNING | Generic rejection message |
 | Startup banner | INFO | Shown only in `development` — suppressed in `production` and `test` |
+
+---
+
+## Document Cleanup Security
+
+### Isolation guarantee (OWASP A01)
+
+The cleanup predicates in `app/rag/cleanup.py` are disjoint by design:
+
+- `_admin_filter` / `_admin_force_filter` — only select documents where `owner_role == "admin"`.
+- `_guest_session_filter` — only selects documents where `owner_role == "guest"` and `owner_session != current_session`.
+
+A sweep can never cross role boundaries. Admin sweeps never touch guest documents and vice versa. This is enforced statically in the filter logic, not by runtime access-control checks, so there is no TOCTOU race.
+
+### Configurable retention window
+
+The admin document retention period is controlled by `admin_doc_retention_days` (1–3650 days, default 30). Admins may update this value at runtime via `POST /api/settings/`; it takes effect on the next cleanup run.
+
+### Rate limit on cleanup endpoint (OWASP A04)
+
+`POST /api/documents/cleanup` is limited to 2 requests per minute per IP via slowapi. This prevents a denial-of-service pattern where an admin token is used to trigger continuous full-index deletions.
+
+### SMTP password handling (OWASP A09)
+
+The SMTP password is read from the `NOTIFICATION_SMTP_PASSWORD` environment variable (or Settings UI) and passed to `smtplib.SMTP.login()` inside `_send_smtp()`. It is **never** written to structlog, error responses, or the settings response payload. The `SettingsResponse` notification fields are always masked (`notification_email` → `o**@domain`, `notification_ntfy_topic` → first 4 chars + `***`).
+
+### ntfy.sh topic as shared secret (OWASP A02)
+
+The ntfy.sh topic is functionally a shared secret: anyone who knows the topic URL can post notifications to it. Use a long random slug (e.g. `openssl rand -hex 16`) as the topic name, not a guessable word. The topic is masked in `SettingsResponse` and never written to logs.

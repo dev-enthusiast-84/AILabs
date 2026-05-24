@@ -12,6 +12,11 @@ def _clear_settings_cache():
 @pytest.fixture(autouse=True)
 def _tmp_upload_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    # Ensure no stale blob token from other tests causes _use_blob_store() to
+    # activate when the test only expects local file storage.
+    monkeypatch.delenv("BLOB_READ_WRITE_TOKEN", raising=False)
+    monkeypatch.delenv("VERCEL_BLOB_READ_WRITE_TOKEN", raising=False)
+    monkeypatch.delenv("VERCEL", raising=False)
     _clear_settings_cache()
     yield
     _clear_settings_cache()

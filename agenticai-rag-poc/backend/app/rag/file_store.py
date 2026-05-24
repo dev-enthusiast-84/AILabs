@@ -50,14 +50,20 @@ def _upload_dir() -> pathlib.Path:
         base = str(pathlib.Path(__file__).parent.parent.parent / "uploads")
     d = pathlib.Path(base)
     d.mkdir(parents=True, exist_ok=True)
-    d.chmod(0o700)
+    try:
+        d.chmod(0o700)
+    except OSError:
+        pass  # sandboxed runtimes (Vercel /tmp overlay) may reject chmod
     return d
 
 
 def _chunk_manifest_dir() -> pathlib.Path:
     d = _upload_dir() / ".chunk-manifests"
     d.mkdir(parents=True, exist_ok=True)
-    d.chmod(0o700)
+    try:
+        d.chmod(0o700)
+    except OSError:
+        pass  # sandboxed runtimes (Vercel /tmp overlay) may reject chmod
     return d
 
 

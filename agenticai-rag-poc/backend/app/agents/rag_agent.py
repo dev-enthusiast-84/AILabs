@@ -48,6 +48,13 @@ Per-node model configuration (all default to llm_model when unset):
 
 LangSmith tracing: set LANGCHAIN_TRACING_V2=true + LANGCHAIN_API_KEY in .env.
 LangChain picks the env vars up automatically — no code changes needed here.
+
+Accepted v1 risk — document corpus redaction:
+  Retrieved chunks injected into the generator prompt (state["retrieved_context"])
+  are NOT passed through redact_sensitive_text(). Corpus content is operator-uploaded
+  (admin/guest) and treated as trusted material. Redacting chunks would corrupt
+  knowledge-base semantics for legitimate contact/reference data. Document corpus
+  redaction is deferred to a future spec.
 """
 import logging
 import operator
@@ -683,18 +690,19 @@ def reranker_node(state: AgentState) -> AgentState:
 _GENERATOR_PROMPT = ChatPromptTemplate.from_messages([
     (
         "system",
+        # Language instruction comes FIRST so it is never overridden by the rules below.
+        "{answer_instruction}"
         "You are a precise document Q&A assistant.\n\n"
         "Rules:\n"
         "1. Answer the user's original question ONLY using information present in the context below.\n"
         "2. If the context defines the user's term or stage, give that document-grounded definition directly.\n"
         "3. If the context partially addresses the question, share what you can find and note any gaps.\n"
-        "4. Only if the context contains NO information whatsoever related to the question, respond exactly:\n"
-        "   \"I could not find sufficient information in the uploaded documents to answer this question.\"\n"
+        "4. Only if the context contains NO information whatsoever related to the question, say so clearly\n"
+        "   in whatever language is specified above. Do NOT default to English if a different language was requested.\n"
         "5. If the context covers a concept closely related to or synonymous with the question term,\n"
         "   answer using that related content rather than refusing.\n"
         "6. Do not fabricate statistics, names, or details absent from the context.\n"
         "7. Be concise, factual, and cite the source name when helpful.\n\n"
-        "{answer_instruction}\n\n"
         "Context:\n{context}",
     ),
     ("human", "{question}"),
@@ -709,9 +717,14 @@ def generator_node(state: AgentState) -> AgentState:
         question = (
             f"[Revision attempt {retry_count}] "
             "Your previous answer was flagged as needing revision. "
-            "Be more strictly grounded in the context — cite only what is explicitly stated.\n\n"
+            "Be more strictly grounded in the context — cite only what is explicitly stated. "
+            "Maintain the output language specified in the system prompt.\n\n"
             + question
         )
+    # Ensure the language instruction always ends with a newline so it stays
+    # visually separated from the rules block that follows it in the prompt.
+    raw_instruction = state.get("answer_instruction", "")
+    answer_instruction = (raw_instruction.rstrip() + "\n\n") if raw_instruction else ""
     warning_threshold = get_effective_token_budget_warning_threshold()
     with get_usage_metadata_callback() as cb:
         chain = _GENERATOR_PROMPT | _llm(get_effective_generator_model()) | StrOutputParser()
@@ -719,7 +732,7 @@ def generator_node(state: AgentState) -> AgentState:
         answer = chain.invoke({
             "context": state["retrieved_context"],
             "question": question,
-            "answer_instruction": state.get("answer_instruction", ""),
+            "answer_instruction": answer_instruction,
         })
         latency = int((time.perf_counter() - t0) * 1000)
     tokens_total = state["tokens_used"] + _cb_tokens(cb)
@@ -745,11 +758,15 @@ _VALIDATOR_PROMPT = ChatPromptTemplate.from_messages([
     (
         "system",
         "You are a quality-control agent. Evaluate whether the answer is faithful to the context.\n\n"
-        "Mark status=VALID when:\n"
-        "  (a) The answer is factually supported by the context, OR\n"
-        "  (b) The answer honestly states it could not find the information — this is correct, not a failure.\n"
-        "Mark status=NEEDS_REVISION ONLY when the answer makes claims that contradict or are "
-        "absent from the context (hallucination).\n\n"
+        "{language_note}"
+        "Mark status=VALID when ANY of these conditions holds:\n"
+        "  (a) The answer is factually supported by the context (in any language).\n"
+        "  (b) The answer says it could not find sufficient information — this is ALWAYS correct\n"
+        "      and ALWAYS VALID, even if the context contains partial or unrelated information.\n"
+        "      Do NOT mark NEEDS_REVISION just because the context has some content.\n"
+        "Mark status=NEEDS_REVISION ONLY when the answer fabricates or contradicts specific facts\n"
+        "that are absent from or contradict the context (hallucination). Never use NEEDS_REVISION\n"
+        "for a truthful 'could not find' response, and NEVER for a language mismatch alone.\n\n"
         "Context:\n{context}\n\nAnswer:\n{answer}",
     ),
     ("human", "Validate."),
@@ -758,6 +775,14 @@ _VALIDATOR_PROMPT = ChatPromptTemplate.from_messages([
 
 def validator_node(state: AgentState) -> AgentState:
     retry_count = state.get("retry_count", 0)
+    # Inform the validator when a non-English output was intentionally requested
+    # so it does not flag a language mismatch as a faithfulness failure.
+    answer_instruction = state.get("answer_instruction", "")
+    language_note = (
+        f"IMPORTANT: The answer was intentionally generated in a different language "
+        f"({answer_instruction.strip()}). A non-English answer is NOT a faithfulness error. "
+        f"Judge faithfulness based on content, not language.\n\n"
+    ) if answer_instruction else ""
     with get_usage_metadata_callback() as cb:
         structured_llm = _llm(get_effective_validator_model()).with_structured_output(_ValidationResult)
         chain = _VALIDATOR_PROMPT | structured_llm
@@ -765,6 +790,7 @@ def validator_node(state: AgentState) -> AgentState:
         result: _ValidationResult = chain.invoke({
             "context": state["retrieved_context"],
             "answer": state["answer"],
+            "language_note": language_note,
         })
         latency = int((time.perf_counter() - t0) * 1000)
     validation = result.status

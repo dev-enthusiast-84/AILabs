@@ -99,9 +99,22 @@ The response includes the following pipeline feature flags (all admin-settable v
 |-------|------|-------------|
 | `retriever_hybrid_bm25` | boolean | Whether BM25 + dense hybrid search is enabled |
 | `relevance_grader_enabled` | boolean | Whether the self-RAG grader node filters low-relevance chunks |
-| `ragas_evaluation_enabled` | boolean | Whether automatic Ragas evaluation is triggered after every 50 queries |
+| `ragas_evaluation_enabled` | boolean | Whether automatic Ragas evaluation is triggered after every N queries |
+| `ragas_auto_trigger_interval` | integer | Number of queries between automatic Ragas evaluation runs (1–10000, default 50). **Admin-only field** — omitted from guest responses. |
+| `admin_doc_retention_days` | integer | How many days admin documents are retained before cleanup (1–3650, default 30). **Admin-only field** — omitted from guest responses. |
 | `reranker_type` | string | Active reranker (`"none"` or `"cross-encoder"`) |
 | `chunker_type` | string | Active chunking strategy (`"recursive"` or `"semantic"`) |
+
+> **Non-guest fields:** `ragas_auto_trigger_interval` and `admin_doc_retention_days` are only included in the response when the caller is authenticated as admin. Guest tokens receive `null` for these fields.
+
+### SettingsUpdateRequest — admin-only fields
+
+The following fields in `POST /api/settings/` require admin role:
+
+| Field | Type | Validation | Description |
+|-------|------|-----------|-------------|
+| `ragas_auto_trigger_interval` | `int \| null` | 1–10000 | Override the number of queries between automatic Ragas runs |
+| `admin_doc_retention_days` | `int \| null` | 1–3650 | Override the admin document retention window in days |
 
 ---
 
