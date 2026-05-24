@@ -6,10 +6,17 @@ on:
     paths:
       - 'agenticai-rag-poc/docs/**'
       - 'agenticai-rag-poc/README.md'
+      - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 
+# PREREQUISITE (one-time manual step — cannot be automated with GITHUB_TOKEN):
+# 1. Go to https://github.com/dev-enthusiast-84/AILabs/settings/pages
+# 2. Under Source, select "GitHub Actions" and click Save.
+# After that, this workflow deploys automatically on every merge to main
+# that touches docs/, README.md, or this workflow file.
+
 permissions:
-  contents: write   # required for configure-pages enablement: true
+  contents: read
   pages: write
   id-token: write
 
@@ -29,8 +36,6 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true   # auto-enables GitHub Pages via API on first run
 
       - name: Generate docs/README.md from root README
         run: sed 's|](docs/|](|g' agenticai-rag-poc/README.md > agenticai-rag-poc/docs/README.md
