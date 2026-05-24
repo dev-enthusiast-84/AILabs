@@ -39,6 +39,7 @@ from app.runtime.settings_store import (
     ALLOWED_EMBEDDING_MODELS,
     ALLOWED_RERANKER_TYPES,
     ALLOWED_CHUNKER_TYPES,
+    ALLOWED_JUDGE_MODELS,
     apply_runtime_settings,
     get_effective_model,
     get_effective_embedding_model,
@@ -64,6 +65,7 @@ from app.runtime.settings_store import (
     get_effective_relevance_grader_enabled,
     get_effective_ragas_evaluation_enabled,
     get_effective_reranker_type,
+    get_effective_reranker_judge_model,
     get_effective_chunker_type,
     get_effective_chunk_size,
     get_effective_chunk_overlap,
@@ -93,6 +95,7 @@ from app.runtime.settings_store import (
     validate_pinecone_region,
     validate_blob_read_write_token,
     validate_reranker_type,
+    validate_reranker_judge_model,
     validate_chunker_type,
     validate_chunk_size,
     validate_chunk_overlap,
@@ -156,6 +159,7 @@ class SettingsUpdateRequest(BaseModel):
     relevance_grader_enabled: bool | None = None
     ragas_evaluation_enabled: bool | None = None
     reranker_type: str | None = None
+    reranker_judge_model: str | None = None
     chunker_type: str | None = None
     chunk_size: int | None = None
     chunk_overlap: int | None = None
@@ -165,7 +169,7 @@ class SettingsUpdateRequest(BaseModel):
         "validator_model", "langchain_api_key", "langchain_project",
         "pinecone_api_key", "pinecone_index_name",
         "pinecone_namespace", "pinecone_cloud", "pinecone_region",
-        "blob_read_write_token", "reranker_type", "chunker_type",
+        "blob_read_write_token", "reranker_type", "reranker_judge_model", "chunker_type",
         mode="before",
     )
     @classmethod
@@ -226,6 +230,8 @@ class SettingsResponse(BaseModel):
     ragas_evaluation_enabled: bool
     reranker_type: str
     allowed_reranker_types: list[str]
+    reranker_judge_model: str
+    allowed_judge_models: list[str]
     chunker_type: str
     chunk_size: int
     chunk_overlap: int
@@ -347,6 +353,8 @@ def _build_response(user: UserInDB | None = None) -> SettingsResponse:
         ragas_evaluation_enabled=get_effective_ragas_evaluation_enabled(),
         reranker_type=get_effective_reranker_type(),
         allowed_reranker_types=sorted(ALLOWED_RERANKER_TYPES),
+        reranker_judge_model=get_effective_reranker_judge_model(),
+        allowed_judge_models=sorted(ALLOWED_JUDGE_MODELS),
         chunker_type=get_effective_chunker_type(),
         chunk_size=get_effective_chunk_size(),
         chunk_overlap=get_effective_chunk_overlap(),
@@ -442,7 +450,8 @@ async def update_settings(
             "retriever_fetch_k", "max_context_chunks",
             "max_completion_tokens", "token_budget_warning_threshold",
             "langchain_tracing_v2", "langchain_api_key", "langchain_project",
-            "retriever_hybrid_bm25", "relevance_grader_enabled", "ragas_evaluation_enabled", "reranker_type",
+            "retriever_hybrid_bm25", "relevance_grader_enabled", "ragas_evaluation_enabled",
+            "reranker_type", "reranker_judge_model",
             "chunker_type", "chunk_size", "chunk_overlap",
         }
         if any(getattr(body, f) is not None for f in non_guest_fields):
@@ -464,7 +473,8 @@ async def update_settings(
         "pinecone_api_key", "pinecone_index_name",
         "pinecone_namespace", "pinecone_cloud", "pinecone_region",
         "blob_read_write_token",
-        "retriever_hybrid_bm25", "relevance_grader_enabled", "ragas_evaluation_enabled", "reranker_type",
+        "retriever_hybrid_bm25", "relevance_grader_enabled", "ragas_evaluation_enabled",
+        "reranker_type", "reranker_judge_model",
         "chunker_type", "chunk_size", "chunk_overlap",
     ]
     if all(getattr(body, f) is None for f in all_fields):
@@ -644,6 +654,13 @@ async def update_settings(
         except ValueError as exc:
             errors["reranker_type"] = str(exc)
 
+    validated_reranker_judge_model: str | None = None
+    if body.reranker_judge_model is not None:
+        try:
+            validated_reranker_judge_model = validate_reranker_judge_model(body.reranker_judge_model)
+        except ValueError as exc:
+            errors["reranker_judge_model"] = str(exc)
+
     validated_chunker_type: str | None = None
     if body.chunker_type is not None:
         try:
@@ -707,6 +724,7 @@ async def update_settings(
         relevance_grader_enabled=validated_relevance_grader_enabled,
         ragas_evaluation_enabled=validated_ragas_evaluation_enabled,
         reranker_type=validated_reranker_type,
+        reranker_judge_model=validated_reranker_judge_model,
         chunker_type=validated_chunker_type,
         chunk_size=validated_chunk_size,
         chunk_overlap=validated_chunk_overlap,

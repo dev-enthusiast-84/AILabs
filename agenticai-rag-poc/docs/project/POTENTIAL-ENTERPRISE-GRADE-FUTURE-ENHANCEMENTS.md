@@ -1,8 +1,8 @@
-# Spec 005 Compliance And Extension Checklist
+# Potential Enterprise-Grade Future Enhancements
 
-> [Home](README.md) · [Coverage Matrix](testing/COVERAGE-MATRIX.md) · [Security](security/SECURITY.md)
+> [← Project](project/PROJECT.md) · [← Home](README.md) · [Coverage Matrix](testing/COVERAGE-MATRIX.md) · [Security](security/SECURITY.md)
 
-This checklist tracks `005-enterprise-production-hardening` recommendations without requiring paid services. Runtime-heavy local persistence and cloud products are intentionally kept out of the default app path.
+Extension points and cloud deployment recommendations for taking this capstone RAG system to enterprise-grade production scale. Items below are deliberately not enabled locally — they add infrastructure burden for limited demo value.
 
 ## Current No-Paid Coverage
 

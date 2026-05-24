@@ -1,5 +1,7 @@
 # Walkthrough Video Recorder
 
+> [← Home](README.md) · [← Project](project/PROJECT.md)
+
 The recorder creates a Playwright video from a running app, using the learner
 task list in `docs/requirements/edureka-project.pdf` as the story arc.
 
@@ -9,7 +11,6 @@ task list in `docs/requirements/edureka-project.pdf` as the story arc.
 
 Videos are published automatically after each recording run. The gallery shows the
 most recent local and remote recordings side-by-side with HTML5 video players.
-Run the recorder to generate and publish a new set:
 
 ```bash
 # Local stack recording — auto-publishes to GitHub Pages
@@ -20,9 +21,6 @@ bash scripts/record-walkthrough.sh --url http://localhost:5173 \
 bash scripts/record-walkthrough.sh --url https://your-app.vercel.app \
   --username admin --password '<admin-password>' \
   --interactive-settings
-
-# Skip the auto-publish step
-bash scripts/record-walkthrough.sh --url http://localhost:5173 --no-publish
 ```
 
 ## Covered Scenes
@@ -40,18 +38,15 @@ bash scripts/record-walkthrough.sh --url http://localhost:5173 --no-publish
 | 9. Reliability and safety | Settings notices and Guardrails modal |
 | 10. Deploy and document | Records evidence against a running stack |
 
-Additional scenes include multilingual chat and voice-assisted chat. Voice is
-demonstrated with an injected browser transcript so the recording does not need
-real microphone permission.
+Additional scenes include multilingual chat and voice-assisted chat (injected browser transcript — no real microphone permission needed).
 
 ---
 
 ## Prerequisites
 
 Complete the [Setup Guide](deployment/SETUP.md) (`bash scripts/local/setup.sh`) before
-recording. The recorder script checks for `backend/.venv`, `backend/.env`, and
-`frontend/node_modules` at startup and exits with an actionable error pointing
-to that guide if any are missing.
+recording. The recorder checks for `backend/.venv`, `backend/.env`, and
+`frontend/node_modules` at startup and exits with an actionable error if any are missing.
 
 ---
 
@@ -60,22 +55,17 @@ to that guide if any are missing.
 Start the full stack per [Local & Docker Deployment](deployment/DEPLOY-LOCAL.md), then record:
 
 ```bash
-# Admin + guest walkthrough
+# Admin + guest walkthrough (basic)
 bash scripts/record-walkthrough.sh \
   --url http://localhost:5173 \
   --username admin \
   --password '<admin-password>'
 
-# Guest-only (no credentials required)
+# Guest-only
 bash scripts/record-walkthrough.sh --url http://localhost:5173
 
-# With upload file, slower pacing, and interactive Settings pause
-bash scripts/record-walkthrough.sh \
-  --url http://localhost:5173 \
-  --upload-file sample-data/sample.xlsx \
-  --slow-mo-ms 400 \
-  --headed \
-  --interactive-settings
+# Additional flags: --upload-file sample-data/sample.xlsx  --slow-mo-ms 400
+#                  --headed  --interactive-settings  --no-publish
 ```
 
 Videos and reports are written to `artifacts/walkthrough/`.
@@ -92,8 +82,7 @@ bash scripts/record-walkthrough.sh \
   --interactive-settings
 ```
 
-> **`--interactive-settings` is required for Vercel.** See the
-> [Production Limitation](#production-limitation) section below.
+> **`--interactive-settings` is required for Vercel.** See the Production Limitation section below.
 
 ---
 
@@ -112,33 +101,13 @@ The recorder handles this gracefully:
   operator to save credentials before automation resumes.
 
 **Use `--interactive-settings` for every Vercel or production recording.**
-Guest mode applies the same restriction.
-
----
-
-## Dev vs Production Capability Differences
-
-| Capability | Local dev | Vercel production |
-|---|---|---|
-| **Provider credentials** | Read from `.env` automatically | Must be entered in Settings UI |
-| **File storage** | Local filesystem | Vercel Blob — requires `BLOB_READ_WRITE_TOKEN` |
-| **Vector store** | ChromaDB on disk | Pinecone — API key + index required in Settings |
-| **Cross-encoder reranker** | Available | Disabled (model size prohibitive) |
-| **Semantic chunker** | Available | Falls back to recursive chunker |
-| **Admin password** | Printed at startup / in `.env` | Injected via env var — not echoed |
-| **Rate limits** | Relaxed (dev defaults) | Enforced (query: 10/min; guest upload: 5/min) |
-
-Local recording shows a **superset** of a bare Vercel deployment. A Vercel
-recording with `--interactive-settings` can match it once credentials and
-storage are configured through the UI.
+Guest mode applies the same restriction. For a full comparison of local vs Vercel
+feature differences, see [Vercel Deployment — Known Limitations](deployment/DEPLOY-VERCEL.md).
 
 ---
 
 ## Notes
 
 - API keys are never stored in the script or committed to the repository.
-- The admin password is passed to Playwright via the environment and is never
-  printed by the shell wrapper.
-- Paid-service scenes (upload, query, agent trace) run only if provider
-  credentials are already configured — from `.env` (local dev) or a prior
-  Settings UI save (production).
+- The admin password is passed to Playwright via the environment and is never printed by the shell wrapper.
+- Paid-service scenes (upload, query, agent trace) run only if provider credentials are already configured.

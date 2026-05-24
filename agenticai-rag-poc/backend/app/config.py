@@ -88,17 +88,22 @@ class Settings(BaseSettings):
     retriever_bm25_weight: float = 0.5  # informational; fusion uses RRF, not weighted sum
     # ── Self-RAG relevance grader ─────────────────────────────────────────────
     # Adds one extra LLM call per query to filter irrelevant chunks before generation.
-    relevance_grader_enabled: bool = False
+    relevance_grader_enabled: bool = True
     # ── Ragas quality evaluation ──────────────────────────────────────────────
     # When true, Ragas evaluation runs automatically every N queries (see api/query.py).
     # Can be toggled at runtime via POST /api/settings/ {ragas_evaluation_enabled: true}.
     ragas_evaluation_enabled: bool = False
-    # ── Cross-encoder reranker ────────────────────────────────────────────────
-    # "none"          — disabled (default)
+    # ── Cross-encoder / LLM-as-judge reranker ────────────────────────────────
+    # "none"          — disabled
     # "cross-encoder" — requires: pip install sentence-transformers (~80 MB model download)
-    reranker_type: str = "none"
+    # "llm-judge"     — OpenAI batch call; no extra deps; works on Vercel (default)
+    reranker_type: str = "llm-judge"
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     reranker_top_k: int = 4
+    # LLM-as-judge reranker model — must differ from pipeline models to avoid
+    # circular reasoning.  gpt-4.1-mini: stronger reasoning than nano, affordable
+    # (~$0.40/1M input tokens), different family from gpt-4o-mini, works on Vercel.
+    reranker_judge_model: str = "gpt-4.1-mini"
 
     # Upload limits
     max_upload_size_mb: int = 20

@@ -1,6 +1,6 @@
 # AgentTrace Field Reference
 
-> [← Home](README.md) · [API Schemas](api/API-SCHEMAS.md) · [Agent Pipeline](architecture/AGENT-PIPELINE.md)
+> [← Home](README.md) · [← API Reference](api/API.md) · [API Schemas](api/API-SCHEMAS.md)
 
 Returned as the `trace` object in agentic-mode query responses. `null` in simple mode.
 

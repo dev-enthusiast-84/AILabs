@@ -43,13 +43,13 @@
 
 /* Nav: dark warm-oat bar with light text */
 .site-nav {
-  background:rgba(44,26,8,.97) !important;
-  border-bottom:1px solid rgba(139,103,20,.25);
+  background:rgba(22,14,5,.97) !important;
+  border-bottom:1px solid rgba(139,103,20,.2);
 }
 .nav-brand                              { color:#F2E8D0 !important; }
-.nav-list a                             { color:#D4B896 !important; }
-.nav-list a:hover,
-.nav-list a[aria-current="true"]        { color:#FAF6EE !important; background:rgba(242,232,208,.14) !important; }
+.nav-list a                             { color:rgba(196,164,107,.7) !important; }
+.nav-list a:hover                       { color:#F2E8D0 !important; background:rgba(255,255,255,.06) !important; }
+.nav-list a[aria-current="true"]        { color:#56CCF2 !important; background:rgba(56,189,248,.12) !important; box-shadow:inset 0 -2px 0 rgba(56,189,248,.6) !important; }
 .nav-badge { background:rgba(76,122,76,.2); color:#3D6B3D; border-color:rgba(76,122,76,.35); }
 
 /* Hero: captivating dark-oat gradient, override --text tokens for light text */
@@ -145,34 +145,43 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════
-   STICKY NAV
+   STICKY NAV — tab-style with gradient underline
 ═══════════════════════════════════════════════════ */
 .site-nav {
   position:sticky; top:0; z-index:100;
-  background:rgba(44,26,8,.96); backdrop-filter:blur(14px);
-  -webkit-backdrop-filter:blur(14px);
-  border-bottom:1px solid rgba(139,103,20,.25);
-  height:var(--nav-h); display:flex; align-items:center;
+  background:rgba(22,14,5,.97); backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  border-bottom:1px solid rgba(139,103,20,.2);
+  height:var(--nav-h); display:flex; align-items:stretch;
   padding:0 28px; gap:0;
 }
 .nav-brand {
   display:flex; align-items:center; gap:8px;
   font-size:13px; font-weight:800; color:var(--text);
   text-decoration:none; margin-right:auto; flex-shrink:0;
+  padding-right:24px;
 }
 .nav-brand-dot {
   width:8px; height:8px; border-radius:50%;
   background:var(--grad-main); box-shadow:0 0 8px rgba(56,189,248,.6);
+  animation:pulse 2.5s ease-in-out infinite;
 }
-.nav-list { display:flex; list-style:none; gap:3px; }
+.nav-list { display:flex; list-style:none; gap:2px; align-items:center; }
 .nav-list a {
-  display:inline-flex; align-items:center; gap:5px;
-  padding:6px 14px; font-size:12px; font-weight:600;
-  color:var(--text-dim); text-decoration:none;
-  border-radius:20px; transition:color .15s, background .15s;
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 14px; font-size:12px; font-weight:600;
+  color:rgba(196,164,107,.7); text-decoration:none;
+  border-radius:6px;
+  transition:color .18s, background .18s;
 }
-.nav-list a:hover, .nav-list a[aria-current="true"] {
-  color:var(--cyan); background:var(--cyan-dim);
+.nav-list a:hover {
+  color:#F2E8D0;
+  background:rgba(255,255,255,.06);
+}
+.nav-list a[aria-current="true"] {
+  color:#56CCF2;
+  background:rgba(56,189,248,.12);
+  box-shadow:inset 0 -2px 0 rgba(56,189,248,.6);
 }
 .nav-badge {
   font-size:9px; font-weight:800; padding:1px 5px;
@@ -257,16 +266,26 @@ body {
 ═══════════════════════════════════════════════════ */
 .pitch-section {
   padding:34px 40px;
-  border-bottom:1px solid var(--border);
+  border-top:1px solid var(--border);
 }
-.pitch-section:last-child { border-bottom:none; }
+.pitch-section:first-of-type { border-top:none; }
 .sh {
-  display:flex; align-items:center; gap:8px;
+  display:flex; align-items:center; gap:10px;
   margin-bottom:20px;
 }
-.sh::after { content:''; flex:1; height:1px; background:linear-gradient(to right,var(--border),transparent); }
-.sh-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
-.sh h2 { font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:var(--text-dim); }
+.sh-dot {
+  display:block; width:7px; height:7px; border-radius:50%;
+  flex-shrink:0; margin-top:1px;
+}
+.sh h2 {
+  font-size:11px; font-weight:800; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--text-dim); line-height:1;
+}
+.sh-rule {
+  flex:1; height:1px;
+  background:linear-gradient(to right, var(--border), transparent);
+  opacity:.5;
+}
 .section-intro { font-size:12.5px; color:var(--text-dim); line-height:1.65; margin-bottom:20px; max-width:700px; }
 
 /* ═══════════════════════════════════════════════════
@@ -564,44 +583,61 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
 /* ═══════════════════════════════════════════════════
    SIDE NAV — fixed right-edge dot navigator
 ═══════════════════════════════════════════════════ */
+/* ── Vertical section rail — always-visible labels ── */
 .side-nav {
   position:fixed; right:18px; top:50%; transform:translateY(-50%);
-  z-index:300; display:flex; flex-direction:column; gap:16px; align-items:flex-end;
+  z-index:200;
+  display:flex; flex-direction:column; gap:2px;
+  background:rgba(13,22,39,.88);
+  border:1px solid var(--border-hi);
+  border-radius:12px; padding:10px 6px;
+  backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+  box-shadow:0 8px 32px rgba(0,0,0,.5);
+  min-width:136px;
+}
+.side-nav::before {
+  content:'SECTIONS';
+  display:block;
+  font-size:8.5px; font-weight:800; letter-spacing:.14em;
+  color:rgba(148,163,184,.45);
+  text-align:center; padding:0 6px 8px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:4px;
 }
 .side-nav-item {
   display:flex; align-items:center; gap:10px;
   text-decoration:none; cursor:pointer;
+  padding:8px 10px; border-radius:8px;
+  transition:background .15s;
+  position:relative;
 }
-.side-nav-label {
-  font-size:11px; font-weight:700; color:var(--text-dim);
-  background:rgba(13,22,39,.92); border:1px solid var(--border-hi);
-  padding:4px 11px; border-radius:5px;
-  opacity:0; transform:translateX(8px);
-  transition:opacity .18s, transform .18s;
-  white-space:nowrap; pointer-events:none;
-  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-}
-.side-nav-item:hover .side-nav-label,
-.side-nav-item[aria-current="true"] .side-nav-label {
-  opacity:1; transform:translateX(0);
+.side-nav-item:hover { background:rgba(255,255,255,.05); }
+.side-nav-item[aria-current="true"] {
+  background:linear-gradient(90deg, rgba(56,189,248,.14), rgba(167,139,250,.07));
 }
 .side-nav-dot {
-  width:10px; height:10px; border-radius:50%; flex-shrink:0;
-  background:rgba(148,163,184,.25); border:2px solid rgba(148,163,184,.3);
-  transition:all .22s;
+  width:7px; height:7px; border-radius:50%; flex-shrink:0;
+  background:rgba(148,163,184,.3); border:1.5px solid rgba(148,163,184,.4);
+  transition:all .2s;
 }
 .side-nav-item:hover .side-nav-dot {
-  background:rgba(56,189,248,.45); border-color:rgba(56,189,248,.5);
+  background:rgba(56,189,248,.5); border-color:rgba(56,189,248,.6);
 }
 .side-nav-item[aria-current="true"] .side-nav-dot {
   background:var(--cyan); border-color:var(--cyan);
-  box-shadow:0 0 10px rgba(56,189,248,.65); width:12px; height:12px;
+  box-shadow:0 0 8px rgba(56,189,248,.7);
 }
-.side-nav-item:focus-visible { outline:none; }
-.side-nav-item:focus-visible .side-nav-dot {
-  box-shadow:0 0 0 3px rgba(56,189,248,.6);
+.side-nav-label {
+  font-size:11.5px; font-weight:600;
+  color:rgba(148,163,184,.7);
+  white-space:nowrap;
+  transition:color .15s;
+  pointer-events:none;
 }
-@media (max-width:1080px) { .side-nav { display:none; } }
+.side-nav-item:hover .side-nav-label { color:var(--text); }
+.side-nav-item[aria-current="true"] .side-nav-label { color:var(--cyan); font-weight:700; }
+.side-nav-item:focus-visible { outline:none; box-shadow:0 0 0 2px rgba(56,189,248,.6); }
+@media (max-width:1200px) { .side-nav { display:none; } }
 
 /* ═══════════════════════════════════════════════════
    FLOATING PREV / NEXT CONTROLLER
@@ -681,27 +717,27 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
 <!-- SIDE DOT NAVIGATOR (right edge, always visible) -->
 <nav class="side-nav" aria-label="Section navigator" id="side-nav">
   <a class="side-nav-item" href="#hero" data-section="hero" aria-label="Overview — go to top">
-    <span class="side-nav-label">Overview</span>
     <span class="side-nav-dot" aria-hidden="true"></span>
+    <span class="side-nav-label">Overview</span>
   </a>
   <a class="side-nav-item" href="#requirements" data-section="requirements" aria-label="Requirements">
-    <span class="side-nav-label">Requirements</span>
     <span class="side-nav-dot" aria-hidden="true"></span>
+    <span class="side-nav-label">Requirements</span>
   </a>
   <a class="side-nav-item" href="#submission" data-section="submission" aria-label="Submission">
-    <span class="side-nav-label">Submission</span>
     <span class="side-nav-dot" aria-hidden="true"></span>
+    <span class="side-nav-label">Submission</span>
   </a>
   <a class="side-nav-item" href="#pitch" data-section="pitch" aria-label="Advanced Features">
-    <span class="side-nav-label">Advanced</span>
     <span class="side-nav-dot" aria-hidden="true"></span>
+    <span class="side-nav-label">Advanced</span>
   </a>
 </nav>
 
 <!-- FLOATING PREV / NEXT CONTROLLER (bottom-right) -->
 <div class="float-nav" id="float-nav" role="navigation" aria-label="Navigate between sections">
   <button class="float-btn" id="float-prev" aria-label="Go to previous section" title="Previous section" disabled>&#8593;</button>
-  <div class="float-section-pill" id="float-pill" aria-live="polite" aria-atomic="true">Top</div>
+  <div class="float-section-pill" id="float-pill" aria-live="polite" aria-atomic="true">Overview</div>
   <button class="float-btn" id="float-next" aria-label="Go to next section" title="Next section">&#8595;</button>
 </div>
 
@@ -816,6 +852,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
   <div class="sh">
     <span class="sh-dot" style="background:var(--emerald)" aria-hidden="true"></span>
     <h2 id="req-h">Capstone Requirement Checklist — All 10 Tasks</h2>
+    <span class="sh-rule" aria-hidden="true"></span>
   </div>
   <p class="section-intro">
     Every task from the Edureka / Illinois Tech Generative AI &amp; ML Capstone specification is addressed and shipped.
@@ -842,7 +879,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="check-body">
         <div class="check-num">Task 2</div>
         <div class="check-title">User Interaction Layer</div>
-        <div class="check-detail">React 18 single-page application with login and document dashboard, plus a full REST API (27 endpoints). Guest access available — no account required.</div>
+        <div class="check-detail">React 18 single-page application with login and document dashboard, plus a full REST API (28 endpoints). Guest access available — no account required.</div>
         <span class="check-tag tag-green">Delivered</span>
       </div>
     </article>
@@ -944,6 +981,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
   <div class="sh">
     <span class="sh-dot" style="background:var(--amber)" aria-hidden="true"></span>
     <h2 id="sub-h">Submission Guidelines — Compliance</h2>
+    <span class="sh-rule" aria-hidden="true"></span>
   </div>
   <p class="section-intro">
     The capstone requires complete source code plus documentation covering system setup, architecture, agent roles, deployment steps, limitations, and challenges.
@@ -1021,7 +1059,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="sub-check" aria-label="Covered">✓</div>
       <div>
         <div class="sub-title">Testing &amp; Quality Evidence</div>
-        <div class="sub-detail">590+ tests across unit, integration, end-to-end, and live-dependency layers. HTML coverage reports included. CI pipeline runs on every pull request with a ≥ 98% backend coverage gate and OWASP-aligned quality checks.</div>
+        <div class="sub-detail">1112+ tests across unit, integration, end-to-end, and live-dependency layers. HTML coverage reports included. CI pipeline runs on every pull request with a ≥ 98% backend coverage gate and OWASP-aligned quality checks.</div>
         <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/testing/TESTING" target="_blank" rel="noopener noreferrer">→ TESTING.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/testing/TESTING-FRONTEND" target="_blank" rel="noopener noreferrer">→ TESTING-FRONTEND.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/testing/COVERAGE-MATRIX" target="_blank" rel="noopener noreferrer">→ COVERAGE-MATRIX.md</a></div>
       </div>
     </div>
@@ -1036,6 +1074,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
   <div class="sh">
     <span class="sh-dot" style="background:var(--purple)" aria-hidden="true"></span>
     <h2 id="pitch-h">Advanced Features &amp; Extended Capabilities</h2>
+    <span class="sh-rule" aria-hidden="true"></span>
   </div>
 
   <p class="section-intro">
@@ -1094,7 +1133,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
         <span class="p-num" aria-hidden="true">5</span>
         <div class="p-icon" aria-hidden="true">🎯</div>
         <div class="p-name">Reranker</div>
-        <div class="p-desc">Cross-encoder precision sort</div>
+        <div class="p-desc">LLM-as-judge precision sort</div>
       </div>
       <div class="p-connector" aria-hidden="true"></div>
       <div class="p-node n6" role="listitem">
@@ -1190,11 +1229,11 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
   </h3>
   <div class="trust-row" role="list" aria-label="Key metrics">
     <div class="trust-card" role="listitem">
-      <div class="trust-num">590+</div>
+      <div class="trust-num">1112+</div>
       <div class="trust-label">Automated Tests</div>
     </div>
     <div class="trust-card" role="listitem">
-      <div class="trust-num">27</div>
+      <div class="trust-num">28</div>
       <div class="trust-label">API Endpoints</div>
     </div>
     <div class="trust-card" role="listitem">

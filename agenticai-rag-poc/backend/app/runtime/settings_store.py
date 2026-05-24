@@ -111,12 +111,24 @@ _runtime_retriever_hybrid_bm25: bool | None = None
 _runtime_relevance_grader_enabled: bool | None = None
 _runtime_ragas_evaluation_enabled: bool | None = None
 _runtime_reranker_type: str | None = None
+_runtime_reranker_judge_model: str = ""   # empty = fall back to .env config
 _runtime_chunker_type: str | None = None
 _runtime_chunk_size: int | None = None
 _runtime_chunk_overlap: int | None = None
 
 ALLOWED_RERANKER_TYPES: frozenset[str] = frozenset({"none", "cross-encoder", "llm-judge"})
 ALLOWED_CHUNKER_TYPES: frozenset[str] = frozenset({"recursive", "semantic"})
+
+# OpenAI models permitted as the LLM-as-judge reranker model.
+# Intentionally excludes all models in ALLOWED_MODELS (gpt-4o, gpt-4o-mini, etc.)
+# to enforce independent evaluation — using the same model as the pipeline creates
+# circular reasoning.  gpt-4.1-mini is the default: stronger reasoning than nano,
+# affordable (~$0.40/1M input tokens), different family from pipeline models.
+ALLOWED_JUDGE_MODELS: frozenset[str] = frozenset({
+    "gpt-4.1-mini",   # default — balanced reasoning + cost
+    "gpt-4.1-nano",   # cheapest option
+    "gpt-4.1",        # highest quality; use when precision matters most
+})
 
 
 def set_runtime_scope(role: str | None, session_id: str | None = None) -> None:
@@ -375,6 +387,19 @@ def validate_reranker_type(v: str) -> str:
     if v not in ALLOWED_RERANKER_TYPES:
         raise ValueError(f"reranker_type must be one of: {', '.join(sorted(ALLOWED_RERANKER_TYPES))}.")
     return v
+
+
+def validate_reranker_judge_model(model: str) -> str:
+    """Raise ValueError if reranker_judge_model is not in the allowed OpenAI judge model list."""
+    model = model.strip()
+    if not model:
+        raise ValueError("Reranker judge model must not be empty.")
+    if model not in ALLOWED_JUDGE_MODELS:
+        raise ValueError(
+            f"reranker_judge_model '{model}' is not allowed. "
+            f"Supported models: {', '.join(sorted(ALLOWED_JUDGE_MODELS))}."
+        )
+    return model
 
 
 def validate_chunker_type(v: str) -> str:
@@ -910,6 +935,12 @@ def get_effective_reranker_type() -> str:
         return _smart_default_reranker_type()
 
 
+def get_effective_reranker_judge_model() -> str:
+    """Return the effective LLM-as-judge reranker model (falls back to config default)."""
+    with _lock:
+        return _runtime_reranker_judge_model or get_settings().reranker_judge_model
+
+
 def get_effective_chunker_type() -> str:
     """Return the effective chunker type ('recursive' or 'semantic')."""
     with _lock:
@@ -969,6 +1000,7 @@ def apply_runtime_settings(
     relevance_grader_enabled: bool | None = None,
     ragas_evaluation_enabled: bool | None = None,
     reranker_type: str | None = None,
+    reranker_judge_model: str | None = None,
     chunker_type: str | None = None,
     chunk_size: int | None = None,
     chunk_overlap: int | None = None,
@@ -992,7 +1024,8 @@ def apply_runtime_settings(
     global _runtime_blob_read_write_token
     global _runtime_retriever_hybrid_bm25, _runtime_relevance_grader_enabled
     global _runtime_ragas_evaluation_enabled
-    global _runtime_reranker_type, _runtime_chunker_type, _runtime_chunk_size, _runtime_chunk_overlap
+    global _runtime_reranker_type, _runtime_reranker_judge_model
+    global _runtime_chunker_type, _runtime_chunk_size, _runtime_chunk_overlap
 
     if scope_session_id:
         with _lock:
@@ -1058,6 +1091,7 @@ def apply_runtime_settings(
         if relevance_grader_enabled is not None:      _runtime_relevance_grader_enabled = relevance_grader_enabled
         if ragas_evaluation_enabled is not None:      _runtime_ragas_evaluation_enabled = ragas_evaluation_enabled
         if reranker_type is not None:                 _runtime_reranker_type = reranker_type
+        if reranker_judge_model is not None:          _runtime_reranker_judge_model = reranker_judge_model
         if chunker_type is not None:                  _runtime_chunker_type = chunker_type
         if chunk_size is not None:                    _runtime_chunk_size = chunk_size
         if chunk_overlap is not None:                 _runtime_chunk_overlap = chunk_overlap

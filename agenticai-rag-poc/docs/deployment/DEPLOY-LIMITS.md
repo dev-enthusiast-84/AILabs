@@ -1,5 +1,5 @@
 # Operational Limits
-> [← Home](README.md) · [Local Deployment](deployment/DEPLOY-LOCAL.md) · [Vercel Deployment](deployment/DEPLOY-VERCEL.md)
+> [← Home](README.md) · [← Deployment](deployment/DEPLOYMENT.md)
 
 Hard limits enforced in the backend. Exceeding any of these results in a 4xx response or a server-side truncation with a logged warning. Values are not runtime-configurable unless an env var is listed.
 
@@ -103,23 +103,13 @@ Enforced in `backend/app/rag/scanner.py`.
 ---
 
 ## Async Job Store Cleanup
-The in-process async job store (`VoiceExportJobStore`) enforces TTL-based expiry.
-Expired entries are not removed automatically by a background thread — they are evicted
-lazily on the next status check or on explicit `force_expire` calls from tests.
-In production, long-lived processes should use an external job store (Redis, database)
-to avoid unbounded memory growth if job creation outpaces access-based eviction.
 
-Job lifecycle state transitions:
+The in-process `VoiceExportJobStore` evicts expired entries lazily on the next status check — there is no background sweep thread. In production at scale, use an external job store (Redis, database) to avoid unbounded memory growth. For the full job lifecycle state transitions, see [Voice Export API Schemas](api/API-SCHEMAS-VOICE.md).
 
-| State | Description |
-|-------|-------------|
-| `pending` | Job accepted; synthesis not yet started |
-| `processing` | TTS synthesis in progress |
-| `complete` | Audio artifact available for download |
-| `failed` | Synthesis error; job entry retained until TTL expires |
-| `expired` | TTL elapsed; job returns 410 Gone on status check |
 ---
+
 ## Notes on Limit Enforcement
-- All hard limits listed here are enforced server-side and cannot be overridden by client requests.
-- Env vars that control soft limits (e.g. `RETRIEVER_K`, `MAX_COMPLETION_TOKENS`) take effect on restart.
-- Limits marked "not configurable" are compile-time constants in the source file.
+
+- All hard limits are enforced server-side and cannot be overridden by client requests.
+- Env vars controlling soft limits (e.g. `RETRIEVER_K`, `MAX_COMPLETION_TOKENS`) take effect on restart.
+- Limits marked "not configurable" are compile-time constants.

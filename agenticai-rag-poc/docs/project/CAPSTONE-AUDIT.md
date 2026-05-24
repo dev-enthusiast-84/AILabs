@@ -1,5 +1,7 @@
 # Edureka Capstone Audit
 
+> [← Home](README.md) · [← Project](project/PROJECT.md)
+
 This audit maps `docs/requirements/edureka-project.pdf` to the implemented system, tests, documentation, and submission package expectations.
 
 ## Requirement Coverage

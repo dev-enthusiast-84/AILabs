@@ -22,8 +22,11 @@ Search improvements applied at each stage:
    the vector captures document provenance alongside content semantics.
 
 4. Reranking (reranker_node — Feature 4):
-   Cross-encoder re-scores retrieved chunks for precision. Activated when
-   RERANKER_TYPE=cross-encoder. Requires: pip install sentence-transformers.
+   Two modes. RERANKER_TYPE=cross-encoder: sentence_transformers CrossEncoder
+   re-scores chunks (requires pip install sentence-transformers; not on Vercel).
+   RERANKER_TYPE=llm-judge: single OpenAI batch call scores all chunks 0–10;
+   uses RERANKER_JUDGE_MODEL (default gpt-4.1-nano) — intentionally different
+   from pipeline models; zero extra dependencies; works on Vercel.
 
 5. RAG Fusion / RRF (retriever_node — Feature 5):
    Reciprocal Rank Fusion combines rankings from multi-query fan-out so chunks
@@ -80,6 +83,7 @@ from app.runtime.settings_store import (
     get_effective_retriever_hybrid_bm25,
     get_effective_relevance_grader_enabled,
     get_effective_reranker_type,
+    get_effective_reranker_judge_model,
 )
 
 def _cb_tokens(cb) -> int:
@@ -469,6 +473,66 @@ def grader_node(state: AgentState) -> AgentState:
 _cross_encoder_cache: dict = {}
 
 
+class _LLMJudgeScores(PydanticBaseModel):
+    """Structured output schema for the LLM-as-judge reranker."""
+    scores: list[int]
+
+
+def _llm_judge_rerank(
+    docs: list[Document],
+    question: str,
+    top_k: int,
+    api_key: str,
+    judge_model: str,
+) -> tuple[list[Document], int]:
+    """Score chunks with a single LLM batch call; return (ranked_docs[:top_k], tokens_used).
+
+    Each chunk is truncated to 400 chars — sufficient for relevance judgement and
+    keeps the prompt compact.  Falls back to first top_k docs on any error so the
+    pipeline never stalls.
+    """
+    chunk_snippets = [
+        doc.metadata.get("raw_chunk", doc.page_content)[:400]
+        for doc in docs
+    ]
+    numbered = "\n\n".join(f"[{i + 1}] {text}" for i, text in enumerate(chunk_snippets))
+
+    # timeout=8: if the judge LLM is slow or unresponsive, the try/except below
+    # catches the timeout and falls back gracefully — the pipeline never stalls.
+    llm = ChatOpenAI(
+        model=judge_model,
+        openai_api_key=api_key,
+        max_tokens=128,
+        timeout=8,
+    ).with_structured_output(_LLMJudgeScores)
+
+    prompt = (
+        "Rate each document chunk's relevance to the query on a scale of 0–10 "
+        "(0 = irrelevant, 10 = directly answers the query).\n\n"
+        f"Query: {question}\n\n"
+        f"Chunks:\n{numbered}\n\n"
+        "Return a 'scores' array with one integer per chunk in the same order."
+    )
+
+    try:
+        with get_usage_metadata_callback() as cb:
+            result: _LLMJudgeScores = llm.invoke(prompt)
+        tokens = _cb_tokens(cb)
+    except Exception as exc:
+        _logger.warning("LLM judge reranker failed (%s) — passing through unchanged", exc)
+        return docs[:top_k], 0
+
+    if len(result.scores) != len(docs):
+        _logger.warning(
+            "LLM judge returned %d scores for %d chunks — passing through unchanged",
+            len(result.scores), len(docs),
+        )
+        return docs[:top_k], 0
+
+    ranked = sorted(zip(docs, result.scores), key=lambda x: x[1], reverse=True)
+    return [doc for doc, _ in ranked[:top_k]], tokens
+
+
 def _get_cross_encoder(model_name: str):
     """Return a cached CrossEncoder, creating it on first call for each model.
 
@@ -486,12 +550,14 @@ def _get_cross_encoder(model_name: str):
 
 
 def reranker_node(state: AgentState) -> AgentState:
-    """Cross-encoder reranking — sorts chunks by predicted relevance to the question.
+    """Rerank retrieved chunks by predicted relevance to the question.
 
-    No-op when RERANKER_TYPE=none (default). When RERANKER_TYPE=cross-encoder,
-    lazy-imports sentence_transformers.CrossEncoder, scores all (question, chunk)
-    pairs, and keeps the top RERANKER_TOP_K chunks. Falls back to no-op with a
-    warning when sentence_transformers is not installed.
+    RERANKER_TYPE=none (default): pass-through, no-op.
+    RERANKER_TYPE=cross-encoder: sentence_transformers CrossEncoder scores all
+      (question, chunk) pairs; falls back to no-op if package absent.
+    RERANKER_TYPE=llm-judge: single OpenAI batch call using RERANKER_JUDGE_MODEL
+      (default gpt-4.1-nano); scores 0–10 per chunk; no extra dependencies;
+      works on Vercel.
 
     OWASP A04: reranker_top_k is bounded by config; cannot be inflated by user input.
     """
@@ -538,6 +604,43 @@ def reranker_node(state: AgentState) -> AgentState:
             "reranker_latency_ms": latency,
             "messages": [AIMessage(
                 content=f"[Reranker] {len(docs)} → {len(top_docs)} chunks (cross-encoder)"
+            )],
+        }
+
+    if reranker_type == "llm-judge":
+        judge_model = get_effective_reranker_judge_model()
+        t0 = time.perf_counter()
+        top_docs, tokens = _llm_judge_rerank(
+            docs=docs,
+            question=state["question"],
+            top_k=settings.reranker_top_k,
+            api_key=get_effective_api_key(),
+            judge_model=judge_model,
+        )
+        latency = int((time.perf_counter() - t0) * 1000)
+
+        context = format_context(top_docs)
+        sources = list({doc.metadata.get("source", "unknown") for doc in top_docs})
+
+        log.info(
+            "reranker",
+            type="llm-judge",
+            model=judge_model,
+            input_chunks=len(docs),
+            output_chunks=len(top_docs),
+            latency_ms=latency,
+            tokens=tokens,
+        )
+        return {
+            **state,
+            "retrieved_docs": top_docs,
+            "retrieved_context": context,
+            "sources": sources,
+            "chunks_after_rerank": len(top_docs),
+            "reranker_latency_ms": latency,
+            "messages": [AIMessage(
+                content=f"[Reranker] {len(docs)} → {len(top_docs)} chunks "
+                        f"(llm-judge: {judge_model})"
             )],
         }
 

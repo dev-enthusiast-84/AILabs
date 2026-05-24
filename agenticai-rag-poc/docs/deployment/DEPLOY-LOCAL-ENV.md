@@ -1,6 +1,6 @@
 # Environment Variables Reference
 
-> [← Home](README.md) · [Local & Docker Deployment](deployment/DEPLOY-LOCAL.md) · [Vercel Deployment](deployment/DEPLOY-VERCEL.md)
+> [← Home](README.md) · [← Deployment](deployment/DEPLOYMENT.md)
 
 All variables live in `backend/.env`, created by `setup.sh` from `backend/.env.example`. **Never commit `backend/.env`.**
 
@@ -16,6 +16,8 @@ Production ignores billing-bearing provider values (`OPENAI_API_KEY`, `PINECONE_
 | `SECRET_KEY` | insecure default | **Yes in prod** | JWT signing — generate with `openssl rand -hex 32` |
 | `ADMIN_PASSWORD` | _(auto-generated)_ | **Yes** | Admin login password — printed at startup in dev |
 | `APP_ENV` | `development` | No | `production` disables Swagger UI and the startup credential banner |
+| `ALGORITHM` | `HS256` | No | JWT signing algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `45` | No | Admin JWT lifetime in minutes |
 | `SESSION_COMPATIBILITY_VERSION` | `1` | No | Bump after incompatible deploys to force re-login for all sessions |
 | `ALLOWED_ORIGINS` | `http://localhost:5173,...` | No | CORS allowed origins (comma-separated) |
 
@@ -37,25 +39,23 @@ Production ignores billing-bearing provider values (`OPENAI_API_KEY`, `PINECONE_
 |----------|---------|----------|---------|
 | `PINECONE_API_KEY` | — | **Yes** | Pinecone API key (local dev only; production uses Settings UI) |
 | `PINECONE_INDEX_NAME` | `agenticai-rag-poc-documents` | No | Index name; auto-created if absent (serverless, cosine) |
-| `PINECONE_NAMESPACE` | `agenticai-rag-poc` | No | Namespace for multi-tenancy (optional) |
+| `PINECONE_NAMESPACE` | `agenticai-rag-poc` | No | Namespace for multi-tenancy |
 | `PINECONE_CLOUD` | `aws` | No | Serverless cloud provider: `aws` or `gcp` |
 | `PINECONE_REGION` | `us-east-1` | No | Serverless region for index creation |
 
 ---
 
-## Document & Upload Limits
+## Upload & Rate Limits
 
 | Variable | Default | Required | Purpose |
 |----------|---------|----------|---------|
+| `MAX_UPLOAD_SIZE_MB` | `20` | No | Max upload for admins (auto-capped at 4 MB on Vercel) |
+| `GUEST_MAX_UPLOAD_SIZE_MB` | `2` | No | Max upload for guests (plain-text files only) |
 | `MAX_INDEXED_DOCUMENTS` | `10` | No | Admin corpus cap to bound file/vector storage growth |
 | `GUEST_MAX_INDEXED_DOCUMENTS` | `3` | No | Per-guest-session document cap |
-
----
-
-## Rate Limiting & Sessions
-
-| Variable | Default | Required | Purpose |
-|----------|---------|----------|---------|
+| `GUEST_DOC_RETENTION_SECONDS` | `3600` | No | How long guest documents stay indexed after session expiry |
+| `MAX_QUERY_LENGTH` | `1000` | No | Maximum query characters — longer inputs → HTTP 422 |
+| `RATE_LIMIT_PER_MINUTE` | `30` | No | Global per-IP rate limit applied to all endpoints |
 | `QUERY_RATE_LIMIT_PER_MINUTE` | `10` | No | Per-IP cap on `POST /api/query/` |
 | `GUEST_UPLOAD_RATE_LIMIT_PER_MINUTE` | `5` | No | Per-IP upload cap for guests (admins exempt) |
 | `GUEST_TOKEN_EXPIRE_MINUTES` | `15` | No | Guest JWT lifetime in minutes |
@@ -66,38 +66,14 @@ Production ignores billing-bearing provider values (`OPENAI_API_KEY`, `PINECONE_
 
 | Variable | Default | Required | Purpose |
 |----------|---------|----------|---------|
-| `MAX_COMPLETION_TOKENS` | `1024` | No | Hard cap on LLM output tokens per response (production uses Settings UI) |
+| `LLM_MODEL` | `gpt-4o-mini` | No | Default OpenAI model (local dev only; production uses Settings UI) |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | No | OpenAI embedding model for indexing and query vectors |
+| `MAX_COMPLETION_TOKENS` | `1024` | No | Hard cap on LLM output tokens per response |
+| `TOKEN_BUDGET_WARNING_THRESHOLD` | `800` | No | Soft warning logged when approaching the token cap |
+| `MAX_CONTEXT_CHUNKS` | `4` | No | Maximum chunks included in the LLM prompt |
 | `PLANNER_MODEL` | _(llm_model)_ | No | Per-node model override for the Planner node |
-| `GENERATOR_MODEL` | _(llm_model)_ | No | Per-node model override for the Generator node (consider `gpt-4o` in prod) |
+| `GENERATOR_MODEL` | _(llm_model)_ | No | Per-node model override for the Generator node |
 | `VALIDATOR_MODEL` | _(llm_model)_ | No | Per-node model override for the Validator node |
-
----
-
-## Retrieval & Chunking
-
-| Variable | Default | Required | Purpose |
-|----------|---------|----------|---------|
-| `RETRIEVER_K` | `4` | No | Top-k chunks returned by similarity search |
-| `RETRIEVER_FETCH_K` | `20` | No | Candidate pool size for MMR re-ranking (should be ≥ `RETRIEVER_K`) |
-| `RETRIEVER_USE_MMR` | `false` | No | Use Max Marginal Relevance search (Chroma only) for diversity |
-| `SIMILARITY_SCORE_THRESHOLD` | `0.0` | No | Min cosine similarity (0–1); chunks below threshold dropped. `0.0` = disabled |
-| `RETRIEVER_FUSION_MODE` | `rrf` | No | Multi-query result fusion: `rrf` (Reciprocal Rank Fusion) or `dedup` |
-| `RETRIEVER_RRF_K` | `60` | No | RRF constant — higher value reduces rank-position sensitivity |
-| `RETRIEVER_HYBRID_BM25` | `true` | No | Fuse BM25 lexical search with dense results via RRF (requires `pip install rank-bm25`) |
-| `RETRIEVER_BM25_WEIGHT` | `0.5` | No | BM25 weight hint (informational; RRF drives actual fusion weighting) |
-| `RELEVANCE_GRADER_ENABLED` | `false` | No | Enable self-RAG relevance grader — drops irrelevant chunks before generation (adds one LLM call) |
-| `CHUNKER_TYPE` | `recursive` | No | `recursive` (default) or `semantic` — semantic uses embedding-similarity boundaries |
-| `SEMANTIC_BREAKPOINT_THRESHOLD_TYPE` | `percentile` | No | SemanticChunker threshold type: `percentile`, `standard_deviation`, `interquartile`, `gradient` |
-
----
-
-## Reranker
-
-| Variable | Default | Required | Purpose |
-|----------|---------|----------|---------|
-| `RERANKER_TYPE` | `none` | No | `none` (disabled) or `cross-encoder` (requires `pip install sentence-transformers`) |
-| `RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | No | Cross-encoder model used when `RERANKER_TYPE=cross-encoder` |
-| `RERANKER_TOP_K` | `4` | No | Number of chunks to keep after reranking |
 
 ---
 
@@ -108,21 +84,20 @@ Production ignores billing-bearing provider values (`OPENAI_API_KEY`, `PINECONE_
 | `LANGCHAIN_TRACING_V2` | `false` | No | Set `true` to enable LangSmith tracing |
 | `LANGCHAIN_API_KEY` | — | No | LangSmith API key (required when tracing enabled) |
 | `LANGCHAIN_PROJECT` | `agenticai-rag-poc` | No | LangSmith project name for trace grouping |
-| `RAGAS_SCORES_FILE` | `/tmp/ragas_scores.json` | No | Path where Ragas evaluation results are persisted; read by the admin dashboard |
 
 ---
 
-## Antivirus (Docker only)
+## Antivirus & Guardrails
 
 | Variable | Default | Required | Purpose |
 |----------|---------|----------|---------|
-| `CLAMAV_HOST` | — | No | Hostname of a ClamAV daemon. If unset, only regex-based injection checks run. |
-| `CLAMAV_PORT` | `3310` | No | TCP port for the ClamAV daemon. Only used when `CLAMAV_HOST` is set. |
+| `CLAMAV_HOST` | — | No | ClamAV daemon hostname; unset = regex-only injection checks |
+| `CLAMAV_PORT` | `3310` | No | ClamAV daemon TCP port (used only when `CLAMAV_HOST` is set) |
+
+Built-in guardrail rules are seeded on startup. Manage via **Settings → Guardrails** or `POST /api/guardrails/`. Custom rules are in-memory; reset on restart. See [Content Guardrails](security/GUARDRAILS.md).
 
 ---
 
-## Guardrails
+## Pipeline & Retrieval Tuning
 
-Built-in rules (prompt injection, SQL injection, PII, etc.) are seeded automatically on startup. To manage rules locally, use **Settings → Guardrails** in the UI or call `POST /api/guardrails/` directly. Custom rules are in-memory and reset on server restart.
-
-See [Content Guardrails](security/GUARDRAILS.md) for rule types, built-in rules, and API examples.
+Retrieval, chunking, reranker, and Ragas evaluation variables → [Pipeline & Retrieval Variables](deployment/DEPLOY-LOCAL-ENV-PIPELINE.md).

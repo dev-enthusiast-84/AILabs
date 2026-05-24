@@ -126,6 +126,65 @@
       font-family: var(--base-font-family);
       font-size: 14px;
     }
+
+    /* ── Link styling: gradient underline, no default blue underline ── */
+    .markdown-section a {
+      color: #8B6914;
+      text-decoration: none;
+      background-image: linear-gradient(90deg, #8B6914, #C4853A);
+      background-repeat: no-repeat;
+      background-size: 0% 1.5px;
+      background-position: left bottom;
+      transition: background-size 0.22s ease, color 0.18s;
+      padding-bottom: 1px;
+    }
+    .markdown-section a:hover {
+      color: #C4853A;
+      background-size: 100% 1.5px;
+    }
+
+    /* ── Sidebar nav: tab-style active indicator ── */
+    .sidebar-nav ul li > a {
+      position: relative;
+      padding-left: 16px;
+      transition: color 0.15s, padding-left 0.15s;
+    }
+    .sidebar-nav ul li > a::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%) scaleY(0);
+      width: 3px;
+      height: 60%;
+      border-radius: 0 2px 2px 0;
+      background: linear-gradient(180deg, #8B6914, #C4853A);
+      transition: transform 0.18s cubic-bezier(.34,1.56,.64,1), opacity 0.15s;
+      opacity: 0;
+    }
+    .sidebar-nav ul li.active > a::before,
+    .sidebar-nav ul li > a:hover::before {
+      transform: translateY(-50%) scaleY(1);
+      opacity: 1;
+    }
+    .sidebar-nav ul li > a:hover {
+      padding-left: 22px;
+      color: #8B6914;
+    }
+
+    /* ── Pagination nav: gradient button style ── */
+    .pagination-item a {
+      border: 1px solid #DDD0B0 !important;
+      border-radius: 6px !important;
+      color: #5C3D1E !important;
+      text-decoration: none !important;
+      transition: background 0.18s, border-color 0.18s !important;
+    }
+    .pagination-item a:hover {
+      background: linear-gradient(135deg, rgba(139,105,20,.12), rgba(196,133,58,.06)) !important;
+      border-color: #8B6914 !important;
+      color: #8B6914 !important;
+    }
   </style>
 </head>
 <body>

@@ -175,7 +175,7 @@ def test_upload_unsupported_type_rejected(live_http_client, live_auth_headers, s
 
 # ── Query endpoint ─────────────────────────────────────────────────────────────
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(300)
 def test_query_returns_grounded_answer(
     live_http_client, live_auth_headers, _uploaded_doc, prompt_question, stage_gate
 ):
@@ -183,13 +183,11 @@ def test_query_returns_grounded_answer(
     Full round-trip: upload → query → verify the agent returns a grounded answer.
     This exercises every layer: rate limiter, guardrails, agent, ChromaDB, LLM.
     """
-    if not stage_gate(
+    stage_gate(
         "API: End-to-End Query",
         f"POST /api/query/ with: '{prompt_question[:60]}…'\n"
         "  Runs the full 4-node agent pipeline against the uploaded document.",
-        interactive=True,
-    ):
-        pytest.skip("Skipped at stage gate")
+    )
 
     resp = live_http_client.post(
         "/api/query/",

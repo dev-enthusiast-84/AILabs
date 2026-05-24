@@ -217,6 +217,8 @@ export interface SettingsResponse {
   ragas_evaluation_enabled: boolean
   reranker_type: string
   allowed_reranker_types: string[]
+  reranker_judge_model: string
+  allowed_judge_models: string[]
   chunker_type: string
   chunk_size: number
   chunk_overlap: number
@@ -271,6 +273,7 @@ export interface SettingsUpdateRequest {
   relevance_grader_enabled?: boolean
   ragas_evaluation_enabled?: boolean
   reranker_type?: string
+  reranker_judge_model?: string
   chunker_type?: string
   chunk_size?: number
   chunk_overlap?: number

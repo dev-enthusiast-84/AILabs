@@ -143,3 +143,66 @@ def test_binary_content_preserved():
     raw = bytes(range(256))
     fs.save_file("binary.bin", raw)
     assert fs.read_file("binary.bin") == raw
+
+
+def test_read_chunk_manifest_returns_none_on_decode_error(tmp_path, monkeypatch):
+    """UnicodeDecodeError in read_chunk_manifest returns None (lines 123-124)."""
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    from app.config import get_settings
+    get_settings.cache_clear()
+
+    import json
+    # Write a manifest path directly with invalid UTF-8 bytes
+    manifests_dir = tmp_path / ".chunk_manifests"
+    manifests_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifests_dir / "bad.txt.json"
+    manifest_path.write_bytes(b"\xff\xfe")  # invalid UTF-8
+
+    # Patch _chunk_manifest_file to return our bad path
+    with pytest.MonkeyPatch().context() as m:
+        m.setattr(fs, "_chunk_manifest_file", lambda name: manifest_path)
+        result = fs.read_chunk_manifest("bad.txt")
+
+    assert result is None
+    get_settings.cache_clear()
+
+
+def test_read_chunk_manifest_returns_none_on_json_error(tmp_path, monkeypatch):
+    """JSONDecodeError in read_chunk_manifest returns None (lines 123-124)."""
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    from app.config import get_settings
+    get_settings.cache_clear()
+
+    manifests_dir = tmp_path / ".chunk_manifests"
+    manifests_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifests_dir / "corrupt.txt.json"
+    manifest_path.write_bytes(b"{ not valid json !!!}")
+
+    with pytest.MonkeyPatch().context() as m:
+        m.setattr(fs, "_chunk_manifest_file", lambda name: manifest_path)
+        result = fs.read_chunk_manifest("corrupt.txt")
+
+    assert result is None
+    get_settings.cache_clear()
+
+
+def test_read_chunk_manifest_returns_none_when_chunks_not_list(tmp_path, monkeypatch):
+    """Parsed JSON that is not a list (or dict with chunks=non-list) returns None (line 127)."""
+    import json
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    from app.config import get_settings
+    get_settings.cache_clear()
+
+    manifests_dir = tmp_path / ".chunk_manifests"
+    manifests_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifests_dir / "nonlist.txt.json"
+    # A dict where 'chunks' key holds a non-list value
+    manifest_path.write_bytes(json.dumps({"chunks": "not-a-list"}).encode())
+
+    with pytest.MonkeyPatch().context() as m:
+        m.setattr(fs, "_chunk_manifest_file", lambda name: manifest_path)
+        result = fs.read_chunk_manifest("nonlist.txt")
+
+    assert result is None
+    get_settings.cache_clear()
+

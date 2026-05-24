@@ -49,8 +49,8 @@ if "langchain_community" not in sys.modules:
     _lc.llms = _lc_llms  # type: ignore[attr-defined]
 
 import os
+import select
 import signal
-import threading
 
 import httpx
 import pytest
@@ -93,41 +93,35 @@ def pytest_sessionfinish(session, exitstatus):
 # ── Interactive helpers ────────────────────────────────────────────────────────
 
 def _timed_input(prompt: str, timeout: int, default: str = "") -> str:
-    """Read from stdin with a visible countdown; return `default` on timeout."""
+    """Read from stdin with a visible countdown; return `default` on timeout.
+
+    Uses select.select() instead of a background thread so that pytest-timeout
+    can interrupt cleanly without leaving an orphaned thread blocked on input().
+    select.select() is interruptible by signals and exceptions on Unix/macOS.
+    """
     if not sys.stdin.isatty():
         print(f"{prompt}[non-interactive — using: '{default}']", flush=True)
         return default
 
-    result = [default]
-    answered = threading.Event()
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
 
-    def _read():
-        try:
-            val = input(prompt)
-            result[0] = val.strip() if val.strip() else default
-        except EOFError:
-            pass
-        finally:
-            answered.set()
-
-    t = threading.Thread(target=_read, daemon=True)
-    t.start()
-
-    # Print a visible countdown so the terminal doesn't look frozen.
     remaining = timeout
-    while remaining > 0 and not answered.wait(1):
+    while remaining > 0:
+        ready, _, _ = select.select([sys.stdin], [], [], 1)
+        if ready:
+            line = sys.stdin.readline()
+            sys.stdout.write("\r" + " " * 60 + "\r")
+            sys.stdout.flush()
+            val = line.strip()
+            return val if val else default
         remaining -= 1
         sys.stdout.write(f"\r  [auto-continues in {remaining:2d}s — press Enter to proceed now]  ")
         sys.stdout.flush()
 
-    if not answered.is_set():
-        sys.stdout.write(f"\r  [timeout — auto-continuing with: '{default}']{' ' * 20}\n")
-        sys.stdout.flush()
-    else:
-        sys.stdout.write("\r" + " " * 60 + "\r")  # clear countdown line
-        sys.stdout.flush()
-
-    return result[0]
+    sys.stdout.write(f"\r  [timeout — auto-continuing with: '{default}']{' ' * 20}\n")
+    sys.stdout.flush()
+    return default
 
 
 def _stage_gate(title: str, description: str = "", skip_on_deny: bool = True, interactive: bool = False) -> bool:
@@ -213,14 +207,21 @@ def live_auth_headers(live_http_client: httpx.Client) -> dict:
 @pytest.fixture(scope="session")
 def prompt_question() -> str:
     """
-    Ask the user once per session for a question to drive the agent tests.
-    Skipped if LIVE_QUESTION is set or no TTY (CI / piped).
+    Return the question to use across all agent tests.
+
+    If LIVE_QUESTION is set, it is used directly — no prompt.
+    Otherwise, if stdin is a TTY, waits up to LIVE_STAGE_TIMEOUT seconds
+    for the user to type a custom question (proceeds with default on timeout).
+    In non-interactive / CI mode, the default is returned immediately.
     """
+    _default = "What is Retrieval-Augmented Generation and how does it work?"
     env_q = os.getenv("LIVE_QUESTION", "").strip()
-    default = env_q if env_q else "What is Retrieval-Augmented Generation and how does it work?"
+    if env_q:
+        print(f"\n[live] Using LIVE_QUESTION: {env_q}", flush=True)
+        return env_q
     print(f"\n[live] Enter the question to use across all agent stages.", flush=True)
     print(f"  LIVE_QUESTION env var pre-sets this without prompting.", flush=True)
-    return _timed_input(f"  Question [{default}]: ", _STAGE_TIMEOUT, default)
+    return _timed_input(f"  Question [{_default}]: ", _STAGE_TIMEOUT, _default)
 
 
 # ── Function-scoped fixtures ───────────────────────────────────────────────────

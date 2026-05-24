@@ -1,6 +1,6 @@
 # Vercel Deployment
 
-> [← Home](README.md) · [Local & Docker](deployment/DEPLOY-LOCAL.md)
+> [← Home](README.md) · [← Deployment](deployment/DEPLOYMENT.md)
 
 Deploy the app publicly — full-stack on Vercel or React SPA on Vercel CDN + a persistent backend elsewhere.
 
@@ -106,22 +106,14 @@ For redeployment commands, teardown, and backend hosting alternatives → [Advan
 
 ---
 
-## Known Limitations
+## Limitations on Vercel
 
-| Limitation | Applies to | Workaround |
-|------------|-----------|------------|
-| Original file previews lost on cold start | Full-stack without Blob | Set `FILE_STORE_TYPE=blob` and connect Vercel Blob |
-| 4 MB upload limit | Full-stack | Use frontend-only mode |
-| Cold start ~2 s after idle | Full-stack | Re-enter provider settings in the app Settings UI |
-| Rate limits not global across instances | Full-stack | Deploy backend separately |
-
----
-
-## Feature Limitations on Vercel
-
-> Some backend features are unavailable or behave differently when running as a Vercel serverless function.
-
-- **`RERANKER_TYPE=cross-encoder` is not supported.** The `sentence-transformers` package exceeds Vercel function size limits. Keep `RERANKER_TYPE=none` (the default) on Vercel deployments.
-- **`VECTOR_STORE_TYPE=blob`** uses Vercel Blob for vector chunk persistence. This is suitable for small demos but does not scale to large document sets.
-- **`VECTOR_STORE_TYPE=pinecone`** is recommended for production deployments. Pinecone is durable and scales independently of the serverless function lifecycle.
-- **ClamAV scanning is not available on Vercel.** Setting `CLAMAV_HOST` has no effect — the daemon cannot be co-located with a serverless function. Regex-based injection checks in `rag/scanner.py` still run on all uploads.
+| Limitation | Workaround |
+|------------|------------|
+| Original file previews lost on cold start (full-stack without Blob) | Set `FILE_STORE_TYPE=blob` and connect Vercel Blob |
+| 4 MB upload limit (serverless body constraint) | Use frontend-only mode with a separate backend |
+| Cold start ~2 s after idle | Re-enter provider settings in the app Settings UI |
+| Rate limits per-instance, not global | Deploy backend separately with a shared rate-limit store |
+| `RERANKER_TYPE=cross-encoder` not supported (`sentence-transformers` exceeds function size) | Keep `RERANKER_TYPE=none` (default) |
+| `VECTOR_STORE_TYPE=blob` is small demo only — does not scale | Use `VECTOR_STORE_TYPE=pinecone` for production |
+| ClamAV not available — `CLAMAV_HOST` has no effect | Regex injection checks in `rag/scanner.py` still run on all uploads |

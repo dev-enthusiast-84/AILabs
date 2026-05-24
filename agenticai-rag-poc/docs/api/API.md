@@ -2,8 +2,16 @@
 
 > [← Home](README.md)
 
-Interactive docs at `http://localhost:8000/api/docs` (development only).  
-For request/response schemas, AgentTrace, and rate limits → [API Schemas & Examples](api/API-SCHEMAS.md).
+Interactive docs at `http://localhost:8000/api/docs` (development only).
+
+## API Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [Schemas & Examples](api/API-SCHEMAS.md) | Request/response schemas, AgentTrace structure, rate limit summary |
+| [Document Schemas](api/API-SCHEMAS-DOCUMENTS.md) | Upload, list, metadata, and chunk response schemas |
+| [Trace Schemas](api/API-SCHEMAS-TRACE.md) | AgentTrace and per-node token breakdown structures |
+| [Voice Export Schemas](api/API-SCHEMAS-VOICE.md) | Voice export request/response, async job status, error handling |
 
 ---
 
@@ -91,7 +99,8 @@ grep ADMIN_PASSWORD backend/.env
 | `PATCH` | `/api/guardrails/{id}` | Bearer | ❌ 403 | Update a guardrail rule |
 | `DELETE` | `/api/guardrails/{id}` | Bearer | ❌ 403 | Delete a user-defined rule (built-ins cannot be deleted) |
 | `POST` | `/api/guardrails/check` | Bearer | ✅ | Test text against the active rule set |
-| `GET`  | `/api/health` | No | — | Health check |
+| `GET`  | `/api/health` | No | — | Liveness check — returns `{"status": "ok"}` |
+| `GET`  | `/api/readiness` | No | — | Readiness check — reports `app_config`, `openai`, `vector_store`, `file_store`, and `export` component status. **200** when all healthy; **503** when degraded (e.g. `SECRET_KEY` not configured). Never leaks secret values. |
 
 > Guest documents are automatically removed from the index when the guest signs in as an admin during the same browser session.
 

@@ -24,7 +24,7 @@ planner → hyde → retriever → grader → reranker → generator → validat
 | **HyDE** | Generates a short hypothetical document passage that *would* answer the question — embeds natural prose instead of a bare question for better semantic alignment | `PLANNER_MODEL` | refined query → `hypothetical_answer` |
 | **Retriever** | Fans out across primary + 2 variants + HyDE (up to 4 searches); fuses results with Reciprocal Rank Fusion (RRF); optional BM25 adds a 5th lexical list; supports MMR and score-threshold | `RETRIEVER_K`, `RETRIEVER_FUSION_MODE`, `RETRIEVER_HYBRID_BM25`, `RETRIEVER_USE_MMR`, `SIMILARITY_SCORE_THRESHOLD` | queries → `retrieved_docs` + `sources` |
 | **Grader** | Self-RAG relevance filter — presents all chunks to an LLM in one call; drops irrelevant chunks before generation; keeps full set if all graded irrelevant | `RELEVANCE_GRADER_ENABLED`, `PLANNER_MODEL` | docs → filtered `retrieved_docs` + `chunks_after_grading` |
-| **Reranker** | Cross-encoder scoring (`sentence_transformers.CrossEncoder`); keeps top `RERANKER_TOP_K` chunks; lazy-imports; silently disabled if package absent | `RERANKER_TYPE`, `RERANKER_MODEL`, `RERANKER_TOP_K` | filtered docs → reordered docs + `chunks_after_rerank` |
+| **Reranker** | Two modes: **llm-judge** (default) — single OpenAI batch call scores all chunks 0–10 using `RERANKER_JUDGE_MODEL` (default `gpt-4.1-mini`); structured output via `_LLMJudgeScores`; 8 s timeout with graceful fallback; works on Vercel. **cross-encoder** — `sentence_transformers.CrossEncoder` scores (question, chunk) pairs; lazy-imports; silently disabled if package absent; not available on Vercel (~80 MB model); `_cross_encoder_cache` dict keyed by model name prevents repeated downloads. Cross-encoder authentication: passes `token=HF_TOKEN` (if set) or `token=False` (explicit opt-out) to suppress unauthenticated-request warnings. `RERANKER_JUDGE_MODEL` is configurable at runtime via Settings UI without restart. | `RERANKER_TYPE`, `RERANKER_JUDGE_MODEL`, `RERANKER_MODEL`, `RERANKER_TOP_K`, `HF_TOKEN` | filtered docs → reordered docs + `chunks_after_rerank` |
 | **Generator** | Grounded answer constrained strictly to retrieved context; refuses fabrication; prepends revision hint on retries; token budget enforced | `GENERATOR_MODEL`, `MAX_COMPLETION_TOKENS` | context + question → answer text |
 | **Validator** | Structured output (`_ValidationResult`) classifies `VALID` or `NEEDS_REVISION`; routes back to Generator via conditional edge up to `_MAX_RETRIES = 2` | `VALIDATOR_MODEL` | answer + context → `validation` + `validation_reason` |
 
@@ -32,17 +32,17 @@ planner → hyde → retriever → grader → reranker → generator → validat
 
 ## Search Improvement Features
 
-Seven complementary techniques are layered into the agentic pipeline. Features 1–3 and 5 are on by default; features 4, 6, 7 are opt-in.
+Seven complementary techniques are layered into the agentic pipeline. All features are on by default.
 
 | # | Feature | How it works | Default | Config key |
 |---|---------|-------------|---------|------------|
 | 1 | **Multi-Query Retrieval** | Planner generates 2 variant phrasings; Retriever fans out across all 3 | Yes | — (core planner) |
 | 2 | **HyDE** | Hypothetical document embedding improves abstract-query recall | Yes | — (core HyDE node) |
 | 3 | **Contextual Chunk Headers** | `[Document: source]` prefix embedded; raw text kept clean for LLM | Yes | — (applied at index time) |
-| 4 | **Cross-Encoder Reranking** | `sentence_transformers` CrossEncoder re-scores chunks for precision | No | `RERANKER_TYPE=cross-encoder` |
+| 4 | **LLM-as-Judge Reranking** | Single OpenAI batch call scores chunks 0–10; graceful fallback on timeout/failure; works on Vercel | Yes | `RERANKER_TYPE=llm-judge`, `RERANKER_JUDGE_MODEL=gpt-4.1-mini` |
 | 5 | **RAG Fusion / RRF** | Reciprocal Rank Fusion combines rankings from all query variants | Yes | `RETRIEVER_FUSION_MODE=rrf` |
-| 6 | **Self-RAG Relevance Grader** | LLM grades chunk relevance; drops irrelevant context before generation | No | `RELEVANCE_GRADER_ENABLED=true` |
-| 7 | **Hybrid BM25 + Dense Search** | BM25 lexical results fused with dense results via RRF | No | `RETRIEVER_HYBRID_BM25=true` |
+| 6 | **Self-RAG Relevance Grader** | LLM grades chunk relevance; drops irrelevant context before generation | Yes | `RELEVANCE_GRADER_ENABLED=true` |
+| 7 | **Hybrid BM25 + Dense Search** | BM25 lexical results fused with dense results via RRF | Yes | `RETRIEVER_HYBRID_BM25=true` |
 
 ---
 
@@ -62,10 +62,11 @@ Seven complementary techniques are layered into the agentic pipeline. Features 1
 | **Serverless persistence** | On Vercel / Lambda use `VECTOR_STORE_TYPE=pinecone` for durable vectors/chunks; use `FILE_STORE_TYPE=blob` for durable original files |
 | **Document update** | Re-uploading the same filename appends chunks — delete first, then re-upload |
 | **Vercel rate limits** | `slowapi` counters are per function instance, not global |
-| **Token cost scales with pipeline** | All features enabled = up to 5 LLM calls per query |
+| **Token cost scales with pipeline** | All 7 features enabled = up to 5 LLM calls per query (planner + HyDE + grader + llm-judge + generator+validator) |
 | **BM25 IDF accuracy** | IDF ≈ 0 with fewer than ~10 documents; hybrid search works best with larger corpora |
-| **Cross-encoder not on Vercel** | `sentence_transformers` (~80 MB model) exceeds serverless constraints |
-| **Self-RAG grader latency** | Adds ~1–3 s per query; disable if latency is priority |
+| **Cross-encoder not on Vercel** | `sentence_transformers` (~80 MB model) exceeds serverless constraints; use `RERANKER_TYPE=llm-judge` (the default) on Vercel |
+| **Self-RAG grader latency** | Adds ~1–3 s per query; disable with `RELEVANCE_GRADER_ENABLED=false` if latency is priority |
+| **llm-judge reranker latency** | Adds ~1–3 s per query for the scoring call; 8 s timeout with pass-through fallback ensures no answer is lost |
 
 ---
 

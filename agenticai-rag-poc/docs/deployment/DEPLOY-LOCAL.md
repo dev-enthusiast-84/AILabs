@@ -1,6 +1,6 @@
 # Local & Docker Deployment
 
-> [← Home](README.md) · [Setup Guide](deployment/SETUP.md) · [Vercel Deployment](deployment/DEPLOY-VERCEL.md)
+> [← Home](README.md) · [← Deployment](deployment/DEPLOYMENT.md) · [Setup Guide](deployment/SETUP.md)
 
 Three local run modes: **dev** (hot reload), **production-like build**, and **Docker Compose**.
 
@@ -44,13 +44,9 @@ bash scripts/local/deploy-local.sh --sample-data --sample-topic "Healthcare Poli
 make deploy-local                           # Makefile shortcut
 ```
 
-`deploy-local.sh` can generate sample PDF/TXT/CSV/XLSX files before the app starts. If you do not pass `--sample-topic`, it prompts for a topic and writes the files to `sample-data/` for upload through the UI.
+## 3. Environment Variables
 
-## 3. Environment Variables Reference
-
-Full variable reference including `CLAMAV_HOST`, `CLAMAV_PORT`, and guardrails notes → [Environment Variables](deployment/DEPLOY-LOCAL-ENV.md).
-
-Required variables: `OPENAI_API_KEY`, `SECRET_KEY` (prod), `ADMIN_PASSWORD`. All others have defaults.
+`OPENAI_API_KEY`, `SECRET_KEY` (prod), `ADMIN_PASSWORD` required; all others have defaults. Full reference → [Environment Variables](deployment/DEPLOY-LOCAL-ENV.md) · [Pipeline & Retrieval Vars](deployment/DEPLOY-LOCAL-ENV-PIPELINE.md).
 
 ---
 
@@ -107,14 +103,7 @@ To **disable AV scanning**: remove `CLAMAV_HOST`/`CLAMAV_PORT` from the backend 
 
 ## 6. Ragas Evaluation (Optional)
 
-After documents are indexed, trigger a Ragas evaluation via **Settings → Ragas Evaluation** in the UI (`POST /api/settings/ragas-trigger`), or run the live test suite:
-
-```bash
-cd backend && source .venv/bin/activate
-LIVE_TESTS=1 OPENAI_API_KEY=<key> pytest tests/live/test_live_ragas.py -v
-```
-
-`RAGAS_SCORES_FILE` (default `/tmp/ragas_scores.json`) controls where scores are persisted. See [Testing](testing/TESTING.md) for the full live-test reference.
+Trigger via **Settings → Ragas Evaluation** (`POST /api/settings/ragas-trigger`) or `LIVE_TESTS=1 OPENAI_API_KEY=<key> pytest tests/live/test_live_ragas.py -v`. Scores persist to `RAGAS_SCORES_FILE` (default `/tmp/ragas_scores.json`). See [Frontend & E2E Tests](testing/TESTING-FRONTEND.md) for full Ragas details.
 
 ---
 
@@ -122,9 +111,9 @@ LIVE_TESTS=1 OPENAI_API_KEY=<key> pytest tests/live/test_live_ragas.py -v
 
 | Symptom | Fix |
 |---------|-----|
-| `docker: command not found` | Docker Desktop not installed — see [Section 4](#4-docker-compose) |
-| `Cannot connect to the Docker daemon` | Docker Desktop installed but not running — open the app |
+| `docker: command not found` | Docker Desktop not installed |
+| `Cannot connect to the Docker daemon` | Docker Desktop not running — open the app |
 | `port 3000 already in use` | `lsof -i :3000` (macOS/Linux) · `netstat -ano \| findstr 3000` (Windows) |
 | `exec format error` | `docker compose build --no-cache --platform linux/amd64` |
-| Backend crashes immediately | Check `backend/.env` — `OPENAI_API_KEY`, `ADMIN_PASSWORD`, `SECRET_KEY` all required |
-| Backend takes >3 min on first run | ClamAV downloading virus DB — watch `docker compose logs clamav` |
+| Backend crashes immediately | `OPENAI_API_KEY`, `ADMIN_PASSWORD`, `SECRET_KEY` all required in `backend/.env` |
+| Backend takes >3 min on first run | ClamAV downloading virus DB — `docker compose logs clamav` |

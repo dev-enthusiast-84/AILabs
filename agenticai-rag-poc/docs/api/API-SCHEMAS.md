@@ -113,15 +113,4 @@ For voice export job error schema → [Voice Export API Schemas](api/API-SCHEMAS
 
 ## Rate Limiting
 
-| Endpoint | Limit | Applies to | Rationale |
-|----------|-------|------------|-----------|
-| `POST /api/auth/login` | 10 req/min per IP | All | Brute-force protection (OWASP A07) |
-| `POST /api/query/` | 10 req/min per IP | All | Costly LLM calls — cost and abuse prevention |
-| `POST /api/documents/upload` | 5 req/min per IP | Guests only | Prevents guest upload flooding |
-| `POST /api/settings/` | 20 req/min per IP | All | Prevents settings-update flooding |
-| `POST /api/settings/ragas-trigger` | 1 per 5 min per IP | Admin | Ragas evaluation is compute-intensive; prevents repeated triggering |
-| All other endpoints | 30 req/min per IP | All | General API protection |
-
-Exceeding a limit returns `HTTP 429 Too Many Requests`.
-
-> **Vercel note:** `slowapi` counters are per function instance, not global across all Vercel instances.
+Exceeding any limit returns `HTTP 429 Too Many Requests`. Full per-endpoint table with rationale → [Operational Limits](deployment/DEPLOY-LIMITS.md). Summary: login 10/min · query 10/min · guest upload 5/min · settings 20/min · ragas-trigger 1/5 min · all others 30/min (all per IP). On Vercel, `slowapi` counters are per function instance.
