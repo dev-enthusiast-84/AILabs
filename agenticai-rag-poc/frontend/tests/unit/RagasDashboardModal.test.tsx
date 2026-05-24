@@ -83,6 +83,8 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
     ragas_evaluation_enabled: false,
     reranker_type: 'none',
     allowed_reranker_types: ['none'],
+    reranker_judge_model: 'gpt-4o-mini',
+    allowed_judge_models: ['gpt-4o-mini'],
     chunker_type: 'recursive',
     chunk_size: 500,
     chunk_overlap: 50,

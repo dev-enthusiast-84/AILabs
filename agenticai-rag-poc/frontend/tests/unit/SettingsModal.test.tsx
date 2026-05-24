@@ -52,6 +52,8 @@ const mockSettings = vi.hoisted(() => ({
   ragas_evaluation_enabled: false,
   reranker_type: 'none',
   allowed_reranker_types: ['cross-encoder', 'none'],
+  reranker_judge_model: 'gpt-4o-mini',
+  allowed_judge_models: ['gpt-4o-mini'],
   chunker_type: 'recursive',
   chunk_size: 800,
   chunk_overlap: 100,
