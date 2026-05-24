@@ -1747,7 +1747,7 @@ def test_run_ragas_eval_mock_mode_saves_scores(monkeypatch):
     # Patch the vector store imports inside _run_ragas_eval_background
     with patch("app.rag.vector_store.has_documents", return_value=False), \
          patch("app.runtime.settings_store.get_effective_model", return_value="gpt-4o-mini"):
-        asyncio.get_event_loop().run_until_complete(settings_api._run_ragas_eval_background())
+        asyncio.run(settings_api._run_ragas_eval_background())
 
     assert "faithfulness" in saved
     assert "answer_relevancy" in saved

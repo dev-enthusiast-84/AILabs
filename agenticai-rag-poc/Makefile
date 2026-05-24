@@ -113,6 +113,12 @@ docker-sample-data:
 docs-readme:
 	sed 's|](docs/|](|g' README.md > docs/README.md
 
+# Serve the Docsify documentation site locally on http://localhost:3001
+# Generates docs/README.md first, then starts the Docsify dev server with live reload.
+# Requires Node.js (npx downloads docsify-cli automatically on first run).
+docs-serve: docs-readme
+	npx --yes docsify-cli serve docs/ --port 3001 --open
+
 # ── Spec-Kit (SDD) ──────────────────────────────────────────────────────────
 spec-check:
 	bash .specify/scripts/bash/spec-check.sh
@@ -167,6 +173,8 @@ help:
 	@echo "  ── Docs ─────────────────────────────────────────────────────────────────────"
 	@echo "  make docs-readme        Generate docs/README.md from root README (Docsify homepage)"
 	@echo "                          Run once after clone; re-run after editing README.md"
+	@echo "  make docs-serve         Serve Docsify site locally at http://localhost:3001 (live reload)"
+	@echo "                          Automatically runs docs-readme first"
 	@echo ""
 	@echo "  ── Spec-Kit (SDD) ───────────────────────────────────────────────────────────"
 	@echo "  make spec-install           Install specify-cli (one-time setup)"
