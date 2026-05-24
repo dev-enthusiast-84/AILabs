@@ -11,30 +11,109 @@
    DESIGN TOKENS
 ═══════════════════════════════════════════════════ */
 :root {
-  --bg:          #060c18;
-  --surface:     #0d1627;
-  --surface2:    #111e35;
-  --border:      rgba(99,179,237,.15);
-  --border-hi:   rgba(99,179,237,.32);
-  --cyan:        #38bdf8;
-  --cyan-dim:    rgba(56,189,248,.15);
-  --purple:      #a78bfa;
-  --purple-dim:  rgba(167,139,250,.15);
-  --emerald:     #34d399;
-  --emerald-dim: rgba(52,211,153,.14);
-  --amber:       #fbbf24;
-  --amber-dim:   rgba(251,191,36,.13);
-  --rose:        #fb7185;
-  --rose-dim:    rgba(251,113,133,.13);
-  --text:        #e2e8f0;    /* ~14:1 on --bg  — WCAG AAA */
-  --text-dim:    #94a3b8;    /* ~6.7:1 on --bg — WCAG AA  */
-  --text-soft:   #7b92aa;    /* ~4.6:1 on --bg — WCAG AA (≥18pt or bold) */
-  --grad-main:   linear-gradient(135deg,#38bdf8,#a78bfa);
-  --grad-green:  linear-gradient(135deg,#34d399,#38bdf8);
+  /* ── Oat palette ───────────────────────────────────── */
+  --bg:          #FAF6EE;   /* lightest oat — page background  */
+  --surface:     #F2E8D0;   /* light oat — cards / sections    */
+  --surface2:    #EDE0C4;   /* medium oat — elevated surfaces  */
+  --border:      rgba(139,103,20,.16);
+  --border-hi:   rgba(139,103,20,.32);
+  --cyan:        #8B6914;   /* dark oat gold — primary accent  */
+  --cyan-dim:    rgba(139,105,20,.14);
+  --purple:      #B5532A;   /* warm rust — secondary accent    */
+  --purple-dim:  rgba(181,83,42,.13);
+  --emerald:     #4C7A4C;   /* sage green — success            */
+  --emerald-dim: rgba(76,122,76,.13);
+  --amber:       #C4A46B;   /* warm tan — highlight            */
+  --amber-dim:   rgba(196,164,107,.14);
+  --rose:        #C4522A;   /* terracotta — warning            */
+  --rose-dim:    rgba(196,82,42,.13);
+  --text:        #2C1A08;   /* near-black brown — body text    */
+  --text-dim:    #6B5240;   /* medium brown — secondary text   */
+  --text-soft:   #8B7355;   /* muted brown                     */
+  --grad-main:   linear-gradient(135deg,#8B6914,#C4A46B);
+  --grad-green:  linear-gradient(135deg,#4C7A4C,#8B6914);
   --r:           10px;
   --r-sm:        7px;
   --nav-h:       52px;
 }
+
+/* ═══════════════════════════════════════════════════
+   OAT OVERRIDES — hardcoded-colour fixes
+═══════════════════════════════════════════════════ */
+
+/* Nav: dark warm-oat bar with light text */
+.site-nav {
+  background:rgba(44,26,8,.97) !important;
+  border-bottom:1px solid rgba(139,103,20,.25);
+}
+.nav-brand                              { color:#F2E8D0 !important; }
+.nav-list a                             { color:#D4B896 !important; }
+.nav-list a:hover,
+.nav-list a[aria-current="true"]        { color:#FAF6EE !important; background:rgba(242,232,208,.14) !important; }
+.nav-badge { background:rgba(76,122,76,.2); color:#3D6B3D; border-color:rgba(76,122,76,.35); }
+
+/* Hero: captivating dark-oat gradient, override --text tokens for light text */
+.hero {
+  background:linear-gradient(135deg, #2C1A08 0%, #5C3D1E 60%, #8B6914 100%);
+  --text:#FAF6EE;
+  --text-dim:#D4B896;
+  --text-soft:#C4A46B;
+  --border:rgba(196,164,107,.2);
+}
+.hero::before {
+  background-image:radial-gradient(circle, rgba(196,164,107,.22) 1px, transparent 1px);
+}
+.hero::after {
+  background:radial-gradient(circle, rgba(181,83,42,.25) 0%, transparent 70%);
+}
+.hero .eyebrow {
+  background:rgba(196,164,107,.18);
+  border-color:rgba(196,164,107,.38);
+  color:#F2E8D0;
+}
+.hero .eyebrow-dot { background:#F2E8D0; }
+
+/* Page container: warm oat border + shadow */
+.page {
+  box-shadow:0 24px 64px rgba(60,40,15,.18), 0 0 80px rgba(139,103,20,.07);
+}
+
+/* Cards on light surface */
+.check-item  { background:rgba(139,103,20,.06); }
+.sub-item    { background:rgba(139,103,20,.06); }
+.hl-card     { background:rgba(139,103,20,.05); border-color:var(--border); }
+
+/* Check-mark icon needs light text on dark green circle */
+.check-mark  { color:#FAF6EE; box-shadow:0 0 10px rgba(76,122,76,.35); }
+
+/* Tag colours — oat-palette equivalents */
+.tag-green  { background:rgba(76,122,76,.12);  color:#2E5A2E;  border:1px solid rgba(76,122,76,.3); }
+.tag-purple { background:rgba(181,83,42,.12);  color:#7A2E10;  border:1px solid rgba(181,83,42,.3); }
+.tag-cyan   { background:rgba(139,103,20,.12); color:#5C3D08;  border:1px solid rgba(139,103,20,.3); }
+.tag-amber  { background:rgba(196,164,107,.15);color:#6B4E14;  border:1px solid rgba(196,164,107,.38); }
+
+/* Sub-check circle */
+.sub-check  { background:rgba(76,122,76,.14); border-color:rgba(76,122,76,.3); }
+
+/* Delivery banner */
+.delivery-banner {
+  background:linear-gradient(135deg, rgba(76,122,76,.1), rgba(139,103,20,.07));
+  border-color:rgba(76,122,76,.28);
+}
+
+/* Problem / Solution blocks */
+.ps-problem  { background:linear-gradient(135deg, rgba(196,82,42,.09), rgba(196,82,42,.04)); }
+.ps-solution { background:linear-gradient(135deg, rgba(76,122,76,.09), rgba(76,122,76,.04)); }
+
+/* Pipeline / feature cards on sections */
+.feat-card,
+.pipeline-step,
+.metric-card,
+.adv-card      { background:var(--surface) !important; }
+
+/* Skip link */
+.skip-link { background:var(--surface2); color:var(--cyan); border-color:var(--cyan); }
+:focus-visible { outline-color:var(--cyan); }
 
 /* ═══════════════════════════════════════════════════
    ACCESSIBILITY
@@ -61,7 +140,7 @@ a:focus-visible { outline:none; box-shadow:0 0 0 3px rgba(56,189,248,.7); }
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
 html { font-size:14px; scroll-behavior:smooth; scroll-padding-top:calc(var(--nav-h) + 16px); }
 body {
-  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
   background:var(--bg); color:var(--text); line-height:1.6; min-height:100vh;
 }
 
@@ -70,9 +149,9 @@ body {
 ═══════════════════════════════════════════════════ */
 .site-nav {
   position:sticky; top:0; z-index:100;
-  background:rgba(6,12,24,.94); backdrop-filter:blur(14px);
+  background:rgba(44,26,8,.96); backdrop-filter:blur(14px);
   -webkit-backdrop-filter:blur(14px);
-  border-bottom:1px solid var(--border);
+  border-bottom:1px solid rgba(139,103,20,.25);
   height:var(--nav-h); display:flex; align-items:center;
   padding:0 28px; gap:0;
 }

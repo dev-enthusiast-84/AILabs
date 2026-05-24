@@ -4,42 +4,244 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Walkthrough Videos — Agentic RAG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #0f172a; line-height: 1.6; }
-    header { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 45%, #1e40af 100%); color: #fff; padding: 2rem 2.5rem; }
-    header h1 { font-size: 1.75rem; margin-bottom: .3rem; }
-    header p { opacity: .8; font-size: .95rem; }
-    header a { color: #93c5fd; }
-    main { max-width: 900px; margin: 3rem auto; padding: 0 1.5rem; text-align: center; }
-    .notice { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    .notice h2 { font-size: 1.2rem; color: #1e3a5f; margin-bottom: 1rem; }
-    code { background: #f1f5f9; border-radius: 4px; padding: .2rem .5rem; font-family: monospace; font-size: .9rem; }
-    footer { text-align: center; padding: 1.5rem; color: #64748b; font-size: .875rem; }
-    footer a { color: #2563eb; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #FAF6EE;
+      color: #3D2B10;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    header {
+      background: linear-gradient(135deg, #2C1A08 0%, #5C3D1E 55%, #8B6914 100%);
+      color: #FAF6EE;
+      padding: 2.5rem 2.5rem 2rem;
+    }
+    header h1 { font-size: 1.9rem; font-weight: 800; margin-bottom: .4rem; }
+    header p  { opacity: .85; font-size: .95rem; color: #F2E8D0; }
+
+    /* ── Main layout ─────────────────────────────────────── */
+    main { max-width: 960px; margin: 2.5rem auto; padding: 0 1.5rem 4rem; }
+
+    .section-label {
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #C4A46B;
+      margin-bottom: 1rem;
+    }
+
+    /* ── Demo grid ───────────────────────────────────────── */
+    .demo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+    @media (max-width: 660px) { .demo-grid { grid-template-columns: 1fr; } }
+
+    .demo-card {
+      background: #F2E8D0;
+      border: 1px solid #DDD0B0;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .demo-card-header {
+      padding: 1rem 1.25rem .75rem;
+      border-bottom: 1px solid #DDD0B0;
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+    }
+    .demo-card-header .icon { font-size: 1.3rem; }
+    .demo-card-header h2 { font-size: 1rem; font-weight: 700; color: #3D2B10; }
+    .demo-card-header .badge {
+      margin-left: auto;
+      font-size: .65rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .badge-local  { background: rgba(92,138,92,.15);  color: #3D6B3D;  border: 1px solid rgba(92,138,92,.3); }
+    .badge-live   { background: rgba(139,103,20,.15); color: #6B4E14;  border: 1px solid rgba(139,103,20,.3); }
+
+    .demo-card-body { padding: 1.25rem; }
+
+    /* ── Video placeholder ───────────────────────────────── */
+    .video-placeholder {
+      background: #EDE0C4;
+      border: 2px dashed #C4A46B;
+      border-radius: 8px;
+      height: 160px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      color: #8B7355;
+      font-size: .85rem;
+      margin-bottom: 1rem;
+      text-align: center;
+      padding: 1rem;
+    }
+    .video-placeholder .ph-icon { font-size: 2rem; opacity: .6; }
+    .video-placeholder em { font-style: normal; font-size: .75rem; opacity: .75; }
+
+    /* ── URL label ───────────────────────────────────────── */
+    .url-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .75rem;
+      font-weight: 600;
+      color: #5C3D1E;
+      background: #EDE0C4;
+      border: 1px solid #DDD0B0;
+      border-radius: 6px;
+      padding: 3px 10px;
+      margin-bottom: .9rem;
+    }
+
+    .desc { font-size: .85rem; color: #6B5240; margin-bottom: 1rem; }
+
+    /* ── Command block ───────────────────────────────────── */
+    .cmd-block {
+      background: #3D2B10;
+      border-radius: 7px;
+      padding: .75rem 1rem;
+      margin-bottom: .6rem;
+    }
+    .cmd-block code {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: .75rem;
+      color: #F2E8D0;
+      white-space: pre-wrap;
+      word-break: break-all;
+      display: block;
+      line-height: 1.6;
+    }
+    .cmd-label {
+      font-size: .68rem;
+      color: #C4A46B;
+      margin-bottom: .3rem;
+      font-weight: 600;
+      letter-spacing: .04em;
+    }
+
+    /* ── Info box ────────────────────────────────────────── */
+    .info-box {
+      background: #F2E8D0;
+      border: 1px solid #DDD0B0;
+      border-left: 3px solid #8B6914;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      font-size: .85rem;
+      color: #5C3D1E;
+    }
+    .info-box a { color: #8B6914; font-weight: 600; }
+    .info-box strong { color: #3D2B10; }
+
+    /* ── Footer ──────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      color: #8B7355;
+      font-size: .8rem;
+      border-top: 1px solid #DDD0B0;
+    }
+    footer a { color: #8B6914; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>&#x1F3A5; Agentic RAG — Walkthrough Videos</h1>
-    <p>Enterprise document Q&amp;A demo &middot;
-       <a href="../index.html">Full Docs &#x2197;</a> &middot;
-       <a href="https://github.com/dev-enthusiast-84/AILabs">GitHub &#x2197;</a></p>
-  </header>
-  <main>
-    <div class="notice">
-      <h2>No recordings yet</h2>
-      <p>Run the walkthrough recorder to generate and publish videos here:</p>
-      <br />
-      <p><code>bash scripts/record-walkthrough.sh --url http://localhost:5173 --username admin --password &lt;password&gt;</code></p>
-      <br />
-      <p>Videos are uploaded to <a href="https://github.com/dev-enthusiast-84/AILabs/releases">GitHub Releases</a>
-         and this page is updated automatically. Requires <a href="https://cli.github.com">gh CLI</a>.</p>
+
+<header>
+  <h1>&#x1F3A5; Walkthrough Videos</h1>
+  <p>Recorded demos of the Agentic RAG system — local dev and live Vercel deployment</p>
+</header>
+
+<main>
+  <p class="section-label">&#x1F4F9; Demo recordings</p>
+
+  <div class="demo-grid">
+
+    <!-- LOCAL DEMO -->
+    <div class="demo-card">
+      <div class="demo-card-header">
+        <span class="icon">&#x1F5A5;&#xFE0F;</span>
+        <h2>Local Demo</h2>
+        <span class="badge badge-local">localhost</span>
+      </div>
+      <div class="demo-card-body">
+        <div class="video-placeholder">
+          <span class="ph-icon">&#x25B6;&#xFE0F;</span>
+          <span>Recording not yet generated</span>
+          <em>Run the command below to produce this video</em>
+        </div>
+        <div class="url-tag">&#x1F310; localhost:5173</div>
+        <p class="desc">
+          Recorded against a local dev server. Start the app with
+          <code style="font-size:.75rem;background:#EDE0C4;padding:1px 5px;border-radius:3px">make dev</code>
+          before running the recorder.
+        </p>
+        <div class="cmd-label">Record command</div>
+        <div class="cmd-block"><code>bash scripts/record-walkthrough.sh \
+  --url http://localhost:5173 \
+  --username admin \
+  --password &lt;password from backend/.env&gt;</code></div>
+      </div>
     </div>
-  </main>
-  <footer>
-    Gallery published to <a href="https://dev-enthusiast-84.github.io/AILabs/walkthrough/">GitHub Pages</a>
-    by <code>scripts/record-walkthrough.sh</code>
-  </footer>
+
+    <!-- LIVE DEMO -->
+    <div class="demo-card">
+      <div class="demo-card-header">
+        <span class="icon">&#x1F310;</span>
+        <h2>Live Demo</h2>
+        <span class="badge badge-live">Vercel</span>
+      </div>
+      <div class="demo-card-body">
+        <div class="video-placeholder">
+          <span class="ph-icon">&#x25B6;&#xFE0F;</span>
+          <span>Recording not yet generated</span>
+          <em>Run the command below to produce this video</em>
+        </div>
+        <div class="url-tag">&#x1F30D; agenticai-rag-poc.vercel.app</div>
+        <p class="desc">
+          Recorded against the deployed Vercel instance. Requires a live deployment
+          and admin credentials set via the Settings UI.
+        </p>
+        <div class="cmd-label">Record command</div>
+        <div class="cmd-block"><code>bash scripts/record-walkthrough.sh \
+  --url https://agenticai-rag-poc.vercel.app \
+  --username admin \
+  --password &lt;password from Vercel env&gt;</code></div>
+      </div>
+    </div>
+
+  </div><!-- /demo-grid -->
+
+  <div class="info-box">
+    <strong>How it works:</strong> The recorder script uses Playwright to capture a
+    guided walkthrough, uploads the video to
+    <a href="https://github.com/dev-enthusiast-84/AILabs/releases" target="_blank" rel="noopener">GitHub Releases</a>,
+    and updates this page automatically. Requires the
+    <a href="https://cli.github.com" target="_blank" rel="noopener">gh CLI</a>
+    and an authenticated GitHub session (<code style="font-size:.8rem;background:#EDE0C4;padding:1px 5px;border-radius:3px">gh auth login</code>).
+  </div>
+</main>
+
+<footer>
+  Published to
+  <a href="https://dev-enthusiast-84.github.io/AILabs/walkthrough/" target="_blank" rel="noopener">GitHub Pages</a>
+  by <code>scripts/record-walkthrough.sh</code>
+</footer>
+
 </body>
 </html>

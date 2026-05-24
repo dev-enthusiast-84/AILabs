@@ -10,22 +10,34 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify-themeable@0/dist/css/theme-simple.css" />
   <style>
+    /* ── Oat colour palette ─────────────────────────────── */
     :root {
-      --theme-color: #2563eb;
+      --theme-color: #8B6914;
       --sidebar-width: 280px;
       --base-font-family: 'Inter', system-ui, -apple-system, sans-serif;
       --mono-font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      --cover-color: #ffffff;
-      --cover-background-color: linear-gradient(135deg, #0f172a 0%, #1e3a5f 45%, #1e40af 100%);
-      --heading-color: #0f172a;
-      --sidebar-background: #f8fafc;
-      --sidebar-nav-link-color: #374151;
+      /* Cover: dark warm-oat gradient so white text is always readable */
+      --cover-color: #FAF6EE;
+      --cover-background-color: linear-gradient(135deg, #2C1A08 0%, #5C3D1E 50%, #8B6914 100%);
+      --heading-color: #3D2B10;
+      --sidebar-background: #F0E6D0;
+      --sidebar-nav-link-color: #5C3D1E;
       --sidebar-nav-link-font-size: 13.5px;
       --sidebar-nav-link-font-weight: 500;
       --sidebar-nav-link-font-weight--active: 700;
-      --sidebar-nav-link-color--active: #2563eb;
-      --sidebar-nav-link-border-color--active: #2563eb;
+      --sidebar-nav-link-color--active: #8B6914;
+      --sidebar-nav-link-border-color--active: #8B6914;
     }
+
+    /* Oat page background */
+    body { background: #FAF6EE; }
+
+    /* Guarantee cover page uses the oat gradient (overrides theme resets) */
+    section.cover {
+      background: linear-gradient(135deg, #2C1A08 0%, #5C3D1E 50%, #8B6914 100%) !important;
+    }
+    section.cover .cover-main { color: #FAF6EE !important; }
+    section.cover blockquote p { color: #F2E8D0 !important; opacity: 1 !important; }
 
     /* Section group headers in sidebar */
     .sidebar-nav > ul > li > p,
@@ -35,7 +47,7 @@
       font-weight: 700;
       letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: #94a3b8;
+      color: #C4A46B;
       padding: 14px 16px 4px;
       margin: 0;
     }
@@ -54,7 +66,7 @@
 
     /* Divider between sidebar sections */
     .sidebar-nav > ul > li + li > p {
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid #DDD0B0;
       margin-top: 8px;
     }
 
@@ -70,10 +82,10 @@
     .markdown-section code:not(pre code) {
       font-family: var(--mono-font-family);
       font-size: 0.875em;
-      background: #f1f5f9;
+      background: #EDE0C4;
       padding: 2px 5px;
       border-radius: 4px;
-      color: #0f172a;
+      color: #3D2B10;
     }
 
     /* Table improvements */
@@ -84,14 +96,15 @@
       font-size: 14px;
     }
     .markdown-section table th {
-      background: #f1f5f9;
+      background: #EDE0C4;
       font-weight: 600;
       text-align: left;
       padding: 8px 12px;
+      color: #3D2B10;
     }
     .markdown-section table td {
       padding: 7px 12px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid #DDD0B0;
     }
     .markdown-section table tr:last-child td {
       border-bottom: none;
@@ -100,7 +113,7 @@
     /* Section heading separator */
     .markdown-section h2 {
       padding-top: 1em;
-      border-bottom: 2px solid #e2e8f0;
+      border-bottom: 2px solid #DDD0B0;
       padding-bottom: 0.3em;
     }
 
@@ -108,7 +121,7 @@
     .cover-main .anchor { display: none; }
     .cover-main a[data-v] { border-radius: 6px; }
 
-    /* Search improvements */
+    /* Search */
     .search .input-wrap input {
       font-family: var(--base-font-family);
       font-size: 14px;

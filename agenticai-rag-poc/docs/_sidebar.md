@@ -4,8 +4,8 @@
 
 - **Getting Started**
   - [Home](README.md)
-  - [**→ Capability Showcase**](pitch.html)
-  - [▶ Walkthrough Videos](walkthrough/index.html)
+  - [**Capability Showcase**](pitch.html)
+  - [Walkthrough Videos](walkthrough/index.html)
   - [Setup Guide](deployment/SETUP.md)
 
 - **Architecture**

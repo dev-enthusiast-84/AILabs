@@ -69,18 +69,28 @@ def _inject_ragas_modules():
     ragas_mod.evaluate = mock_evaluate
     sys.modules["ragas"] = ragas_mod
 
-    # ── ragas.metrics ────────────────────────────────────────────────────────
+    # ── ragas.metrics and submodules ─────────────────────────────────────────
+    # _run_ragas_evaluation now imports via ragas.metrics._faithfulness etc.
+    # (private submodule path). Stub each submodule explicitly so Python's
+    # import machinery finds them in sys.modules without hitting the filesystem.
     mock_faithfulness = MagicMock(name="faithfulness")
     mock_answer_relevancy = MagicMock(name="answer_relevancy")
     mock_context_precision = MagicMock(name="context_precision")
     mock_context_recall = MagicMock(name="context_recall")
 
     ragas_metrics_mod = types.ModuleType("ragas.metrics")
-    ragas_metrics_mod.faithfulness = mock_faithfulness
-    ragas_metrics_mod.answer_relevancy = mock_answer_relevancy
-    ragas_metrics_mod.context_precision = mock_context_precision
-    ragas_metrics_mod.context_recall = mock_context_recall
+    ragas_metrics_mod.__path__ = []  # mark as package so submodule imports resolve
     sys.modules["ragas.metrics"] = ragas_metrics_mod
+
+    for submod_name, attr_name, mock_obj in [
+        ("ragas.metrics._faithfulness",    "faithfulness",      mock_faithfulness),
+        ("ragas.metrics._answer_relevance", "answer_relevancy", mock_answer_relevancy),
+        ("ragas.metrics._context_precision","context_precision",mock_context_precision),
+        ("ragas.metrics._context_recall",  "context_recall",    mock_context_recall),
+    ]:
+        sub = types.ModuleType(submod_name)
+        setattr(sub, attr_name, mock_obj)
+        sys.modules[submod_name] = sub
 
     return (
         mock_Dataset,
@@ -94,7 +104,13 @@ def _inject_ragas_modules():
 
 def _cleanup_ragas_modules():
     """Remove stub modules injected by _inject_ragas_modules."""
-    for mod_name in ("datasets", "ragas", "ragas.metrics"):
+    for mod_name in (
+        "datasets", "ragas", "ragas.metrics",
+        "ragas.metrics._faithfulness",
+        "ragas.metrics._answer_relevance",
+        "ragas.metrics._context_precision",
+        "ragas.metrics._context_recall",
+    ):
         sys.modules.pop(mod_name, None)
 
 

@@ -129,10 +129,23 @@ Upload any of these from the dashboard, or upload your own PDF / TXT / CSV / Exc
 
 ---
 
+## Browse the Docs Locally
+
+The documentation site (this site) can be served locally using Docsify with live reload. Run from the `agenticai-rag-poc/` directory:
+
+```bash
+make docs-serve          # generates docs/README.md then opens http://localhost:3001
+```
+
+No separate install needed — `npx` downloads `docsify-cli` automatically on first run. Any edits to markdown files under `docs/` are reflected immediately without restarting the server. If you edit root `README.md`, stop the server, re-run `make docs-serve` to regenerate `docs/README.md`, then restart.
+
+---
+
 ## What's Next
 
 | | |
 |---|---|
+| Browse docs locally with live reload | `make docs-serve` → [http://localhost:3001](http://localhost:3001) |
 | Deploy locally (production-like build) or via Docker | [Local & Docker Deployment](deployment/DEPLOY-LOCAL.md) |
 | Deploy to Vercel | [Vercel Deployment](deployment/DEPLOY-VERCEL.md) |
 | Explore the API | [API Reference](api/API.md) |
