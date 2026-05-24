@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # required for configure-pages enablement: true
   pages: write
   id-token: write
 
@@ -29,6 +29,8 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true   # auto-enables GitHub Pages via API on first run
 
       - name: Generate docs/README.md from root README
         run: sed 's|](docs/|](|g' agenticai-rag-poc/README.md > agenticai-rag-poc/docs/README.md
