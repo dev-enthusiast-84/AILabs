@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import RagasDashboardModal from '@/components/RagasDashboardModal'
+import { useAuthStore } from '@/store/authStore'
 import type { SettingsResponse, RagasScores } from '@/types'
 
 // ── Mock @/services/api ───────────────────────────────────────────────────────
@@ -122,6 +123,7 @@ describe('RagasDashboardModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    useAuthStore.setState({ isGuest: false, token: 'tok', username: 'admin', guestUploadedDocs: [], guestSettingsUsed: false })
   })
 
   it('renders nothing when open is false', () => {
@@ -315,7 +317,19 @@ describe('RagasDashboardModal', () => {
     await waitFor(() => expect(settingsApi.get).toHaveBeenCalledTimes(1))
 
     rerender(<RagasDashboardModal open={false} onClose={onClose} />)
-    // No additional fetches should happen after closing
     expect(settingsApi.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('run button is disabled and guest info is shown for guest users', async () => {
+    useAuthStore.setState({ isGuest: true, token: 'gtok', username: 'guest', guestUploadedDocs: [], guestSettingsUsed: false })
+    vi.mocked(settingsApi.get).mockResolvedValue(makeSettings())
+    vi.mocked(settingsApi.getRagasScores).mockResolvedValue(makeScores())
+
+    render(<RagasDashboardModal open={true} onClose={onClose} />)
+
+    await waitFor(() => screen.getByTestId('ragas-dashboard-run-btn'))
+    expect(screen.getByTestId('ragas-dashboard-run-btn')).toBeDisabled()
+    expect(screen.getByTestId('ragas-guest-info')).toBeTruthy()
+    expect(screen.getByTestId('ragas-guest-info').textContent).toMatch(/Admin access required/)
   })
 })

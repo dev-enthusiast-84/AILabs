@@ -10,14 +10,10 @@ import pytest
 
 # ── POST /api/ragas/evaluate ─────────────────────────────────────────────────
 
-def test_evaluate_guest_returns_503_when_no_api_key(client, guest_headers, monkeypatch):
-    """Guest tokens can trigger evaluation; 503 is returned when no API key is configured."""
-    monkeypatch.setattr(
-        "app.api.ragas._run_ragas_evaluation",
-        mock.Mock(side_effect=ValueError("OPENAI_API_KEY is not configured.")),
-    )
+def test_evaluate_guest_returns_403(client, guest_headers):
+    """Guest tokens are rejected with 403 — evaluation is admin-only."""
     resp = client.post("/api/ragas/evaluate", headers=guest_headers)
-    assert resp.status_code == 503
+    assert resp.status_code == 403
 
 
 def test_evaluate_returns_503_when_no_api_key(client, auth_headers, monkeypatch):

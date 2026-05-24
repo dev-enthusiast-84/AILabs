@@ -531,32 +531,25 @@ class TestGetDocumentSuggestions:
     def _make_admin(self) -> "UserInDB":
         return _make_user(role="admin")
 
-    def test_returns_empty_when_no_files(self, monkeypatch):
+    async def test_returns_empty_when_no_files(self, monkeypatch):
         """Empty files list → empty suggestions immediately."""
-        import asyncio
         from app.api.documents import get_document_suggestions
 
-        result = asyncio.get_event_loop().run_until_complete(
-            get_document_suggestions(files=[], _user=self._make_admin())
-        )
+        result = await get_document_suggestions(files=[], _user=self._make_admin())
         assert result.suggestions == []
 
-    def test_returns_empty_when_chunks_not_found(self, monkeypatch):
+    async def test_returns_empty_when_chunks_not_found(self, monkeypatch):
         """Files with no indexed chunks → empty suggestions."""
-        import asyncio
         from app.api.documents import get_document_suggestions
 
         monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
         monkeypatch.setattr("app.api.documents._load_document_chunks_for_display", lambda _: [])
 
-        result = asyncio.get_event_loop().run_until_complete(
-            get_document_suggestions(files=["missing.txt"], _user=self._make_admin())
-        )
+        result = await get_document_suggestions(files=["missing.txt"], _user=self._make_admin())
         assert result.suggestions == []
 
-    def test_returns_empty_when_api_key_not_configured(self, monkeypatch):
+    async def test_returns_empty_when_api_key_not_configured(self, monkeypatch):
         """No API key → skips LLM call and returns empty list."""
-        import asyncio
         from app.api.documents import get_document_suggestions
 
         monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
@@ -565,15 +558,12 @@ class TestGetDocumentSuggestions:
             lambda _: ["This document describes RAG pipeline stages."],
         )
 
-        result = asyncio.get_event_loop().run_until_complete(
-            get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
-        )
+        result = await get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
         # No API key configured in test env → suggestions must be empty
         assert result.suggestions == []
 
-    def test_returns_llm_questions_when_configured(self, monkeypatch):
+    async def test_returns_llm_questions_when_configured(self, monkeypatch):
         """LLM returns valid JSON array → questions surfaced as suggestions."""
-        import asyncio
         import json
         from unittest.mock import MagicMock
         from app.api.documents import get_document_suggestions
@@ -602,14 +592,11 @@ class TestGetDocumentSuggestions:
         fake_module.ChatOpenAI = fake_chat_class
         monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
-        )
+        result = await get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
         assert result.suggestions == expected
 
-    def test_multi_doc_uses_per_doc_prompt(self, monkeypatch):
+    async def test_multi_doc_uses_per_doc_prompt(self, monkeypatch):
         """Multiple files → one question per doc, using the per-doc structured prompt."""
-        import asyncio
         import json
         from unittest.mock import MagicMock
         from app.api.documents import get_document_suggestions
@@ -644,8 +631,8 @@ class TestGetDocumentSuggestions:
         fake_module.ChatOpenAI = fake_chat_class
         monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            get_document_suggestions(files=["hr.txt", "it.csv", "training.xlsx"], _user=self._make_admin())
+        result = await get_document_suggestions(
+            files=["hr.txt", "it.csv", "training.xlsx"], _user=self._make_admin()
         )
         assert result.suggestions == per_doc_questions
         # Prompt must reference multiple documents (per-doc path)
@@ -654,9 +641,8 @@ class TestGetDocumentSuggestions:
         assert "Document 2" in prompts_seen[0]
         assert "Document 3" in prompts_seen[0]
 
-    def test_returns_empty_on_llm_json_parse_error(self, monkeypatch):
+    async def test_returns_empty_on_llm_json_parse_error(self, monkeypatch):
         """Malformed LLM response → empty list, no exception raised."""
-        import asyncio
         from unittest.mock import MagicMock
         from app.api.documents import get_document_suggestions
 
@@ -677,7 +663,5 @@ class TestGetDocumentSuggestions:
         fake_module.ChatOpenAI = fake_chat_class
         monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
-        )
+        result = await get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
         assert result.suggestions == []

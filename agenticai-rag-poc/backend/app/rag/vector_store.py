@@ -125,6 +125,8 @@ class _DynamicOpenAIEmbeddings(Embeddings):
                 self._cache[cache_key] = OpenAIEmbeddings(
                     model=model,
                     openai_api_key=key or None,
+                    timeout=30.0,
+                    max_retries=1,
                 )
             return self._cache[cache_key]
 

@@ -8,6 +8,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { settingsApi, extractErrorMessage } from '@/services/api'
+import { useAuthStore } from '@/store/authStore'
 import type { RagasScores, SettingsResponse } from '@/types'
 
 function MetricTile({ label, score }: { label: string; score: number }) {
@@ -38,6 +39,7 @@ interface Props {
 export default function RagasDashboardModal({ open, onClose }: Props) {
   const onCloseRef = useRef(onClose)
   useEffect(() => { onCloseRef.current = onClose })
+  const isGuest = useAuthStore(s => s.isGuest)
   const [settings, setSettings] = useState<SettingsResponse | null>(null)
   const [scores, setScores] = useState<RagasScores | null>(null)
   const [loading, setLoading] = useState(false)
@@ -259,6 +261,11 @@ export default function RagasDashboardModal({ open, onClose }: Props) {
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+          {isGuest && (
+            <p className="mr-auto text-xs text-slate-400" data-testid="ragas-guest-info">
+              Admin access required to run evaluation.
+            </p>
+          )}
           <button
             type="button"
             onClick={() => void load()}
@@ -271,7 +278,8 @@ export default function RagasDashboardModal({ open, onClose }: Props) {
           <button
             type="button"
             onClick={() => void runEvaluation()}
-            disabled={running || polling}
+            disabled={running || polling || isGuest}
+            title={isGuest ? 'Admin access required to run evaluation' : undefined}
             className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-60"
             data-testid="ragas-dashboard-run-btn"
           >

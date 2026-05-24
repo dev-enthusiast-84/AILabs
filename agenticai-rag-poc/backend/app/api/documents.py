@@ -14,6 +14,7 @@ from app.runtime.runtime_settings_cookie import restore_runtime_settings_from_co
 from app.auth.models import UserInDB
 from app.config import get_settings
 from app.core.errors import SafeAppError, safe_app_error_from_exception
+from app.runtime.settings_store import get_effective_api_key
 from app.guardrails.safety import validate_filename
 from app.rag.chunking import chunk_text
 from app.rag.file_store import (
@@ -491,6 +492,11 @@ async def upload_document(
         scan_upload(safe_name, content, extracted_text=text)  # stored injection
         docs = chunk_text(text, metadata=_document_metadata(safe_name, source_key, user))
         manifest_chunks = _chunks_from_docs(docs)
+        if not get_effective_api_key():
+            raise SafeAppError(
+                "openai_provider_error",
+                public_message="OpenAI API key is not configured. Add it in Settings before uploading.",
+            )
         ids = add_documents(docs)
         try:
             save_file(source_key, content)

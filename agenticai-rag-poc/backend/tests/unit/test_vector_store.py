@@ -845,6 +845,21 @@ class TestHasDocumentsBlobAndMemory:
 
 # ── Module-level blob/pinecone delegate branches ─────────────────────────────
 
+class _FakeNonChromaStore:
+    """Spec class for non-Chroma stores.
+
+    Using a class (not a list) as the MagicMock spec ensures Python 3.11 and
+    3.13 both treat the *listed methods* as the allowed attributes — list-based
+    specs (spec=['a','b']) behave differently across Python minor versions.
+    Critically, _collection is absent so hasattr() returns False and the Chroma
+    branch in vector_store helpers is skipped.
+    """
+    def get_all_documents(self): ...
+    def list_document_sources(self): ...
+    def get_document_chunks(self, source): ...
+    def delete_document(self, source): ...
+
+
 class TestBlobPineconeDelegates:
     """The blob/pinecone branch of each module-level function just delegates to the store."""
 
@@ -868,7 +883,7 @@ class TestBlobPineconeDelegates:
 
     def test_fetch_all_documents_blob_delegates(self):
         from langchain_core.documents import Document
-        mock_store = MagicMock()
+        mock_store = MagicMock(spec=_FakeNonChromaStore)
         mock_store.get_all_documents.return_value = [Document(page_content="x", metadata={})]
         with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
              patch("app.rag.vector_store._vector_store_type", return_value="blob"):
@@ -878,7 +893,7 @@ class TestBlobPineconeDelegates:
         mock_store.get_all_documents.assert_called_once()
 
     def test_get_document_chunks_pinecone_delegates(self):
-        mock_store = MagicMock()
+        mock_store = MagicMock(spec=_FakeNonChromaStore)
         mock_store.get_document_chunks.return_value = ["chunk A", "chunk B"]
         with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
              patch("app.rag.vector_store._vector_store_type", return_value="pinecone"):
@@ -888,7 +903,7 @@ class TestBlobPineconeDelegates:
         mock_store.get_document_chunks.assert_called_once_with("doc.pdf")
 
     def test_delete_document_blob_delegates(self):
-        mock_store = MagicMock()
+        mock_store = MagicMock(spec=_FakeNonChromaStore)
         mock_store.delete_document.return_value = 3
         with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
              patch("app.rag.vector_store._vector_store_type", return_value="blob"):
@@ -898,7 +913,7 @@ class TestBlobPineconeDelegates:
 
     def test_get_document_content_calls_chunks_and_stitch(self):
         """get_document_content() chains get_document_chunks + _stitch_chunks."""
-        mock_store = MagicMock()
+        mock_store = MagicMock(spec=_FakeNonChromaStore)
         mock_store.get_document_chunks.return_value = ["hello world", "world foo"]
         with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
              patch("app.rag.vector_store._vector_store_type", return_value="pinecone"), \

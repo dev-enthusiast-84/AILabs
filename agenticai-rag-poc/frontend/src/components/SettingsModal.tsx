@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { SelectInput } from '@/components/SelectInput'
 import { useToggleSet } from '@/hooks/useToggleSet'
 import {
   XMarkIcon,
@@ -263,7 +264,7 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
   const locked = isGuest && (serverLockKnown ? Boolean(current?.guest_settings_locked) : guestSettingsUsed)
   const staleLocalGuestLock = isGuest && guestSettingsUsed && serverLockKnown && !current?.guest_settings_locked
   const guestSettingsRecoverable = Boolean(current?.guest_settings_recoverable || staleLocalGuestLock)
-  const firstFocusRef = useRef<HTMLSelectElement>(null)
+  const firstFocusRef = useRef<HTMLButtonElement>(null)
 
   const hasCostImpactingChanges = useMemo(() => {
     if (!current) return false
@@ -691,24 +692,16 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                   >
                     LLM Model
                   </label>
-                  <select
+                  <SelectInput
                     id="model-select"
                     ref={firstFocusRef}
                     value={model}
-                    onChange={(e) => {
-                      setModel(e.target.value)
-                      setModelError(null)
-                    }}
+                    onChange={(v) => { setModel(v); setModelError(null) }}
                     disabled={locked}
+                    options={ALLOWED_MODELS.map(m => ({ value: m, label: m }))}
                     className={`input ${modelError ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-400/30' : ''} ${locked ? 'opacity-60 cursor-not-allowed' : ''}`}
                     data-testid="model-select"
-                  >
-                    {ALLOWED_MODELS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                  />
                   {modelError && (
                     <p className="mt-1 flex items-center gap-1 text-xs text-rose-600">
                       <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />
@@ -724,20 +717,15 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                   >
                     Embedding Model
                   </label>
-                  <select
+                  <SelectInput
                     id="embedding-model-select"
                     value={embeddingModel}
-                    onChange={(e) => setEmbeddingModel(e.target.value)}
+                    onChange={setEmbeddingModel}
                     disabled={locked}
+                    options={ALLOWED_EMBEDDING_MODELS.map(m => ({ value: m, label: m }))}
                     className={`input ${locked ? 'opacity-60 cursor-not-allowed' : ''}`}
                     data-testid="embedding-model-select"
-                  >
-                    {ALLOWED_EMBEDDING_MODELS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                  />
                   <p className="text-xs text-slate-400 mt-1">
                     Used when indexing uploads and searching documents.
                   </p>
