@@ -24,6 +24,9 @@ _EXPECTED_BUILTIN_IDS = {
     "prompt-injection",
     "sql-injection",
     "input-pii-email",
+    "input-pii-phone",
+    "input-pii-ssn",
+    "input-pci-card",
     "input-profanity",
     "output-pii-email",
     "output-pii-phone",
@@ -36,17 +39,17 @@ _EXPECTED_BUILTIN_IDS = {
 
 
 def test_builtin_rules_seeded_on_init():
-    """A brand-new GuardrailStore must contain all 11 built-in rules."""
+    """A brand-new GuardrailStore must contain all 14 built-in rules."""
     store = GuardrailStore()
     rule_ids = {r.id for r in store.list_rules()}
     assert len(store.list_rules()) >= len(_EXPECTED_BUILTIN_IDS)
     assert _EXPECTED_BUILTIN_IDS.issubset(rule_ids)
 
 
-def test_builtin_rule_count_at_least_eleven():
-    """Store must seed at least 11 rules."""
+def test_builtin_rule_count_at_least_fourteen():
+    """Store must seed at least 14 rules."""
     store = GuardrailStore()
-    assert len(store.list_rules()) >= 11
+    assert len(store.list_rules()) >= 14
 
 
 def test_specific_builtin_ids_present():

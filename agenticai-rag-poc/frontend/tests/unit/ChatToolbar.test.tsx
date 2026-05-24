@@ -68,21 +68,23 @@ describe('ChatToolbar', () => {
     expect(onChangeMode).toHaveBeenCalledWith('simple')
   })
 
-  it('language selector renders one <option> per entry in CHAT_LANGUAGES', () => {
+  it('language selector renders one option per entry in CHAT_LANGUAGES', () => {
     renderToolbar()
-    const select = screen.getByTestId('chat-language-select')
-    const options = select.querySelectorAll('option')
+    // Open the portal panel then check all option items
+    fireEvent.click(screen.getByTestId('chat-language-select'))
+    const options = screen.getAllByRole('option')
     expect(options.length).toBe(CHAT_LANGUAGES.length)
     CHAT_LANGUAGES.forEach((lang, i) => {
-      expect(options[i].value).toBe(lang.code)
-      expect(options[i].textContent).toBe(lang.label)
+      expect(options[i]).toHaveAttribute('aria-selected', String(lang.code === 'en'))
+      expect(options[i].textContent).toContain(lang.label)
     })
   })
 
   it('changing language selection calls onChangeLanguage with the new code', () => {
     const { onChangeLanguage } = renderToolbar({ chatLanguage: 'en' })
-    const select = screen.getByTestId('chat-language-select')
-    fireEvent.change(select, { target: { value: 'es' } })
+    // Open the panel then click Spanish
+    fireEvent.click(screen.getByTestId('chat-language-select'))
+    fireEvent.mouseDown(screen.getByText('Spanish'))
     expect(onChangeLanguage).toHaveBeenCalledWith('es')
   })
 

@@ -255,7 +255,9 @@ def test_run_simple_rag_spanish_language_keeps_retrieval_query_clean():
     mock_search.assert_called_once_with(question)
     generation_payload = mock_chain.invoke.call_args.args[0]
     assert generation_payload["question"] == question
-    assert generation_payload["answer_instruction"] == answer_instruction
+    # Instruction is normalized with a trailing newline so it stays separated
+    # from the rule sentence that follows it in the prompt template.
+    assert generation_payload["answer_instruction"] == answer_instruction.rstrip() + "\n"
     assert "Answer in Spanish" not in mock_search.call_args.args[0]
     assert result["answer"] == "La política permite trabajo remoto."
 

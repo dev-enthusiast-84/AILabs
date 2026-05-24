@@ -1,7 +1,6 @@
 # Vercel Python serverless requirements — smallest possible footprint.
 # Omits vs requirements-dev.txt:
-#   chromadb / langchain-chroma  — replaced by InMemoryVectorStore on Vercel serverless
-#   pinecone                     — no persistent vector store in stateless handler
+#   chromadb / langchain-chroma  — replaced by Pinecone/BlobVectorStore/InMemoryVectorStore on Vercel
 #   rank-bm25                    — BM25 hybrid search disabled for serverless
 #   pymupdf                      — too large (~12 MB); serverless uses pypdf fallback
 #   python-magic                 — optional magic-byte scanner; unused in serverless path
@@ -44,3 +43,9 @@ bleach==6.2.0
 
 # Logging
 structlog==25.1.0
+
+# Vector store — Pinecone for persistent storage (used when PINECONE_API_KEY is configured)
+pinecone>=5.0.0
+
+# Vercel Blob storage — file store + BlobVectorStore (used when BLOB_READ_WRITE_TOKEN is configured)
+vercel==0.5.6

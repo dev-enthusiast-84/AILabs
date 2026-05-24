@@ -78,6 +78,17 @@ RULES: list[Rule] = [
     Rule(
         description="Vercel Blob read/write token",
         pattern=re.compile(r'vercel_blob_rw_[A-Za-z0-9_\-]{20,}', re.IGNORECASE),
+        safe_patterns=[
+            # Explicit test/fake markers — long descriptive names used in unit
+            # tests to express intent (e.g. "…should_be_ignored", "…env_token",
+            # "…alt_env_token").  Real tokens never contain these phrases.
+            re.compile(r'should_be_ignored', re.IGNORECASE),
+            re.compile(r'_env_token', re.IGNORECASE),
+            re.compile(r'_alt_env_token', re.IGNORECASE),
+            re.compile(r'_test_token', re.IGNORECASE),
+            re.compile(r'_fake_token', re.IGNORECASE),
+            re.compile(r'_mock_token', re.IGNORECASE),
+        ],
     ),
     # GitHub personal access / installation tokens.
     Rule(

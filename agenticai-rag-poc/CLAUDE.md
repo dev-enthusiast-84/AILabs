@@ -90,5 +90,5 @@ Full reference: `docs/architecture/ARCHITECTURE.md` · `backend/.env.example` ·
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`.specify/specs/005-enterprise-production-hardening/plan.md`
+`.specify/specs/012-document-cleanup/plan.md`
 <!-- SPECKIT END -->

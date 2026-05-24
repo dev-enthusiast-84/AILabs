@@ -2,7 +2,7 @@ import structlog
 import time
 from pathlib import Path
 from typing import Literal
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 from slowapi import Limiter
@@ -14,9 +14,11 @@ from app.runtime.runtime_settings_cookie import restore_runtime_settings_from_co
 from app.auth.models import UserInDB
 from app.config import get_settings
 from app.core.errors import SafeAppError, safe_app_error_from_exception
-from app.runtime.settings_store import get_effective_api_key
+from app.runtime.settings_store import get_effective_api_key, get_effective_admin_doc_retention_days
 from app.guardrails.safety import validate_filename
 from app.rag.chunking import chunk_text
+from app.rag.cleanup import CleanupResult
+import app.rag.cleanup as _cleanup_mod
 from app.rag.file_store import (
     delete_chunk_manifest,
     delete_file,
@@ -310,6 +312,7 @@ def _check_content_safety(filename: str, content: bytes) -> None:
 class DocumentListResponse(BaseModel):
     documents: list[str]
     count: int
+    pruned_previous_session_count: int = 0
 
 
 class UploadResponse(BaseModel):
@@ -321,6 +324,15 @@ class UploadResponse(BaseModel):
 class DeleteResponse(BaseModel):
     filename: str
     chunks_removed: int
+
+
+class CleanupRequest(BaseModel):
+    force: bool = False
+
+
+class CleanupStatusResponse(BaseModel):
+    has_result: bool
+    result: CleanupResult | None
 
 
 class DocumentChunksResponse(BaseModel):
@@ -346,12 +358,23 @@ class DocumentMetadataItem(BaseModel):
 class DocumentMetadataResponse(BaseModel):
     documents: list[DocumentMetadataItem]
     count: int
+    admin_docs_near_limit: bool = False
+
+
+async def _send_limit_notification(count: int, limit: int) -> None:
+    """Send a near-limit notification via configured channels (best-effort)."""
+    try:
+        from app.core.notifications import send_limit_warning
+        await send_limit_warning(count, limit)
+    except Exception:
+        pass
 
 
 @router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
 @_upload_limiter.limit(f"{settings.guest_upload_rate_limit_per_minute}/minute")
 async def upload_document(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user: UserInDB = Depends(get_current_user),
 ):
@@ -554,24 +577,53 @@ async def upload_document(
         raise safe_error from exc
 
     audit_event("document_upload", status="completed", request=request, user=user, filename=safe_name, chunks_indexed=len(ids))
+    # Near-limit notification for admin uploads (T024)
+    if user.role == "admin":
+        try:
+            _cfg = get_settings()
+            _all = get_all_documents()
+            _seen: set[str] = set()
+            for _doc in _all:
+                _m = _doc.metadata or {}
+                if _m.get("owner_role") == "admin" and _m.get("source"):
+                    _seen.add(_m["source"])
+            _count = len(_seen)
+            _limit = _cfg.admin_max_indexed_documents
+            if _count >= _limit * 0.8 and _cfg.notification_enabled:
+                background_tasks.add_task(_send_limit_notification, _count, _limit)
+        except Exception:
+            pass
     return UploadResponse(filename=safe_name, chunks_indexed=len(ids), message="Document indexed successfully.")
 
 
 @router.get("/", response_model=DocumentListResponse)
 async def list_documents(request: Request, user: UserInDB = Depends(get_current_user)):
-    """List all indexed document sources. Auth required."""
+    """List all indexed document sources. Auth required.
+
+    For guest users, previous-session documents are pruned synchronously before the
+    list is built so the response already reflects the cleaned state.
+    """
+    restore_runtime_settings_from_cookie(request, user)
+    pruned_count = 0
+    if user.role == "guest":
+        try:
+            cleanup_result = _cleanup_mod.CleanupService().sweep_guest(user.session_id or "")
+            pruned_count = cleanup_result.deleted_count
+        except Exception as exc:
+            log.warning("guest_cleanup_failed", error_type=type(exc).__name__)
     try:
         sources = _list_visible_document_names(user)
     except Exception as exc:
         safe_error = safe_app_error_from_exception(exc, default="retrieval_error")
         audit_event("document_list", status="failed", request=request, user=user, error_category=safe_error.category)
         raise safe_error from exc
-    return DocumentListResponse(documents=sources, count=len(sources))
+    return DocumentListResponse(documents=sources, count=len(sources), pruned_previous_session_count=pruned_count)
 
 
 @router.get("/metadata", response_model=DocumentMetadataResponse)
-async def get_documents_metadata(user=Depends(require_full_access)):
+async def get_documents_metadata(request: Request, user=Depends(require_full_access)):
     """Return enriched metadata for all admin documents. Admin-only."""
+    restore_runtime_settings_from_cookie(request, user)
     seen: set[str] = set()
     items: list[DocumentMetadataItem] = []
 
@@ -601,7 +653,9 @@ async def get_documents_metadata(user=Depends(require_full_access)):
             availability=availability,
         ))
 
-    return DocumentMetadataResponse(documents=items, count=len(items))
+    admin_doc_limit = get_settings().admin_max_indexed_documents
+    admin_docs_near_limit = len(seen) >= admin_doc_limit * 0.8
+    return DocumentMetadataResponse(documents=items, count=len(items), admin_docs_near_limit=admin_docs_near_limit)
 
 
 class DocumentSuggestionsResponse(BaseModel):
@@ -610,6 +664,7 @@ class DocumentSuggestionsResponse(BaseModel):
 
 @router.get("/suggestions", response_model=DocumentSuggestionsResponse)
 async def get_document_suggestions(
+    request: Request,
     files: list[str] = Query(default=[]),
     _user: UserInDB = Depends(get_current_user),
 ):
@@ -622,6 +677,7 @@ async def get_document_suggestions(
     Returns an empty list when the LLM is not configured or content is insufficient.
     Read-only; any authenticated user (OWASP A01 — same access as /content).
     """
+    restore_runtime_settings_from_cookie(request, _user)
     if not files:
         return DocumentSuggestionsResponse(suggestions=[])
 
@@ -698,8 +754,9 @@ async def get_document_suggestions(
 
 
 @router.get("/{filename}/chunks", response_model=DocumentChunksResponse)
-async def get_chunks(filename: str, _user=Depends(get_current_user)):
+async def get_chunks(filename: str, request: Request, _user=Depends(get_current_user)):
     """Return all indexed text chunks for a document. Read-only; any authenticated user."""
+    restore_runtime_settings_from_cookie(request, _user)
     safe_name = validate_filename(filename)
     source_key = _document_source_key(safe_name, _user)
     chunks = _load_document_chunks_for_display(source_key)
@@ -709,13 +766,14 @@ async def get_chunks(filename: str, _user=Depends(get_current_user)):
 
 
 @router.get("/{filename}/content", response_model=DocumentContentResponse)
-async def get_document_content_endpoint(filename: str, _user=Depends(get_current_user)):
+async def get_document_content_endpoint(filename: str, request: Request, _user=Depends(get_current_user)):
     """Return the full reconstructed document text with chunk overlap removed.
 
     Chunks are stitched in sequence order with the ~chunk_overlap duplicated
     prefix stripped from each subsequent chunk.  Read-only; any authenticated
     user may call this endpoint (OWASP A01 — same access as /chunks).
     """
+    restore_runtime_settings_from_cookie(request, _user)
     safe_name = validate_filename(filename)
     source_key = _document_source_key(safe_name, _user)
     chunks = _load_document_chunks_for_display(source_key)
@@ -746,6 +804,7 @@ async def get_document_file(filename: str, request: Request, _user=Depends(get_c
     Falls back to 404 for documents indexed before file storage was introduced.
     Read-only; any authenticated user may call this endpoint (OWASP A01).
     """
+    restore_runtime_settings_from_cookie(request, _user)
     safe_name = validate_filename(filename)
     source_key = _document_source_key(safe_name, _user)
     try:
@@ -774,6 +833,7 @@ async def get_document_file(filename: str, request: Request, _user=Depends(get_c
 @router.delete("/{filename}", response_model=DeleteResponse)
 async def remove_document(filename: str, request: Request, _user=Depends(require_full_access)):
     """Remove a document and all its chunks from the index. Admin required."""
+    restore_runtime_settings_from_cookie(request, _user)
     safe_name = validate_filename(filename)
     source_key = _document_source_key(safe_name, _user)
 
@@ -810,22 +870,63 @@ async def remove_document(filename: str, request: Request, _user=Depends(require
             filename=safe_name,
         )
         raise safe_error from exc
-    if removed == 0:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Document '{safe_name}' not found.")
+    # Idempotent delete: if no vector chunks were removed, the document may have
+    # already been deleted (or never indexed — e.g. a Vercel cold-start on a
+    # different function instance wiped the in-memory store).  Still clean up
+    # any orphaned file / manifest artifacts and return success so the caller
+    # doesn't see a 404 for an operation that reached its intended end state.
     try:
         delete_file(source_key)
         delete_chunk_manifest(source_key)
     except Exception as exc:
-        safe_error = safe_app_error_from_exception(exc, default="storage_error")
-        audit_event(
-            "document_delete",
-            status="failed",
-            request=request,
-            user=_user,
-            error_category=safe_error.category,
-            filename=safe_name,
-        )
-        raise safe_error from exc
+        if removed > 0:
+            # Only propagate storage errors when chunks were actually removed,
+            # because we know the document existed and cleanup is required.
+            safe_error = safe_app_error_from_exception(exc, default="storage_error")
+            audit_event(
+                "document_delete",
+                status="failed",
+                request=request,
+                user=_user,
+                error_category=safe_error.category,
+                filename=safe_name,
+            )
+            raise safe_error from exc
     invalidate_doc_cache()
     audit_event("document_delete", status="completed", request=request, user=_user, filename=safe_name, chunks_removed=removed)
     return DeleteResponse(filename=safe_name, chunks_removed=removed)
+
+
+from app.auth.router import limiter as _cleanup_limiter
+
+
+@router.post("/cleanup", response_model=CleanupResult)
+@_cleanup_limiter.limit("2/minute")
+async def trigger_cleanup(
+    request: Request,
+    body: CleanupRequest,
+    _user=Depends(require_full_access),
+):
+    """Trigger manual admin document cleanup. Admin required. Rate-limited 2/minute.
+
+    Sweeps admin-owned documents and deletes those older than the configured
+    retention cadence. When force=True, deletes all admin documents regardless of age.
+
+    OWASP A01 — requires full admin access; guests receive 403.
+    OWASP A04 — rate-limited to 2 calls per minute.
+    OWASP A09 — only filenames and counts are logged; no document content.
+    """
+    restore_runtime_settings_from_cookie(request, _user)
+    result = _cleanup_mod.CleanupService().sweep_admin(force=body.force)
+    _cleanup_mod._last_cleanup_result = result
+    audit_event("document_cleanup", status="completed", request=request, user=_user,
+                deleted_count=result.deleted_count, force=body.force)
+    return result
+
+
+@router.get("/cleanup/status", response_model=CleanupStatusResponse)
+async def get_cleanup_status(request: Request, _user=Depends(require_full_access)):
+    """Return the last cleanup result. Admin required."""
+    restore_runtime_settings_from_cookie(request, _user)
+    result = _cleanup_mod._last_cleanup_result
+    return CleanupStatusResponse(has_result=result is not None, result=result)

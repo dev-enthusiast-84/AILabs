@@ -262,14 +262,10 @@ def test_pinecone_store_index_auto_created(monkeypatch):
         def Index(self, name):
             return FakeIndex()
 
-    monkeypatch.setattr(ps, "settings", SimpleNamespace(
-        pinecone_api_key="pc-fake-key",
-        pinecone_index_name="agenticai-rag-poc-documents",
-        pinecone_namespace="",
-        pinecone_cloud="aws",
-        pinecone_region="us-east-1",
-        embedding_model="text-embedding-3-small",
-    ))
+    monkeypatch.setattr(ps, "get_effective_pinecone_api_key", lambda: "pc-fake-key")
+    monkeypatch.setattr(ps, "get_effective_pinecone_index_name", lambda: "agenticai-rag-poc-documents")
+    monkeypatch.setattr(ps, "get_effective_pinecone_cloud", lambda: "aws")
+    monkeypatch.setattr(ps, "get_effective_pinecone_region", lambda: "us-east-1")
     monkeypatch.setattr(pinecone, "Pinecone", lambda api_key: FakePc())
     monkeypatch.setattr(
         pinecone, "ServerlessSpec",
@@ -309,14 +305,10 @@ def test_pinecone_store_index_creation_timeout(monkeypatch):
         def Index(self, name):
             return FakeIndex()
 
-    monkeypatch.setattr(ps, "settings", SimpleNamespace(
-        pinecone_api_key="pc-fake-key",
-        pinecone_index_name="agenticai-rag-poc-documents",
-        pinecone_namespace="",
-        pinecone_cloud="aws",
-        pinecone_region="us-east-1",
-        embedding_model="text-embedding-3-small",
-    ))
+    monkeypatch.setattr(ps, "get_effective_pinecone_api_key", lambda: "pc-fake-key")
+    monkeypatch.setattr(ps, "get_effective_pinecone_index_name", lambda: "agenticai-rag-poc-documents")
+    monkeypatch.setattr(ps, "get_effective_pinecone_cloud", lambda: "aws")
+    monkeypatch.setattr(ps, "get_effective_pinecone_region", lambda: "us-east-1")
     monkeypatch.setattr(pinecone, "Pinecone", lambda api_key: FakePcNeverReady())
     monkeypatch.setattr(
         pinecone, "ServerlessSpec",

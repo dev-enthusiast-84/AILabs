@@ -13,6 +13,27 @@ export interface TokenResponse {
 export interface DocumentListResponse {
   documents: string[]
   count: number
+  pruned_previous_session_count?: number
+}
+
+export type CleanupCadence = 'hourly' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom'
+
+export interface CleanupResult {
+  trigger: 'manual' | 'session_start'
+  scope: 'admin' | 'guest'
+  force_mode: boolean
+  deleted_count: number
+  eligible_count: number
+  cadence: string | null
+  retention_hours: number | null
+  deleted_sources: string[]
+  errors: string[]
+  ran_at: string
+}
+
+export interface CleanupStatusResponse {
+  has_result: boolean
+  result: CleanupResult | null
 }
 
 export interface UploadResponse {
@@ -223,6 +244,8 @@ export interface SettingsResponse {
   retriever_hybrid_bm25: boolean
   relevance_grader_enabled: boolean
   ragas_evaluation_enabled: boolean
+  ragas_auto_trigger_interval?: number
+  admin_doc_retention_days?: number
   reranker_type: string
   allowed_reranker_types: string[]
   reranker_judge_model: string
@@ -246,6 +269,18 @@ export interface SettingsResponse {
   guest_max_indexed_documents?: number
   // Guest session limits
   guest_session_ttl_minutes?: number
+  // Section 10 — Document cleanup cadence (admin only)
+  admin_cleanup_cadence?: CleanupCadence
+  admin_cleanup_custom_value?: number | null
+  admin_cleanup_custom_unit?: 'hours' | 'days'
+  admin_cleanup_retention_hours?: number
+  admin_doc_count?: number
+  admin_doc_limit?: number
+  admin_docs_near_limit?: boolean
+  // Section 11 — Notifications (admin only)
+  notification_enabled?: boolean
+  notification_email?: string
+  notification_ntfy_topic?: string
 }
 
 export interface SettingsUpdateRequest {
@@ -281,11 +316,21 @@ export interface SettingsUpdateRequest {
   retriever_hybrid_bm25?: boolean
   relevance_grader_enabled?: boolean
   ragas_evaluation_enabled?: boolean
+  ragas_auto_trigger_interval?: number
+  admin_doc_retention_days?: number
   reranker_type?: string
   reranker_judge_model?: string
   chunker_type?: string
   chunk_size?: number
   chunk_overlap?: number
+  // Cleanup cadence (admin only)
+  admin_cleanup_cadence?: CleanupCadence
+  admin_cleanup_custom_value?: number | null
+  admin_cleanup_custom_unit?: 'hours' | 'days'
+  // Notifications (admin only)
+  notification_enabled?: boolean
+  notification_email?: string | null
+  notification_ntfy_topic?: string | null
 }
 
 export interface DocumentMetadataItem {
@@ -380,4 +425,32 @@ export interface RagasScores {
   model: string
   num_samples: number
   has_results?: boolean
+}
+
+export type TroubleshootComponent =
+  | 'frontend'
+  | 'backend'
+  | 'agent'
+  | 'rag'
+  | 'auth'
+  | 'deployment'
+  | 'other'
+
+export type TroubleshootEnvironment = 'local' | 'docker' | 'vercel' | 'production' | 'unknown'
+export type TroubleshootSeverity = 'critical' | 'high' | 'medium' | 'low'
+
+export interface TroubleshootHypothesis {
+  rank: number
+  title: string
+  confidence: number
+  explanation: string
+}
+
+export interface TroubleshootResponse {
+  error_category: string
+  root_cause: string
+  hypotheses: TroubleshootHypothesis[]
+  remediation_steps: string[]
+  follow_up_questions: string[]
+  affected_files: string[]
 }

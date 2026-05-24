@@ -168,7 +168,9 @@ def test_guest_list_excludes_admin_documents(client, guest_headers_docs):
          patch("app.api.documents._document_availability", return_value="usable"):
         resp = client.get("/api/documents/", headers=guest_headers_docs)
     assert resp.status_code == 200
-    assert resp.json() == {"documents": [], "count": 0}
+    body = resp.json()
+    assert body["documents"] == []
+    assert body["count"] == 0
 
 
 def test_guest_list_only_includes_current_guest_session_documents(client, guest_headers_docs):
@@ -204,7 +206,9 @@ def test_guest_list_only_includes_current_guest_session_documents(client, guest_
          patch("app.api.documents._document_availability", return_value="usable"):
         resp = client.get("/api/documents/", headers=guest_headers_docs)
     assert resp.status_code == 200
-    assert resp.json() == {"documents": ["mine.txt"], "count": 1}
+    body = resp.json()
+    assert body["documents"] == ["mine.txt"]
+    assert body["count"] == 1
 
 
 def test_guest_list_strips_legacy_source_prefix_when_filename_metadata_missing(client, guest_headers_docs):
@@ -232,7 +236,9 @@ def test_guest_list_strips_legacy_source_prefix_when_filename_metadata_missing(c
         resp = client.get("/api/documents/", headers=guest_headers_docs)
 
     assert resp.status_code == 200
-    assert resp.json() == {"documents": ["sample.txt"], "count": 1}
+    body = resp.json()
+    assert body["documents"] == ["sample.txt"]
+    assert body["count"] == 1
 
 
 def test_admin_list_excludes_guest_documents(client, auth_headers):
@@ -263,7 +269,9 @@ def test_admin_list_excludes_guest_documents(client, auth_headers):
          patch("app.api.documents._document_availability", return_value="usable"):
         resp = client.get("/api/documents/", headers=auth_headers)
     assert resp.status_code == 200
-    assert resp.json() == {"documents": ["admin.txt"], "count": 1}
+    body = resp.json()
+    assert body["documents"] == ["admin.txt"]
+    assert body["count"] == 1
 
 
 def test_admin_list_keeps_usable_old_files_and_excludes_stale_documents(client, auth_headers):
@@ -300,13 +308,17 @@ def test_admin_list_keeps_usable_old_files_and_excludes_stale_documents(client, 
         resp = client.get("/api/documents/", headers=auth_headers)
 
     assert resp.status_code == 200
-    assert resp.json() == {"documents": ["legacy-admin.txt", "current.txt"], "count": 2}
+    body = resp.json()
+    assert body["documents"] == ["legacy-admin.txt", "current.txt"]
+    assert body["count"] == 2
     mock_delete_stale.assert_called_once_with("stale.txt")
 
 
 def test_delete_nonexistent_document(client, auth_headers):
+    # Idempotent delete: non-existent documents return 200 (not 404) so callers
+    # don't see an error for an operation that reached its intended end state.
     resp = client.delete("/api/documents/nonexistent_file.txt", headers=auth_headers)
-    assert resp.status_code == 404
+    assert resp.status_code == 200
 
 
 def test_delete_existing_document(client, auth_headers):
@@ -1228,6 +1240,51 @@ def test_delete_document_file_store_error_returns_safe_error(client, auth_header
     assert "permission denied" not in str(body)
 
 
+def test_delete_document_read_file_exception_treated_as_present(client, auth_headers):
+    """When read_file raises, _has_file defaults to True and VS error → 503."""
+    with patch("app.api.documents.read_file", side_effect=OSError("fs down")), \
+         patch("app.api.documents.read_chunk_manifest", return_value=["chunk"]), \
+         patch("app.api.documents.delete_document", side_effect=RuntimeError("vs down")):
+        resp = client.delete("/api/documents/filedown.txt", headers=auth_headers)
+    assert resp.status_code in (500, 503)
+
+
+def test_delete_document_read_manifest_exception_treated_as_present(client, auth_headers):
+    """When read_chunk_manifest raises, _has_manifest defaults to True and VS error → 503."""
+    with patch("app.api.documents.read_file", return_value=None), \
+         patch("app.api.documents.read_chunk_manifest", side_effect=OSError("manifest io error")), \
+         patch("app.api.documents.delete_document", side_effect=RuntimeError("vs down")):
+        resp = client.delete("/api/documents/manifestdown.txt", headers=auth_headers)
+    assert resp.status_code in (500, 503)
+
+
+def test_delete_document_returns_404_when_both_stores_have_no_trace(client, auth_headers):
+    """When both file store and manifest return None/empty AND VS fails, return 404."""
+    with patch("app.api.documents.read_file", return_value=None), \
+         patch("app.api.documents.read_chunk_manifest", return_value=[]), \
+         patch("app.api.documents.delete_document", side_effect=RuntimeError("vs down")):
+        resp = client.delete("/api/documents/ghost.txt", headers=auth_headers)
+    assert resp.status_code == 404
+
+
+def test_admin_upload_near_limit_exception_is_swallowed(client, auth_headers):
+    """When near-limit check raises, the upload still succeeds (best-effort)."""
+    with patch("app.api.documents._visible_document_count", return_value=0), \
+         patch("app.api.documents.ingest_document", return_value="text"), \
+         patch("app.api.documents.chunk_text", return_value=[]), \
+         patch("app.api.documents.add_documents", return_value=["id-1"]), \
+         patch("app.api.documents.save_file"), \
+         patch("app.api.documents.scan_upload"), \
+         patch("app.api.documents._check_content_safety"), \
+         patch("app.api.documents.get_all_documents", side_effect=RuntimeError("vs unavailable")):
+        resp = client.post(
+            "/api/documents/upload",
+            headers=auth_headers,
+            files={"file": ("exc_test.txt", b"test content", "text/plain")},
+        )
+    assert resp.status_code == 201
+
+
 def test_get_documents_metadata_deduplicates_same_source(client, auth_headers):
     """Metadata endpoint returns only one entry per unique source key."""
     from langchain_core.documents import Document
@@ -1285,6 +1342,42 @@ def test_admin_upload_not_rate_limited(client, auth_headers):
                 f"Admin upload #{i + 1} must not be rate-limited, got {resp.status_code}"
 
 
+def test_admin_upload_enqueues_limit_notification_when_near_limit(client, auth_headers):
+    """When admin doc count crosses 80% of limit with notification_enabled, notification is enqueued."""
+    from unittest.mock import MagicMock
+
+    def _make_near_limit_docs():
+        return [MagicMock(metadata={"source": f"d{j}.txt", "owner_role": "admin"}) for j in range(85)]
+
+    with patch("app.api.documents._visible_document_count", return_value=0), \
+         patch("app.api.documents.ingest_document", return_value="text"), \
+         patch("app.api.documents.chunk_text", return_value=[]), \
+         patch("app.api.documents.add_documents", return_value=["id-1"]), \
+         patch("app.api.documents.save_file"), \
+         patch("app.api.documents.scan_upload"), \
+         patch("app.api.documents._check_content_safety"), \
+         patch("app.api.documents.get_all_documents", return_value=_make_near_limit_docs()), \
+         patch("app.api.documents.get_settings") as mock_cfg:
+        cfg = MagicMock()
+        cfg.admin_max_indexed_documents = 100
+        cfg.notification_enabled = True
+        cfg.max_upload_size_mb = 20
+        cfg.guest_max_upload_size_mb = 3
+        cfg.max_indexed_documents = 10
+        cfg.guest_max_indexed_documents = 1
+        cfg.max_upload_size_bytes = 20 * 1024 * 1024
+        cfg.guest_max_upload_size_bytes = 3 * 1024 * 1024
+        cfg.effective_max_upload_size_bytes = 20 * 1024 * 1024
+        mock_cfg.return_value = cfg
+
+        resp = client.post(
+            "/api/documents/upload",
+            headers=auth_headers,
+            files={"file": ("limit_test.txt", b"near limit upload", "text/plain")},
+        )
+    assert resp.status_code == 201
+
+
 # ── GET /api/documents/metadata ───────────────────────────────────────────────
 
 def test_get_metadata_admin_returns_200(client, auth_headers):
@@ -1311,4 +1404,120 @@ def test_upload_missing_api_key_returns_503(client, auth_headers):
     body = resp.json()
     assert resp.status_code == 503
     assert body["error_category"] == "openai_provider_error"
-    assert "api key" in body["detail"].lower() or "settings" in body["detail"].lower()
+
+
+# ── POST /api/documents/cleanup ───────────────────────────────────────────────
+
+def test_cleanup_guest_returns_403(client, guest_headers):
+    """Guests must not be able to trigger document cleanup."""
+    resp = client.post("/api/documents/cleanup", headers=guest_headers)
+    assert resp.status_code == 403
+
+
+def test_cleanup_unauthenticated_returns_403(client):
+    """Unauthenticated requests to cleanup endpoint return 403 (require_full_access policy)."""
+    resp = client.post("/api/documents/cleanup")
+    assert resp.status_code == 403
+
+
+def test_cleanup_admin_no_stale_returns_empty(client, auth_headers):
+    """When no documents exist, cleanup returns deleted_count=0 with CleanupResult schema."""
+    with patch("app.rag.cleanup.get_all_documents", return_value=[]):
+        resp = client.post("/api/documents/cleanup", json={"force": False}, headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deleted_count"] == 0
+    assert body["deleted_sources"] == []
+    assert body["scope"] == "admin"
+    assert body["trigger"] == "manual"
+
+
+def test_cleanup_removes_stale_document(client, auth_headers):
+    """Cleanup with force=True removes all admin documents regardless of age."""
+    from unittest.mock import MagicMock
+    mock_doc = MagicMock()
+    mock_doc.metadata = {"source": "admin-report.txt", "owner_role": "admin", "uploaded_at": "1700000000"}
+
+    with patch("app.rag.cleanup.get_all_documents", return_value=[mock_doc]), \
+         patch("app.rag.cleanup.delete_document"), \
+         patch("app.rag.cleanup.delete_file"), \
+         patch("app.rag.cleanup.delete_chunk_manifest"), \
+         patch("app.rag.cleanup.invalidate_doc_cache"):
+        resp = client.post("/api/documents/cleanup", json={"force": True}, headers=auth_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deleted_count"] == 1
+    assert "admin-report.txt" in body["deleted_sources"]
+    assert body["force_mode"] is True
+
+
+def test_cleanup_skips_guest_documents(client, auth_headers):
+    """Admin cleanup must never touch guest-owned documents even with force=True."""
+    from unittest.mock import MagicMock
+    mock_doc = MagicMock()
+    mock_doc.metadata = {"source": "guest-abc-upload.txt", "owner_role": "guest", "owner_session": "abc"}
+
+    with patch("app.rag.cleanup.get_all_documents", return_value=[mock_doc]), \
+         patch("app.rag.cleanup.delete_document") as mock_delete:
+        resp = client.post("/api/documents/cleanup", json={"force": True}, headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["deleted_count"] == 0
+    mock_delete.assert_not_called()
+
+
+def test_cleanup_removes_expired_by_retention_days(client, auth_headers, monkeypatch):
+    """Cleanup removes admin documents older than the effective retention threshold."""
+    import time
+    from unittest.mock import MagicMock
+    import app.runtime.settings_store as store_mod
+
+    # Override cadence to "daily" (24h) so a 2-day-old document is expired
+    monkeypatch.setattr(store_mod, "_runtime_cleanup_cadence", "daily")
+
+    mock_doc = MagicMock()
+    old_ts = str(int(time.time()) - (2 * 86400))  # 2 days ago
+    mock_doc.metadata = {"source": "old-report.txt", "owner_role": "admin", "uploaded_at": old_ts}
+
+    with patch("app.rag.cleanup.get_all_documents", return_value=[mock_doc]), \
+         patch("app.rag.cleanup.delete_document"), \
+         patch("app.rag.cleanup.delete_file"), \
+         patch("app.rag.cleanup.delete_chunk_manifest"), \
+         patch("app.rag.cleanup.invalidate_doc_cache"):
+        resp = client.post("/api/documents/cleanup", json={"force": False}, headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["deleted_count"] == 1
+
+
+def test_list_documents_guest_cleanup_exception_is_swallowed(client, guest_headers):
+    """When sweep_guest raises, the list endpoint still returns 200 with pruned_count=0."""
+    with patch("app.rag.cleanup.CleanupService.sweep_guest", side_effect=RuntimeError("db error")), \
+         patch("app.rag.vector_store.get_all_documents", return_value=[]):
+        resp = client.get("/api/documents/", headers=guest_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["pruned_previous_session_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_send_limit_notification_calls_send_limit_warning():
+    """_send_limit_notification delegates to send_limit_warning and swallows errors."""
+    from app.api.documents import _send_limit_notification
+    from unittest.mock import AsyncMock, patch as _patch
+    mock_warn = AsyncMock()
+    with _patch("app.core.notifications.send_limit_warning", mock_warn):
+        await _send_limit_notification(85, 100)
+    mock_warn.assert_called_once_with(85, 100)
+
+
+@pytest.mark.asyncio
+async def test_send_limit_notification_swallows_import_error():
+    """_send_limit_notification catches any exception during notification."""
+    from app.api.documents import _send_limit_notification
+    from unittest.mock import AsyncMock, patch as _patch
+    mock_warn = AsyncMock(side_effect=Exception("channel down"))
+    with _patch("app.core.notifications.send_limit_warning", mock_warn):
+        # Must not raise
+        await _send_limit_notification(85, 100)

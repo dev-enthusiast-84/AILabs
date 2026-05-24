@@ -30,6 +30,8 @@ Client receives (possibly redacted) answer
 
 Processing order per pass: **block → redact → flag**. A blocking rule short-circuits immediately.
 
+> **Redact behaviour:** text matched by a `redact` rule is replaced in-place with `[REDACTED]` (or the rule's custom `replacement`). The redacted text — with placeholders — is forwarded to the LLM; the original sensitive value is never passed downstream. On the output pass, the client receives the redacted answer.
+
 ---
 
 ## Rule Types, Actions, and Targets
@@ -56,7 +58,10 @@ Cannot be deleted (only toggled on/off by admins).
 |----|------|------|--------|:-------:|
 | `prompt-injection` | Prompt Injection | regex | block | **ON** |
 | `sql-injection` | SQL Injection | regex | block | **ON** |
-| `input-pii-email` | Input PII — Email | regex | flag | **ON** |
+| `input-pii-email` | Input PII — Email | regex | redact | **ON** |
+| `input-pii-phone` | Input PII — Phone | regex | redact | **ON** |
+| `input-pii-ssn` | Input PII — SSN | regex | redact | **ON** |
+| `input-pci-card` | Input PCI — Credit Card | regex | redact | **ON** |
 | `input-profanity` | Input Profanity | word | block | OFF |
 
 **Output rules:**

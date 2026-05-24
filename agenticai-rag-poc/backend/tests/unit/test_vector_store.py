@@ -922,3 +922,249 @@ class TestBlobPineconeDelegates:
             from app.rag.vector_store import get_document_content
             content = get_document_content("doc.pdf")
         assert "hello world" in content
+
+
+# ── _vector_store_type() resolution logic ─────────────────────────────────────
+
+class TestVectorStoreTypeResolution:
+    """_vector_store_type() Vercel + chroma fallback — the root cause of
+    'vector index unavailable' errors on Vercel when VECTOR_STORE_TYPE is not
+    explicitly set (defaults to 'chroma', which requires a writable filesystem).
+    """
+
+    _MOD = "app.rag.vector_store"
+
+    def test_chroma_on_vercel_with_pinecone_key_falls_back_to_pinecone(self):
+        """chroma + VERCEL + pinecone key → pinecone (highest priority)."""
+        with patch(f"{self._MOD}.get_effective_vector_store_type", return_value="chroma"), \
+             patch(f"{self._MOD}.get_effective_pinecone_api_key", return_value="pc-key"), \
+             patch(f"{self._MOD}._blob_token_configured", return_value=True), \
+             patch.dict("os.environ", {"VERCEL": "1"}):
+            from app.rag.vector_store import _vector_store_type
+            assert _vector_store_type() == "pinecone"
+
+    def test_chroma_on_vercel_without_pinecone_but_with_blob_falls_back_to_blob(self):
+        """chroma + VERCEL + no pinecone key + blob token → blob."""
+        with patch(f"{self._MOD}.get_effective_vector_store_type", return_value="chroma"), \
+             patch(f"{self._MOD}.get_effective_pinecone_api_key", return_value=""), \
+             patch(f"{self._MOD}._blob_token_configured", return_value=True), \
+             patch.dict("os.environ", {"VERCEL": "1"}):
+            from app.rag.vector_store import _vector_store_type
+            assert _vector_store_type() == "blob"
+
+    def test_chroma_on_vercel_without_credentials_falls_back_to_memory(self):
+        """chroma + VERCEL + no pinecone key + no blob token → memory (last resort)."""
+        with patch(f"{self._MOD}.get_effective_vector_store_type", return_value="chroma"), \
+             patch(f"{self._MOD}.get_effective_pinecone_api_key", return_value=""), \
+             patch(f"{self._MOD}._blob_token_configured", return_value=False), \
+             patch.dict("os.environ", {"VERCEL": "1"}):
+            from app.rag.vector_store import _vector_store_type
+            assert _vector_store_type() == "memory"
+
+    def test_chroma_not_on_vercel_returns_chroma(self):
+        """chroma outside Vercel → unchanged; local/Docker env keeps chroma."""
+        env = {k: v for k, v in __import__("os").environ.items() if k != "VERCEL"}
+        with patch(f"{self._MOD}.get_effective_vector_store_type", return_value="chroma"), \
+             patch.dict("os.environ", env, clear=True):
+            from app.rag.vector_store import _vector_store_type
+            assert _vector_store_type() == "chroma"
+
+    def test_memory_on_vercel_with_blob_token_upgrades_to_blob(self):
+        """Pre-existing behaviour: memory + VERCEL + blob token → blob."""
+        with patch(f"{self._MOD}.get_effective_vector_store_type", return_value="memory"), \
+             patch(f"{self._MOD}._blob_token_configured", return_value=True), \
+             patch.dict("os.environ", {"VERCEL": "1"}):
+            from app.rag.vector_store import _vector_store_type
+            assert _vector_store_type() == "blob"
+
+    def test_blob_without_token_falls_back_to_memory(self):
+        """blob configured but no token → memory (pre-existing guard)."""
+        with patch(f"{self._MOD}.get_effective_vector_store_type", return_value="blob"), \
+             patch(f"{self._MOD}._blob_token_configured", return_value=False), \
+             patch.dict("os.environ", {}, clear=True):
+            from app.rag.vector_store import _vector_store_type
+            assert _vector_store_type() == "memory"
+
+    def test_pinecone_without_api_key_falls_back_to_memory(self):
+        """pinecone configured but no API key → memory (pre-existing guard)."""
+        with patch(f"{self._MOD}.get_effective_vector_store_type", return_value="pinecone"), \
+             patch(f"{self._MOD}.get_effective_pinecone_api_key", return_value=""), \
+             patch.dict("os.environ", {}, clear=True):
+            from app.rag.vector_store import _vector_store_type
+            assert _vector_store_type() == "memory"
+
+
+# ── Guest isolation: filter applied BEFORE top-k ──────────────────────────────
+
+class TestGuestFilterBeforeTopK:
+    """Regression tests for the bug where admin docs dominated top-k before
+    _apply_retrieval_filter ran, leaving guests with 0 results.
+
+    Both BlobVectorStore and _PineconeStore must apply the active retrieval
+    filter BEFORE selecting top-k so that guest documents cannot be crowded
+    out by higher-scoring admin documents.
+    """
+
+    def _guest_filter(self, session: str) -> dict:
+        return {"owner_role": "guest", "owner_session": {"$eq": session}}
+
+    # ── BlobVectorStore ────────────────────────────────────────────────────────
+
+    def test_blob_similarity_search_applies_filter_before_top_k(self):
+        """BlobVectorStore must NOT return admin docs when the guest filter is active."""
+        from unittest.mock import patch, MagicMock
+        from app.rag.vector_store import BlobVectorStore, set_retrieval_metadata_filter
+
+        mock_embedding = MagicMock()
+        mock_embedding.embed_query.return_value = [1.0, 0.0]
+
+        store = BlobVectorStore(embedding=mock_embedding)
+
+        # Admin doc has perfect similarity (1.0); guest doc has lower similarity (0.8).
+        # Without the fix, only the admin doc appears in top-k=1 and the guest gets 0 results.
+        payloads = [
+            {
+                "text": "admin chunk",
+                "embedding": [1.0, 0.0],
+                "metadata": {"owner_role": "admin", "source": "admin.txt"},
+            },
+            {
+                "text": "guest chunk",
+                "embedding": [0.8, 0.6],
+                "metadata": {
+                    "owner_role": "guest",
+                    "owner_session": "sess123",
+                    "source": "guest-sess123-doc.txt",
+                },
+            },
+        ]
+
+        with patch.object(BlobVectorStore, "_load_payloads", return_value=payloads):
+            set_retrieval_metadata_filter(self._guest_filter("sess123"))
+            try:
+                results = store.similarity_search_with_relevance_scores("test query", k=1)
+            finally:
+                set_retrieval_metadata_filter(None)
+
+        assert len(results) == 1
+        doc, _score = results[0]
+        assert doc.metadata["owner_role"] == "guest"
+        assert doc.metadata["owner_session"] == "sess123"
+
+    def test_blob_similarity_search_no_filter_returns_all_sorted(self):
+        """Without a filter, BlobVectorStore still returns top-k by score."""
+        from unittest.mock import patch, MagicMock
+        from app.rag.vector_store import BlobVectorStore, set_retrieval_metadata_filter
+
+        mock_embedding = MagicMock()
+        mock_embedding.embed_query.return_value = [1.0, 0.0]
+
+        store = BlobVectorStore(embedding=mock_embedding)
+        payloads = [
+            {"text": "low", "embedding": [0.5, 0.5], "metadata": {"source": "b.txt"}},
+            {"text": "high", "embedding": [1.0, 0.0], "metadata": {"source": "a.txt"}},
+        ]
+
+        with patch.object(BlobVectorStore, "_load_payloads", return_value=payloads):
+            set_retrieval_metadata_filter(None)
+            results = store.similarity_search_with_relevance_scores("test", k=2)
+
+        assert len(results) == 2
+        assert results[0][0].page_content == "high"  # highest score first
+
+    # ── _PineconeStore ─────────────────────────────────────────────────────────
+
+    def test_pinecone_similarity_search_passes_filter_to_query(self):
+        """_PineconeStore must pass the active retrieval filter to Pinecone so
+        server-side filtering happens before top-k selection."""
+        from unittest.mock import MagicMock
+        from app.rag.pinecone_store import _PineconeStore
+        from app.rag.vector_store import set_retrieval_metadata_filter
+
+        mock_embedding = MagicMock()
+        mock_embedding.embed_query.return_value = [0.1, 0.9]
+
+        store = _PineconeStore(embedding=mock_embedding)
+
+        mock_match = MagicMock()
+        mock_match.metadata = {
+            "text": "guest content",
+            "owner_role": "guest",
+            "owner_session": "sess123",
+            "source": "guest-sess123-doc.txt",
+        }
+        mock_match.score = 0.85
+
+        mock_resp = MagicMock()
+        mock_resp.matches = [mock_match]
+
+        mock_index = MagicMock()
+        mock_index.query.return_value = mock_resp
+        store._pc_index = mock_index
+        store._pc_index_key = ("api-key", "index-name")
+
+        expected_filter = self._guest_filter("sess123")
+        set_retrieval_metadata_filter(expected_filter)
+        try:
+            results = store.similarity_search_with_relevance_scores("test query", k=5)
+        finally:
+            set_retrieval_metadata_filter(None)
+
+        assert len(results) == 1
+        # Verify Pinecone received the metadata filter
+        call_kwargs = mock_index.query.call_args.kwargs
+        assert call_kwargs.get("filter") == expected_filter
+
+    def test_pinecone_similarity_search_no_filter_passes_none(self):
+        """When no retrieval filter is set, _PineconeStore passes filter=None to Pinecone."""
+        from unittest.mock import MagicMock
+        from app.rag.pinecone_store import _PineconeStore
+        from app.rag.vector_store import set_retrieval_metadata_filter
+
+        mock_embedding = MagicMock()
+        mock_embedding.embed_query.return_value = [0.1, 0.9]
+
+        store = _PineconeStore(embedding=mock_embedding)
+
+        mock_resp = MagicMock()
+        mock_resp.matches = []
+
+        mock_index = MagicMock()
+        mock_index.query.return_value = mock_resp
+        store._pc_index = mock_index
+        store._pc_index_key = ("key", "name")
+
+        set_retrieval_metadata_filter(None)
+        store.similarity_search_with_relevance_scores("test", k=3)
+
+        call_kwargs = mock_index.query.call_args.kwargs
+        assert call_kwargs.get("filter") is None
+
+    def test_pinecone_mmr_passes_filter_to_query(self):
+        """max_marginal_relevance_search also passes the active filter to Pinecone."""
+        from unittest.mock import MagicMock
+        from app.rag.pinecone_store import _PineconeStore
+        from app.rag.vector_store import set_retrieval_metadata_filter
+
+        mock_embedding = MagicMock()
+        mock_embedding.embed_query.return_value = [1.0, 0.0]
+
+        store = _PineconeStore(embedding=mock_embedding)
+
+        mock_resp = MagicMock()
+        mock_resp.matches = []
+
+        mock_index = MagicMock()
+        mock_index.query.return_value = mock_resp
+        store._pc_index = mock_index
+        store._pc_index_key = ("key", "name")
+
+        expected_filter = self._guest_filter("mmr-sess")
+        set_retrieval_metadata_filter(expected_filter)
+        try:
+            store.max_marginal_relevance_search("test", k=3, fetch_k=10)
+        finally:
+            set_retrieval_metadata_filter(None)
+
+        call_kwargs = mock_index.query.call_args.kwargs
+        assert call_kwargs.get("filter") == expected_filter

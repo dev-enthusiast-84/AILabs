@@ -51,13 +51,13 @@ class TestEffectiveMaxUploadSize:
         assert s.effective_max_upload_size_mb == 20
         assert s.effective_max_upload_size_bytes == 20 * 1024 * 1024
 
-    def test_on_vercel_caps_at_4mb(self, monkeypatch):
+    def test_on_vercel_returns_full_limit(self, monkeypatch):
         monkeypatch.setenv("VERCEL", "1")
         s = _s(max_upload_size_mb=20)
-        assert s.effective_max_upload_size_mb == 4
-        assert s.effective_max_upload_size_bytes == 4 * 1024 * 1024
+        assert s.effective_max_upload_size_mb == 20
+        assert s.effective_max_upload_size_bytes == 20 * 1024 * 1024
 
-    def test_on_vercel_does_not_increase_lower_limit(self, monkeypatch):
-        monkeypatch.setenv("VERCEL", "1")
+    def test_custom_limit_respected(self, monkeypatch):
+        monkeypatch.delenv("VERCEL", raising=False)
         s = _s(max_upload_size_mb=2)
         assert s.effective_max_upload_size_mb == 2

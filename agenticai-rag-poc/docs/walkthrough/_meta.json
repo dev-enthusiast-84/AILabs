@@ -4,5 +4,11 @@
     "guest-walkthrough.webm",
     "admin-walkthrough.webm"
   ],
-  "last_recorded_local": "2026-05-24T11:32:50Z"
+  "last_recorded_local": "2026-05-24T11:32:50Z",
+  "remote_url": "https://agenticai-rag-poc.vercel.app/",
+  "remote_assets": [
+    "guest-walkthrough.webm",
+    "admin-walkthrough.webm"
+  ],
+  "last_recorded_remote": "2026-05-24T17:58:52Z"
 }

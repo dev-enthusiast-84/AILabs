@@ -86,6 +86,13 @@ def get_ragas_scores() -> RagasScores | None:
         return None
 
 
+def clear_ragas_scores() -> None:
+    """Delete the Ragas scores file, resetting evaluation history."""
+    path = _scores_path()
+    if path.exists():
+        path.unlink()
+
+
 def save_ragas_scores(
     faithfulness: float,
     answer_relevancy: float,

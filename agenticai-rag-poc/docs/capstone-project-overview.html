@@ -685,7 +685,8 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <p class="tagline">
         A full-stack Generative AI application implementing all 10 capstone tasks — with a
         7-node LangGraph reasoning agent, configurable guardrails, multilingual voice chat,
-        automated evaluation via Ragas, and a deployed instance on Vercel.
+        automated evaluation via Ragas, an AI troubleshooting assistant, multi-turn conversational
+        memory, and a deployed instance on Vercel.
       </p>
       <p style="margin-top:14px;font-size:12px;color:var(--text-soft)">
         Navigate the sections above to review the requirement checklist, submission artifacts, or the extended feature documentation.
@@ -699,6 +700,10 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="hl-card" role="listitem">
         <div class="hl-num">7-Node</div>
         <div class="hl-label">LangGraph agent pipeline</div>
+      </div>
+      <div class="hl-card" role="listitem">
+        <div class="hl-num">35+</div>
+        <div class="hl-label">REST API endpoints</div>
       </div>
       <div class="hl-card" role="listitem">
         <div class="hl-num">Live</div>
@@ -784,7 +789,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="check-body">
         <div class="check-num">Task 2</div>
         <div class="check-title">User Interaction Layer</div>
-        <div class="check-detail">React 18 single-page application with login and document dashboard, plus a full REST API (28 endpoints). Guest access available — no account required.</div>
+        <div class="check-detail">React 18 single-page application with login and document dashboard, plus a full REST API (35+ endpoints). Guest access available — no account required.</div>
         <span class="check-tag tag-green">Delivered</span>
       </div>
     </article>
@@ -813,8 +818,8 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="check-mark" aria-label="Complete">✓</div>
       <div class="check-body">
         <div class="check-num">Task 5</div>
-        <div class="check-title">Vector Knowledge Store</div>
-        <div class="check-detail">OpenAI embeddings stored in ChromaDB (local / Docker) or Pinecone (production / serverless). Store type is runtime-configurable with no code changes needed.</div>
+        <div class="check-title">Vector Knowledge Store &amp; File Storage</div>
+        <div class="check-detail">OpenAI embeddings stored in ChromaDB (local / Docker) or Pinecone (production / serverless). Uploaded files use a three-tier store: local disk → Vercel Blob (serverless) → memory. All storage tiers are auto-selected by environment — no code changes needed.</div>
         <span class="check-tag tag-green">Delivered</span>
       </div>
     </article>
@@ -855,7 +860,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="check-body">
         <div class="check-num">Task 9</div>
         <div class="check-title">Reliability &amp; Safety Controls</div>
-        <div class="check-detail">11 built-in guardrail rules, input/output validation, rate limiting, JWT authentication, and OWASP Top 10 controls across the full stack.</div>
+        <div class="check-detail">14 built-in bidirectional guardrail rules — each targeting "input", "output", or "both" — auto-redact PII/PCI (emails, phones, SSNs, card numbers) from both queries and model responses. SlowAPI rate limiting, JWT authentication, and OWASP Top 10 controls across the full stack.</div>
         <span class="check-tag tag-purple">Advanced</span>
         <div style="margin-top:6px"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/security/GUARDRAILS" target="_blank" rel="noopener noreferrer">→ Guardrails docs</a>&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/security/SECURITY" target="_blank" rel="noopener noreferrer">→ Security docs</a></div>
       </div>
@@ -893,7 +898,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     All artifacts are present and linked below.
     &ensp;<a class="doc-ref" href="https://github.com/dev-enthusiast-84/AILabs" target="_blank" rel="noopener noreferrer">→ GitHub Repo</a>
     &ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/" target="_blank" rel="noopener noreferrer">→ GitHub Pages Docs</a>
-    &ensp;<a class="doc-ref" href="requirements/edureka-project.pdf" target="_blank" rel="noopener noreferrer">→ Project Brief (PDF)</a>
+    &ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/requirements/edureka-project.pdf" target="_blank" rel="noopener noreferrer">→ Project Brief (PDF)</a>
   </p>
 
   <!-- Delivery summary -->
@@ -966,7 +971,16 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div>
         <div class="sub-title">Capstone Audit</div>
         <div class="sub-detail">All 10 capstone requirements mapped to implementation files, test cases, and documentation references — one row per requirement with evidence links.</div>
-        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/project/CAPSTONE-AUDIT" target="_blank" rel="noopener noreferrer">→ CAPSTONE-AUDIT.md</a>&ensp;·&ensp;<a class="doc-ref" href="requirements/edureka-project.pdf" target="_blank" rel="noopener noreferrer">→ Project Brief (PDF)</a></div>
+        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/project/CAPSTONE-AUDIT" target="_blank" rel="noopener noreferrer">→ CAPSTONE-AUDIT.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/requirements/edureka-project.pdf" target="_blank" rel="noopener noreferrer">→ Project Brief (PDF)</a></div>
+      </div>
+    </div>
+
+    <div class="sub-item" role="listitem">
+      <div class="sub-check" aria-label="Covered">✓</div>
+      <div>
+        <div class="sub-title">Health &amp; Readiness Probes</div>
+        <div class="sub-detail">Dedicated <code>/api/health</code> and <code>/api/readiness</code> endpoints for Docker Compose health checks, Vercel cold-start probing, and load-balancer liveness monitoring.</div>
+        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-LOCAL" target="_blank" rel="noopener noreferrer">→ Deployment docs</a></div>
       </div>
     </div>
 
@@ -974,7 +988,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="sub-check" aria-label="Covered">✓</div>
       <div>
         <div class="sub-title">Testing &amp; Quality Evidence</div>
-        <div class="sub-detail">1500+ tests across unit, integration, end-to-end, and live-dependency layers. HTML coverage reports included. CI pipeline runs on every pull request with a ≥ 98% backend coverage gate and OWASP-aligned quality checks.</div>
+        <div class="sub-detail">3800+ tests across unit, integration, end-to-end, and live-dependency layers (1420+ backend, 2400+ frontend). HTML coverage reports included. CI pipeline runs on every pull request with a ≥ 98% backend coverage gate and OWASP-aligned quality checks.</div>
         <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/testing/TESTING" target="_blank" rel="noopener noreferrer">→ TESTING.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/testing/TESTING-FRONTEND" target="_blank" rel="noopener noreferrer">→ TESTING-FRONTEND.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/testing/COVERAGE-MATRIX" target="_blank" rel="noopener noreferrer">→ COVERAGE-MATRIX.md</a></div>
       </div>
     </div>
@@ -1081,14 +1095,14 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     <article class="feat-card fc-purple" role="listitem">
       <div class="feat-icon" aria-hidden="true">🛡️</div>
       <div class="feat-title">Enterprise Content Guardrails</div>
-      <div class="feat-body">11 built-in safety rules guard against prompt injection, SQL injection, and PII leakage in both directions. Admins configure custom block, redact, or flag policies at runtime — no restarts.</div>
+      <div class="feat-body">14 built-in <strong>bidirectional</strong> rules — each with an "input", "output", or "both" target — guard against prompt injection, SQL injection, and PII/PCI leakage on both the query side and the model response side. Auto-redacts emails, phones, SSNs, and card numbers. Admins manage custom block, redact, or flag policies via REST API at runtime — no restarts.</div>
       <span class="feat-badge tag-purple">Enterprise-Grade</span>
     </article>
 
     <article class="feat-card fc-cyan" role="listitem">
       <div class="feat-icon" aria-hidden="true">🎙️</div>
       <div class="feat-title">Multilingual Voice &amp; Text Chat</div>
-      <div class="feat-body">Users interact by voice or text in English, Spanish, or French. Audio transcripts are automatically redacted by the backend before export or speech playback — privacy by design.</div>
+      <div class="feat-body">Users interact by voice or text in any language the model supports. Audio transcripts are auto-redacted by the backend before export or speech playback. Long transcripts defer to an <strong>async job queue</strong> with polling endpoint, preventing serverless timeouts on large exports.</div>
       <span class="feat-badge tag-cyan">Beyond Requirements</span>
     </article>
 
@@ -1102,7 +1116,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     <article class="feat-card fc-emerald" role="listitem">
       <div class="feat-icon" aria-hidden="true">📈</div>
       <div class="feat-title">Built-In Quality Evaluation</div>
-      <div class="feat-body">Ragas evaluation dashboard tracks faithfulness, answer relevance, context precision, and context recall — color-coded with one-click re-evaluation. Scores persist across restarts.</div>
+      <div class="feat-body">Ragas evaluation dashboard tracks faithfulness, answer relevance, context precision, and context recall — color-coded with one-click re-evaluation. Scores persist across restarts. Evaluation sampling interval is configurable (1–10,000 queries, default 1-in-50).</div>
       <span class="feat-badge tag-green">Measurable Quality</span>
     </article>
 
@@ -1116,7 +1130,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     <article class="feat-card fc-cyan" role="listitem">
       <div class="feat-icon" aria-hidden="true">⚙️</div>
       <div class="feat-title">Runtime Configuration — No Restart</div>
-      <div class="feat-body">Model selection, retrieval parameters, token limits, LangSmith tracing, and storage backend settings are all modifiable at runtime via the admin UI or REST API — no redeploy or process restart required.</div>
+      <div class="feat-body">Model selection (including <strong>per-node routing</strong>: separate models for Planner, Generator, and Validator), retrieval parameters, token limits, LangSmith tracing, and storage backend — all modifiable at runtime. Settings persist across Vercel cold starts via a <strong>Fernet-encrypted HttpOnly cookie</strong> that never exposes credentials to JavaScript.</div>
       <span class="feat-badge tag-cyan">Runtime Configuration</span>
     </article>
 
@@ -1134,6 +1148,41 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <span class="feat-badge tag-green">Production Ready</span>
     </article>
 
+    <article class="feat-card fc-amber" role="listitem">
+      <div class="feat-icon" aria-hidden="true">🗂️</div>
+      <div class="feat-title">Admin Document Lifecycle &amp; Cleanup</div>
+      <div class="feat-body">Configurable retention window (1–3,650 days) with scheduled and on-demand cleanup. Expired documents are purged from both the vector store and file store automatically. Admins receive notifications via email and/or ntfy.sh when cleanup runs.</div>
+      <span class="feat-badge tag-amber">Admin Feature</span>
+    </article>
+
+    <article class="feat-card fc-purple" role="listitem">
+      <div class="feat-icon" aria-hidden="true">🔭</div>
+      <div class="feat-title">AI Troubleshooting Agent (Vision)</div>
+      <div class="feat-body">A dedicated multimodal debugging endpoint accepts error messages, log content, component/environment metadata, and up to 3 screenshots (PNG/JPEG/WebP ≤ 8 MB). GPT-4o vision returns ranked root-cause hypotheses, numbered remediation steps, and affected file paths — in one API call. Rate-limited to 5 requests/min per IP.</div>
+      <span class="feat-badge tag-purple">Multimodal AI</span>
+    </article>
+
+    <article class="feat-card fc-emerald" role="listitem">
+      <div class="feat-icon" aria-hidden="true">💬</div>
+      <div class="feat-title">Multi-Turn Conversational Memory</div>
+      <div class="feat-body">Every query carries a rolling window of up to 6 prior messages. The last 4 exchanges are used to augment the retrieval question with conversational context, so follow-up questions ("What about X in that last document?") resolve correctly without re-stating the full context.</div>
+      <span class="feat-badge tag-green">Context-Aware Retrieval</span>
+    </article>
+
+    <article class="feat-card fc-cyan" role="listitem">
+      <div class="feat-icon" aria-hidden="true">💡</div>
+      <div class="feat-title">Smart Document Query Suggestions</div>
+      <div class="feat-body">After upload, the backend generates 1–4 LLM-derived, document-grounded questions and surfaces them as quick-start prompts in the chat UI. With a single document, up to 4 diverse questions are returned; with 2–4 documents, one targeted question per document keeps each walkthrough slot distinct.</div>
+      <span class="feat-badge tag-cyan">Discoverability UX</span>
+    </article>
+
+    <article class="feat-card fc-amber" role="listitem">
+      <div class="feat-icon" aria-hidden="true">☁️</div>
+      <div class="feat-title">Three-Tier Storage Architecture</div>
+      <div class="feat-body">File storage auto-selects: local disk (dev/Docker) → Vercel Blob (serverless, when <code>BLOB_READ_WRITE_TOKEN</code> is set) → in-memory fallback. Vector store independently selects: ChromaDB → Pinecone → in-memory. Both tiers switch on environment — no code changes, no restarts.</div>
+      <span class="feat-badge tag-amber">Zero-Config Deployment</span>
+    </article>
+
   </div>
 
   <!-- Trust signals -->
@@ -1144,15 +1193,15 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
   </h3>
   <div class="trust-row" role="list" aria-label="Key metrics">
     <div class="trust-card" role="listitem">
-      <div class="trust-num">1500+</div>
+      <div class="trust-num">3800+</div>
       <div class="trust-label">Automated Tests</div>
     </div>
     <div class="trust-card" role="listitem">
-      <div class="trust-num">28</div>
+      <div class="trust-num">35+</div>
       <div class="trust-label">API Endpoints</div>
     </div>
     <div class="trust-card" role="listitem">
-      <div class="trust-num">11</div>
+      <div class="trust-num">14</div>
       <div class="trust-label">Guardrail Rules</div>
     </div>
     <div class="trust-card" role="listitem">
@@ -1206,6 +1255,16 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
               <td><span class="dash-c" aria-label="No">–</span></td>
               <td><span class="tick" aria-label="Yes">✓</span></td>
             </tr>
+            <tr>
+              <td>AI troubleshooting agent</td>
+              <td><span class="tick" aria-label="Yes">✓</span></td>
+              <td><span class="tick" aria-label="Yes">✓</span></td>
+            </tr>
+            <tr>
+              <td>Document query suggestions</td>
+              <td><span class="tick" aria-label="Yes">✓</span></td>
+              <td><span class="tick" aria-label="Yes">✓</span></td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -1219,6 +1278,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
         <span class="chip chip-e" role="listitem">FastAPI</span>
         <span class="chip chip-p" role="listitem">ChromaDB</span>
         <span class="chip chip-p" role="listitem">Pinecone</span>
+        <span class="chip chip-a" role="listitem">Vercel Blob</span>
         <span class="chip chip-c" role="listitem">React 18 + TypeScript</span>
         <span class="chip chip-a" role="listitem">Vite + Tailwind</span>
         <span class="chip chip-e" role="listitem">pytest · Vitest · Playwright</span>
@@ -1227,6 +1287,10 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
         <span class="chip chip-a" role="listitem">Ragas evaluation</span>
         <span class="chip chip-c" role="listitem">LangSmith tracing</span>
         <span class="chip chip-e" role="listitem">BM25 hybrid search</span>
+        <span class="chip chip-p" role="listitem">OpenAI Vision API</span>
+        <span class="chip chip-c" role="listitem">structlog</span>
+        <span class="chip" role="listitem">ntfy.sh · email notifications</span>
+        <span class="chip chip-e" role="listitem">slowapi rate limiting</span>
       </div>
     </div>
   </div>
@@ -1263,7 +1327,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     <span class="footer-brand-dot" aria-hidden="true"></span>
     Agentic RAG — Edureka / Illinois Tech Generative AI &amp; ML Capstone
   </div>
-  <div class="footer-meta">FastAPI · LangGraph · ChromaDB / Pinecone · React 18 · OpenAI · 10 / 10 requirements</div>
+  <div class="footer-meta">FastAPI · LangGraph · ChromaDB / Pinecone / Vercel Blob · React 18 · OpenAI · 10 / 10 requirements</div>
   <div class="footer-hint" aria-label="PDF export tip" style="display:none"><strong>→ PDF:</strong> Print → Save as PDF → Landscape A4</div>
 </footer>
 

@@ -458,6 +458,22 @@ class TestCheckContentSafety:
 
         _check_content_safety("clean.txt", b"Normal document text content.")
 
+    def test_rejects_mz_executable_header(self):
+        """Line 296: content starting with MZ bytes raises ValueError."""
+        from app.api.documents import _check_content_safety
+
+        content = b"\x4d\x5a" + b"\x00" * 100  # Windows PE header
+        with pytest.raises(ValueError, match="Executable content"):
+            _check_content_safety("disguised.txt", content)
+
+    def test_rejects_elf_executable_header(self):
+        """Line 296: content starting with ELF magic raises ValueError."""
+        from app.api.documents import _check_content_safety
+
+        content = b"\x7f\x45\x4c\x46" + b"\x00" * 100  # ELF header
+        with pytest.raises(ValueError, match="Executable content"):
+            _check_content_safety("binary.txt", content)
+
 
 # ── _guest_upload_key revoked-token path ──────────────────────────────────────
 
@@ -531,11 +547,18 @@ class TestGetDocumentSuggestions:
     def _make_admin(self) -> "UserInDB":
         return _make_user(role="admin")
 
+    def _make_request(self):
+        from unittest.mock import MagicMock
+        req = MagicMock()
+        req.headers.get.return_value = None
+        req.cookies.get.return_value = None
+        return req
+
     async def test_returns_empty_when_no_files(self, monkeypatch):
         """Empty files list → empty suggestions immediately."""
         from app.api.documents import get_document_suggestions
 
-        result = await get_document_suggestions(files=[], _user=self._make_admin())
+        result = await get_document_suggestions(request=self._make_request(), files=[], _user=self._make_admin())
         assert result.suggestions == []
 
     async def test_returns_empty_when_chunks_not_found(self, monkeypatch):
@@ -545,11 +568,18 @@ class TestGetDocumentSuggestions:
         monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
         monkeypatch.setattr("app.api.documents._load_document_chunks_for_display", lambda _: [])
 
-        result = await get_document_suggestions(files=["missing.txt"], _user=self._make_admin())
+        result = await get_document_suggestions(request=self._make_request(), files=["missing.txt"], _user=self._make_admin())
         assert result.suggestions == []
 
     async def test_returns_empty_when_api_key_not_configured(self, monkeypatch):
-        """No API key → skips LLM call and returns empty list."""
+        """No API key → skips LLM call and returns empty list.
+
+        get_document_suggestions does a local `from app.runtime.settings_store import
+        get_effective_api_key` inside the function body, so the patch must target the
+        source module — not the module-level binding in app.api.documents — otherwise
+        CI environments with OPENAI_API_KEY set will bypass the guard and make a real
+        LLM call, causing the assertion to fail.
+        """
         from app.api.documents import get_document_suggestions
 
         monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
@@ -557,9 +587,9 @@ class TestGetDocumentSuggestions:
             "app.api.documents._load_document_chunks_for_display",
             lambda _: ["This document describes RAG pipeline stages."],
         )
+        monkeypatch.setattr("app.runtime.settings_store.get_effective_api_key", lambda: "")
 
-        result = await get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
-        # No API key configured in test env → suggestions must be empty
+        result = await get_document_suggestions(request=self._make_request(), files=["doc.txt"], _user=self._make_admin())
         assert result.suggestions == []
 
     async def test_returns_llm_questions_when_configured(self, monkeypatch):
@@ -592,7 +622,7 @@ class TestGetDocumentSuggestions:
         fake_module.ChatOpenAI = fake_chat_class
         monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
 
-        result = await get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
+        result = await get_document_suggestions(request=self._make_request(), files=["doc.txt"], _user=self._make_admin())
         assert result.suggestions == expected
 
     async def test_multi_doc_uses_per_doc_prompt(self, monkeypatch):
@@ -632,7 +662,7 @@ class TestGetDocumentSuggestions:
         monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
 
         result = await get_document_suggestions(
-            files=["hr.txt", "it.csv", "training.xlsx"], _user=self._make_admin()
+            request=self._make_request(), files=["hr.txt", "it.csv", "training.xlsx"], _user=self._make_admin()
         )
         assert result.suggestions == per_doc_questions
         # Prompt must reference multiple documents (per-doc path)
@@ -663,5 +693,5 @@ class TestGetDocumentSuggestions:
         fake_module.ChatOpenAI = fake_chat_class
         monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
 
-        result = await get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
+        result = await get_document_suggestions(request=self._make_request(), files=["doc.txt"], _user=self._make_admin())
         assert result.suggestions == []

@@ -102,6 +102,31 @@ Built-in guardrail rules are seeded on startup. Manage via **Settings → Guardr
 
 ---
 
+## Document Cleanup
+
+| Variable | Default | Required | Purpose |
+|----------|---------|----------|---------|
+| `ADMIN_CLEANUP_CADENCE` | `monthly` | No | Retention preset: `hourly`, `daily`, `weekly`, `biweekly`, `monthly`, `custom` |
+| `ADMIN_CLEANUP_CUSTOM_VALUE` | `30` | No | Numeric value for custom cadence (used only when `ADMIN_CLEANUP_CADENCE=custom`) |
+| `ADMIN_CLEANUP_CUSTOM_UNIT` | `days` | No | Unit for custom cadence: `hours` or `days` |
+| `ADMIN_MAX_INDEXED_DOCUMENTS` | `100` | No | Maximum admin-owned documents before near-limit warning fires |
+
+---
+
+## Notifications
+
+| Variable | Default | Required | Purpose |
+|----------|---------|----------|---------|
+| `NOTIFICATION_ENABLED` | `false` | No | Master switch — must be `true` for any channel to fire |
+| `NOTIFICATION_EMAIL` | — | No | Recipient email address for SMTP notifications |
+| `NOTIFICATION_SMTP_HOST` | — | No | SMTP server hostname (leave unset to disable email) |
+| `NOTIFICATION_SMTP_PORT` | `587` | No | SMTP server port (STARTTLS) |
+| `NOTIFICATION_SMTP_USER` | — | No | SMTP authentication username |
+| `NOTIFICATION_SMTP_PASSWORD` | — | No | SMTP authentication password — never logged (OWASP A09) |
+| `NOTIFICATION_NTFY_TOPIC` | — | No | ntfy.sh topic slug — use a long random value (shared secret) |
+
+---
+
 ## Pipeline & Retrieval Tuning
 
 Retrieval, chunking, reranker, and Ragas evaluation variables → [Pipeline & Retrieval Variables](deployment/DEPLOY-LOCAL-ENV-PIPELINE.md).

@@ -1,56 +1,42 @@
-# Implementation Plan: LangGraph / LangChain Ecosystem Upgrade
+# Implementation Plan: Enterprise Production Hardening
 
-**Branch**: `007-cloud-deployment-extensions` | **Date**: 2026-05-20 | **Spec**: [spec.md](spec.md)  
-**Input**: User instruction — "use recommended option 2 for langgraph/langchain upgrade"  
-**Research**: [research.md](research.md) | **Dependency model**: [data-model.md](data-model.md)  
-**Target requirements contract**: [contracts/requirements-target.txt](contracts/requirements-target.txt)
-
----
+**Branch**: `005-enterprise-production-hardening` | **Date**: 2026-05-24 | **Spec**: `.specify/specs/005-enterprise-production-hardening/spec.md`
 
 ## Summary
 
-Upgrade the entire LangChain/LangGraph ecosystem from the current 0.x generation to the
-1.x generation. langgraph 1.2.0 requires `langchain-core>=1.4.0`, which creates a hard
-compatibility boundary: all seven LangChain packages must be bumped in a single coordinated
-change. Two packages become forced collateral upgrades — `openai` (1.x → 2.x, absorbed by
-langchain-openai) and `chromadb` (0.6.x → 1.5.x, absorbed by langchain-chroma). The only
-confirmed breaking code change is one line in `rag_agent.py` where the removed
-`set_entry_point()` API must be replaced with `add_edge(START, ...)`.
+Harden the Agentic RAG application across seven enterprise-readiness dimensions: consistent security controls and audit coverage on all chat/voice/export surfaces (US1); correct browser security headers including a Permissions-Policy microphone fix (US2); maintainable chat architecture already refactored into sub-components (US3); reliable async audio/transcript export with defined size limits (US4); clean multilingual retrieval query separation (US5); operational health and readiness observability (US6); and typed safe exception handling replacing broad catch-all handlers (US7).
+
+Most infrastructure is already in place. The remaining work is: one Permissions-Policy line fix, nginx.conf CSP + microphone headers, a parametrized guardrail coverage matrix test, exception handler audits in two remaining routers, and comprehensive test coverage for all hardening surfaces.
 
 ---
 
 ## Technical Context
 
-**Language/Version**: Python 3.11–3.13 (3.14 blocked by pydantic-core)  
-**Primary Dependencies**: FastAPI 0.115.6, LangGraph 1.2.0 (target), ChromaDB 1.5.9 (target)  
-**Storage**: ChromaDB (local/Docker), in-memory (Vercel)  
-**Testing**: pytest 8.3.4, pytest-asyncio, Vitest, Playwright  
-**Target Platform**: Docker Compose (local), Vercel Fluid Compute (cloud)  
-**Project Type**: Web service (FastAPI backend + React frontend)  
-**Performance Goals**: Maintain ≤2s p95 for agentic query; no regression on token budget  
-**Constraints**: Must not break existing 280 unit + 158 integration + live tests  
-**Scale/Scope**: Single-service backend; upgrade touches 2 production files + 2 requirements files
+**Language/Version**: Python 3.11–3.13 (backend), TypeScript/React 18 (frontend)
+**Primary Dependencies**: FastAPI 0.115.6, LangGraph 1.2.0, LangChain 1.3.1, ChromaDB 0.6.3, React 18.3.1, Vite 6.0.7, Tailwind 3.4.17
+**Storage**: ChromaDB (local/Docker), Pinecone (optional), Vercel Blob (file store), in-memory fallback
+**Testing**: pytest (unit + integration), Vitest (frontend unit), Playwright (E2E)
+**Target Platform**: Linux server (Docker Compose) + Vercel serverless (production)
+**Project Type**: Full-stack web service (FastAPI API + React SPA)
+**Performance Goals**: <500ms p95 for chat queries; export non-blocking UI; transcript exports ≤8 000 chars; audio exports ≤240 s of content
+**Constraints**: Vercel 4.5 MB response body limit; no persistent runtime between requests (serverless); `VECTOR_STORE_TYPE=memory` on Vercel
+**Scale/Scope**: Single-tenant admin + guest-session model; up to 100 indexed documents
 
 ---
 
 ## Constitution Check
 
-*GATE: Must pass before implementation starts.*
-
 | Gate | Status | Notes |
 |------|--------|-------|
-| Tests exist for all changed paths | **PASS conditional** — tasks.md must order tests first | `test_rag_agent.py` covers graph compile + agent invoke; integration tests cover full RAG path |
-| OWASP A03 Injection | **PASS** | No new input surfaces; guardrail engine unchanged |
-| OWASP A05 Misconfiguration | **PASS** | `SECRET_KEY` guard unchanged; no new env vars |
-| No hardcoded credentials | **PASS** | All keys via env; upgrade does not touch auth |
-| Performance — no new round-trips | **PASS** | API usage unchanged; same node graph structure |
-| Docs updated | **PASS conditional** | CLAUDE.md constitution tech-stack table + docs/ARCHITECTURE.md must be updated |
-| Docker Compose verified | **PASS conditional** | Must run `docker compose up --build` after upgrade |
-| No new top-level `.md` files | **PASS** | All artifacts under `.specify/specs/` |
+| Tests written before implementation | ✓ PASS | TDD ordering enforced in tasks.md |
+| OWASP Top 10 reviewed | ✓ PASS | See Phase 0 research summary and OWASP table below |
+| No new top-level `.md` files | ✓ PASS | All docs go into existing `docs/*.md` |
+| No broad exception handlers swallowing defects | ⚠ PARTIAL | 2 routers still require audit: `guardrails.py`, `auth/router.py` |
+| Coverage ≥ 98% | ✓ ENFORCED | Run `pytest --cov=app` before merge |
+| No hardcoded credentials | ✓ PASS | All secrets via env / settings_store |
+| Parallel subagents for independent subtasks | ✓ PASS | Enforced in tasks.md [P] labels |
 
-*Complexity justification*: This change touches 7 packages across a hard compatibility
-boundary. The complexity is unavoidable — it is dictated by the upstream package graph.
-No simpler alternative exists without staying on an unmaintained branch.
+**Post-design re-check**: Permissions-Policy fix and nginx.conf change are low-risk one-liners. Re-run test_security_headers.py after applying.
 
 ---
 
@@ -59,204 +45,160 @@ No simpler alternative exists without staying on an unmaintained branch.
 ### Documentation (this feature)
 
 ```text
-specs/005-enterprise-production-hardening/
-├── plan.md              ← this file
-├── research.md          ← Phase 0: full compatibility audit
-├── data-model.md        ← dependency graph before/after + code touch points
+.specify/specs/005-enterprise-production-hardening/
+├── plan.md              # This file
+├── research.md          # Phase 0 output
+├── data-model.md        # Phase 1 output
+├── quickstart.md        # Phase 1 output
 ├── contracts/
-│   └── requirements-target.txt   ← version pin contract
-└── tasks.md             ← generated by /speckit-tasks
+│   ├── api-hardening.json        # Security header + readiness contract (Phase 1)
+│   └── requirements-target.txt  # (existing — LangGraph upgrade phase)
+└── tasks.md             # Phase 2 output (/speckit-tasks)
 ```
 
-### Source Code — files changed by this upgrade
+### Source Code
 
 ```text
 backend/
-├── requirements.txt             ← 6 version bumps + 1 new package
-├── requirements-dev.txt         ← 6 version bumps + 1 new package
 ├── app/
-│   └── agents/
-│       └── rag_agent.py         ← 2 lines: add START import + replace set_entry_point
-├── app/rag/
-│   ├── pipeline.py              ← verify get_openai_callback import (may be 0 changes)
-│   └── vector_store.py          ← verify langchain-chroma constructor (may be 0 changes)
+│   ├── main.py                          # Fix Permissions-Policy microphone=(self); security middleware
+│   ├── config.py                        # ExportLimits group documentation
+│   ├── core/
+│   │   ├── audit.py                     # audit_event (complete — no changes)
+│   │   ├── errors.py                    # SafeAppError, categorize_exception (complete — no changes)
+│   │   └── chat_languages.py            # Shared language contract (complete — no changes)
+│   ├── guardrails/
+│   │   └── engine.py                    # Guardrail engine (complete — no changes)
+│   ├── voice/
+│   │   ├── redaction.py                 # redact_sensitive_text (complete — no changes)
+│   │   └── export_jobs.py               # VoiceExportJobStore (complete — no changes)
+│   └── api/
+│       ├── query.py                     # retrieval/answer split complete
+│       ├── voice_export.py              # Async export + redaction (complete)
+│       ├── guardrails.py                # Exception handler audit — replace bare except if found
+│       └── settings.py                  # Exception handler audit — replace bare except if found
+│
+├── tests/
+│   ├── unit/
+│   │   ├── test_guardrail_coverage_matrix.py  # NEW — 8 parametrized surface tests
+│   │   ├── test_redaction.py                  # Extend: PII/PCI/secrets pattern assertions
+│   │   ├── test_security_headers.py           # Fix: microphone=(self) assertion
+│   │   └── test_errors.py                     # Exception categorization coverage
+│   └── integration/
+│       ├── test_api_readiness.py              # 503 degraded-dep tests (extend existing)
+│       └── test_api_query.py                  # Verify input trimming end-to-end
+
+frontend/
+├── src/
+│   └── lib/
+│       └── chatLanguages.ts             # Frontend language contract (synced from backend)
+
 └── tests/
     └── unit/
-        └── test_rag_agent.py    ← update mock target if get_openai_callback path changes
+        └── ChatInterface.test.tsx       # Guardrail coverage assertions
 
-docs/
-└── ARCHITECTURE.md              ← update LangGraph version in tech stack table
-
-CLAUDE.md                        ← update constitution tech-stack table row for LangGraph
+nginx/
+└── nginx.conf                           # Add Content-Security-Policy header; fix microphone=(self)
 ```
-
-**Structure Decision**: Web application (Option 2 from template). Backend only — frontend is
-unaffected by this dependency upgrade.
-
----
-
-## Phase 0 — Research (Complete)
-
-All NEEDS CLARIFICATION items resolved. See [research.md](research.md).
-
-Key findings:
-1. **1 confirmed breaking code change**: `graph.set_entry_point("planner")` → `graph.add_edge(START, "planner")` in `rag_agent.py:645`.
-2. **1 verify-at-runtime item**: `get_openai_callback` import path in langchain-community 0.4.1 (old path still resolvable but may emit deprecation).
-3. **0 breaking changes** in langchain-core 1.x for all APIs used by this project (Document, messages, prompts, parsers, LCEL `|`).
-4. **2 forced major collateral upgrades**: openai 2.x and chromadb 1.x — both absorbed by langchain-openai and langchain-chroma respectively; no app code changes needed.
-
----
-
-## Phase 1 — Design & Contracts (Complete)
-
-### Implementation sequence
-
-The upgrade must be executed in this order to allow each step to be independently verified:
-
-**Step 1 — Write regression tests (TDD gate)**  
-Before touching any package version, add/update tests that will catch regressions:
-- Verify `test_graph_compiles_without_error` still exercises `graph.compile()`
-- Verify `get_agent().invoke(...)` test returns a valid `AgentTrace`
-- Add smoke-import test for `get_openai_callback` to assert importable from expected module
-- Add smoke-import test for `langchain_chroma.Chroma` initialisation
-
-**Step 2 — Apply the one confirmed code fix**  
-In `rag_agent.py`:
-- Add `START` to the import: `from langgraph.graph import END, START, StateGraph`
-- Replace `graph.set_entry_point("planner")` → `graph.add_edge(START, "planner")`
-
-**Step 3 — Bump package versions**  
-Update `requirements.txt` and `requirements-dev.txt` per the [target contract](contracts/requirements-target.txt).  
-Remove `langchain-core==0.3.86` bridge pin (superseded by `langchain-core==1.4.0`).  
-Remove `LangChainPendingDeprecationWarning` filter from `pytest.ini` and `tests/live/conftest.py` — the warning no longer fires with langgraph 1.x.
-
-**Step 4 — Install and verify imports**  
-Run `pip install -r requirements-dev.txt` in the venv. Verify:
-- `get_openai_callback` import path works; update source + test mocks if needed
-- `langchain_chroma.Chroma` initialises without error
-
-**Step 5 — Run full test suite**  
-`pytest tests/unit/ tests/integration/ -v` — all 280 unit + 158 integration tests must pass.
-
-**Step 6 — Run live agent test**  
-`bash scripts/test/run-live-tests.sh agent` — 6-test pipeline suite must pass with 0 warnings.
-
-**Step 7 — Docker Compose verification**  
-`docker compose up --build` — full stack must start cleanly.
-
-**Step 8 — Documentation**  
-Update `CLAUDE.md` constitution tech-stack table and `docs/ARCHITECTURE.md`.
-
----
-
-## Rollback Plan
-
-The rollback strategy has three levels depending on how far the upgrade has progressed.
-
-### Level 1 — Pre-install rollback (Steps 1–2 only, no pip changes yet)
-
-No package versions have changed. Simply revert the two code changes in `rag_agent.py`:
-
-```bash
-git checkout backend/app/agents/rag_agent.py
-```
-
-Cost: **instant, zero risk**.
-
----
-
-### Level 2 — Post-install, pre-commit rollback (Steps 3–4, upgrade installed but not committed)
-
-Requirements files and the venv have changed but nothing is committed. Two actions required:
-
-**2a. Revert requirements files**
-
-```bash
-git checkout backend/requirements.txt backend/requirements-dev.txt
-git checkout backend/app/agents/rag_agent.py
-git checkout backend/pytest.ini
-git checkout backend/tests/live/conftest.py
-```
-
-**2b. Recreate the venv from the original pinned requirements**
-
-```bash
-cd backend
-rm -rf .venv
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-```
-
-This restores the exact pre-upgrade environment including the `langchain-core==0.3.86` bridge
-pin and the warning suppression filters.
-
-Cost: **~5 minutes** (pip install time).
-
----
-
-### Level 3 — Post-commit rollback (upgrade is committed / merged)
-
-If the upgrade is committed and the build breaks in CI or Docker:
-
-**3a. Identify the last good commit**
-
-```bash
-git log --oneline | head -10
-# Find the commit before the upgrade PR was merged
-```
-
-**3b. Revert via a new commit (preferred — preserves history)**
-
-```bash
-git revert <upgrade-commit-sha>
-# This creates a new revert commit; push and re-deploy
-```
-
-**3c. Hard reset (only if on a feature branch not yet pushed to main)**
-
-```bash
-git reset --hard <last-good-sha>
-```
-
-After either 3b or 3c, recreate the venv per Level 2b above.
-
-Cost: **~10 minutes** including venv rebuild and CI re-run.
-
----
-
-### Rollback decision criteria
-
-Roll back immediately if any of the following occur after the upgrade:
-
-| Signal | Rollback trigger |
-|--------|-----------------|
-| `pytest tests/unit/` — more than 0 new failures | Roll back to Level 1/2 |
-| `pytest tests/integration/` — more than 0 new failures | Roll back to Level 1/2 |
-| `docker compose up --build` fails | Roll back to Level 2/3 |
-| Live agent test produces different answer structure or token counts diverge >10% | Investigate before deciding; roll back if root cause not found within 1 hour |
-| Any new `DeprecationWarning` or `UserWarning` in clean test run | Investigate; roll back only if not suppressible |
-
----
-
-## Risk Register
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| `set_entry_point` removal breaks compile | **Certain if not patched** | High | Fixed in Step 2 before version bump; covered by existing compile test |
-| `get_openai_callback` path change breaks tests | Low | Medium | Verified in Step 4; test mocks updated if needed |
-| langchain-chroma 1.x constructor incompatibility | Low | Medium | Integration test in Step 5 catches this; langchain-chroma handles chromadb 1.x internally |
-| openai 2.x indirect breakage | Very Low | Low | Absorbed by langchain-openai 1.x abstraction; no direct openai imports in app |
-| chromadb 1.x indirect breakage | Low | Medium | langchain-chroma 1.1.0 manages new client API; integration tests are the safety net |
-| Regression in 7-node pipeline behaviour | Low | High | Live agent test (Step 6) exercises full compile-to-answer path |
-| Docker Compose build failure | Low | Medium | Step 7 is a hard gate before the PR is considered done |
 
 ---
 
 ## Complexity Tracking
 
-| Item | Why Needed | Simpler Alternative Rejected Because |
-|------|------------|--------------------------------------|
-| Upgrading 7 packages simultaneously | Hard pip compatibility constraint — `langchain-core>=1.4.0` is the shared lower bound | Cannot mix langchain 0.3.x with langchain-core 1.x — pip refuses to resolve |
-| openai 2.x as collateral upgrade | `langchain-openai 1.x` requires `openai>=2.0.0` | No langchain-openai 1.x release supports openai 1.x |
-| chromadb 1.x as collateral upgrade | `langchain-chroma 1.x` requires `chromadb>=1.0.0` | No langchain-chroma 1.x release supports chromadb 0.x |
+> No constitution violations requiring justification.
+
+---
+
+## Phase 0 Research Summary
+
+See `research.md` for full findings. Key decisions:
+
+### 1. Permissions-Policy microphone fix (US2 — confirmed bug)
+- **Finding**: `backend/app/main.py:153` has `microphone=()` which denies the app's own origin, breaking voice chat. Both `vercel.json` files already use the correct `microphone=(self)`.
+- **Decision**: One-line fix in `main.py`. Update the matching assertion in `test_security_headers.py`.
+- **Also**: `frontend/nginx.conf` has the same bug and is missing CSP. Fix both in same commit.
+
+### 2. CSP scope (US2 — resolved, partial gap in nginx)
+- **Decision**: Backend API CSP (`default-src 'none'`) is correct for a JSON-only API server. Frontend CSP is on Vercel config (already correct) and nginx.conf (fix needed). No Vite dev-server CSP required (dev mode only).
+- **Rationale**: Split deployment — API serves only JSON; HTML/JS/CSS served by nginx or Vercel.
+
+### 3. Guardrail coverage matrix (US1, FR-003)
+- **Decision**: New `backend/tests/unit/test_guardrail_coverage_matrix.py` with 8 parametrized cases — one per text surface.
+- **Surfaces**: typed_input, voice_transcript, multilingual_input, translated_query, generated_answer, playback_text, transcript_export, audio_synthesis_input.
+- **Rationale**: Machine-checkable proof of coverage without duplicating implementation logic.
+
+### 4. Export limits (US4, FR-028)
+- **Decision**: Module-level constants in `voice_export.py` are authoritative. Document them; add boundary tests. No config migration.
+- **Limits**: max_transcript=8 000 chars, max_audio=240 s, artifact_ttl=300 s, job_ttl=600 s.
+- **Rationale**: `_should_defer_export()` guard already activates async mode for Vercel deployments.
+
+### 5. Liveness/readiness (US6, FR-026 — complete)
+- **Decision**: No code changes needed. `/api/health` = liveness (always 200), `/api/readiness` = readiness (503 when degraded).
+- **Rationale**: Implementation already matches spec requirements.
+
+### 6. Exception handler audit (US7, FR-023)
+- **Decision**: Audit `guardrails.py` and `auth/router.py` at implementation time. Replace raw `except Exception` patterns with `safe_app_error_from_exception()`.
+- **Rationale**: `documents.py`, `query.py`, `voice_export.py`, and `main.py` are already compliant.
+
+---
+
+## Phase 1 Design
+
+See `data-model.md` for full entity definitions. See `contracts/api-hardening.json` for API contract.
+
+### Guardrail coverage matrix (8 surfaces)
+
+| Surface | Backend function | Redaction | Audit |
+|---------|-----------------|-----------|-------|
+| typed_input | `sanitize_query` + `guardrail_engine.check_input` | ✓ | ✓ |
+| voice_transcript | `redact_sensitive_text` (voice_export.py) | ✓ | ✓ |
+| multilingual_input | `sanitize_query` + `guardrail_engine.check_input` | ✓ | ✓ |
+| translated_query | `guardrail_engine.check_input` (on retrieval_question) | ✓ | ✓ |
+| generated_answer | `guardrail_engine.check_output` | ✓ | ✓ |
+| playback_text | `redact_sensitive_text` (before browser TTS) | ✓ | — |
+| transcript_export | `build_redacted_transcript` | ✓ | ✓ |
+| audio_synthesis_input | `redact_sensitive_text` (before OpenAI TTS) | ✓ | ✓ |
+
+### Security header policy (corrected)
+
+| Header | Value | OWASP |
+|--------|-------|-------|
+| `X-Content-Type-Options` | `nosniff` | A05 |
+| `X-Frame-Options` | `DENY` | A05 |
+| `X-XSS-Protection` | `1; mode=block` | A05 |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | A05 |
+| `Permissions-Policy` | `geolocation=(), microphone=(self), camera=()` | A05 |
+| `Content-Security-Policy` | `default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; object-src 'none'` | A05 |
+| `X-Request-ID` | echo or new UUID | A09 |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` (production only) | A02 |
+
+---
+
+## OWASP Review
+
+| ID | Control | Status |
+|----|---------|--------|
+| A01 | Role/session isolation for all surfaces | Existing tests; guardrail matrix adds coverage |
+| A02 | bcrypt+JWT unchanged; HSTS production-only | ✓ |
+| A03 | `sanitize_query` + injection regexes cover typed and voice input | ✓ |
+| A05 | CSP + Permissions-Policy — microphone bug confirmed and fixed | Pending nginx + main.py fix |
+| A07 | Auth router exception audit — must not leak "user not found" vs "wrong password" | Pending audit |
+| A09 | `audit_event` with safe metadata; no raw prompts/content logged | Guardrail matrix tests verify |
+
+---
+
+## Implementation Strategy
+
+### MVP (minimum required before merge)
+
+1. Fix `Permissions-Policy` in `main.py` + `nginx.conf` CSP (US2)
+2. Add `test_guardrail_coverage_matrix.py` (US1, FR-003)
+3. Audit + fix `guardrails.py` and `auth/router.py` exception handlers (US7)
+4. Full test suite — all pass, coverage ≥ 98%
+
+### Deferred (Post-MVP — tracked in PENDING_TASKS.md)
+
+- Docker Compose integration test (blocked on Docker CLI availability)
+- Live E2E walkthrough with OPENAI_API_KEY gated (T019 from upgrade tasks)
+- Export performance regression benchmarks (US4 FR-028)
+- Multilingual retrieval regression fixture corpus (US5 FR-029)

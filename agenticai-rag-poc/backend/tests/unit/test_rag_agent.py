@@ -1261,7 +1261,9 @@ class TestGeneratorNodeFullBody:
 
         generation_payload = mock_chain.invoke.call_args.args[0]
         assert generation_payload["question"] == mixed_question
-        assert generation_payload["answer_instruction"] == answer_instruction
+        # Instruction is normalized: trailing newlines added so it stays visually
+        # separated from the rules block that follows in the prompt template.
+        assert generation_payload["answer_instruction"] == answer_instruction.rstrip() + "\n\n"
         assert "Answer in French" not in generation_payload["question"]
         assert result["answer"] == "La réponse doit rester en français."
 
@@ -1405,6 +1407,121 @@ class TestValidatorNodeFullBody:
 
         assert result["validator_tokens"] == 25   # 15 + 10
         assert result["tokens_used"] == 60        # 50 + 10
+
+    def test_validator_node_passes_language_note_when_answer_instruction_set(self):
+        """When a language instruction is set, validator_node injects a language_note
+        so the LLM does not flag a non-English answer as a faithfulness error."""
+        from app.agents.rag_agent import validator_node, _ValidationResult
+
+        mock_result = _ValidationResult(status="VALID", reason="grounded in Spanish")
+        mock_chain = MagicMock()
+        mock_chain.invoke.return_value = mock_result
+
+        state = _base_agent_state()
+        state["answer_instruction"] = "Answer in Spanish. Keep source grounding and do not translate source filenames."
+        state["answer"] = "El proceso de ingesta incluye fragmentación e indexación."
+
+        with patch("app.agents.rag_agent._llm"), \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
+             patch("app.agents.rag_agent._VALIDATOR_PROMPT") as mock_prompt, \
+             patch("app.agents.rag_agent.get_effective_validator_model", return_value="gpt-4o-mini"):
+            cb_mock = MagicMock()
+            cb_mock.usage_metadata = {"m": {"total_tokens": 10, "input_tokens": 0, "output_tokens": 0}}
+            mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
+            mock_cb.return_value.__exit__ = MagicMock(return_value=False)
+            mock_prompt.__or__ = MagicMock(return_value=mock_chain)
+
+            result = validator_node(state)
+
+        payload = mock_chain.invoke.call_args.args[0]
+        assert "language_note" in payload
+        assert "Spanish" in payload["language_note"]
+        assert "faithfulness" in payload["language_note"].lower() or "language" in payload["language_note"].lower()
+        assert result["validation"] == "VALID"
+
+    def test_validator_node_empty_language_note_when_no_instruction(self):
+        """When no language instruction is set, language_note is empty so the
+        validator prompt has no spurious text injected."""
+        from app.agents.rag_agent import validator_node, _ValidationResult
+
+        mock_result = _ValidationResult(status="VALID", reason="grounded")
+        mock_chain = MagicMock()
+        mock_chain.invoke.return_value = mock_result
+
+        state = _base_agent_state()
+        state["answer_instruction"] = ""
+
+        with patch("app.agents.rag_agent._llm"), \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
+             patch("app.agents.rag_agent._VALIDATOR_PROMPT") as mock_prompt, \
+             patch("app.agents.rag_agent.get_effective_validator_model", return_value="gpt-4o-mini"):
+            cb_mock = MagicMock()
+            cb_mock.usage_metadata = {"m": {"total_tokens": 8, "input_tokens": 0, "output_tokens": 0}}
+            mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
+            mock_cb.return_value.__exit__ = MagicMock(return_value=False)
+            mock_prompt.__or__ = MagicMock(return_value=mock_chain)
+
+            validator_node(state)
+
+        payload = mock_chain.invoke.call_args.args[0]
+        assert payload["language_note"] == ""
+
+    def test_generator_node_normalizes_answer_instruction_with_trailing_newlines(self):
+        """generator_node must append '\\n\\n' to answer_instruction so it is
+        visually separated from the rule block in the prompt template."""
+        from app.agents.rag_agent import generator_node
+
+        mock_chain = MagicMock()
+        mock_chain.invoke.return_value = "Bonjour, la réponse est correcte."
+
+        with patch("app.agents.rag_agent._llm"), \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
+             patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
+             patch("app.agents.rag_agent.StrOutputParser"), \
+             patch("app.agents.rag_agent.get_effective_generator_model", return_value="gpt-4o-mini"), \
+             patch("app.agents.rag_agent.get_effective_token_budget_warning_threshold", return_value=8000):
+            cb_mock = MagicMock()
+            cb_mock.usage_metadata = {"m": {"total_tokens": 10, "input_tokens": 0, "output_tokens": 0}}
+            mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
+            mock_cb.return_value.__exit__ = MagicMock(return_value=False)
+            mock_prompt.__or__ = MagicMock(
+                return_value=MagicMock(__or__=MagicMock(return_value=mock_chain))
+            )
+
+            state = _base_agent_state()
+            state["answer_instruction"] = "Answer in French."
+            generator_node(state)
+
+        payload = mock_chain.invoke.call_args.args[0]
+        assert payload["answer_instruction"] == "Answer in French.\n\n"
+
+    def test_generator_node_empty_instruction_stays_empty(self):
+        """When no language instruction is set, answer_instruction stays empty string."""
+        from app.agents.rag_agent import generator_node
+
+        mock_chain = MagicMock()
+        mock_chain.invoke.return_value = "The answer."
+
+        with patch("app.agents.rag_agent._llm"), \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
+             patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
+             patch("app.agents.rag_agent.StrOutputParser"), \
+             patch("app.agents.rag_agent.get_effective_generator_model", return_value="gpt-4o-mini"), \
+             patch("app.agents.rag_agent.get_effective_token_budget_warning_threshold", return_value=8000):
+            cb_mock = MagicMock()
+            cb_mock.usage_metadata = {"m": {"total_tokens": 8, "input_tokens": 0, "output_tokens": 0}}
+            mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
+            mock_cb.return_value.__exit__ = MagicMock(return_value=False)
+            mock_prompt.__or__ = MagicMock(
+                return_value=MagicMock(__or__=MagicMock(return_value=mock_chain))
+            )
+
+            state = _base_agent_state()
+            state["answer_instruction"] = ""
+            generator_node(state)
+
+        payload = mock_chain.invoke.call_args.args[0]
+        assert payload["answer_instruction"] == ""
 
 
 # ── reranker_node unknown type passthrough ────────────────────────────────────

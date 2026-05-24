@@ -5,6 +5,7 @@ import {
   SpeakerWaveIcon,
 } from '@heroicons/react/24/outline'
 import { CHAT_LANGUAGES, type ChatLanguageCode } from '@/lib/chatLanguages'
+import { SelectInput } from '@/components/SelectInput'
 
 interface ChatToolbarProps {
   chatLanguage: ChatLanguageCode
@@ -39,23 +40,15 @@ export function ChatToolbar({
         Ask a Question
       </h2>
       <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-        <label className="sr-only" htmlFor="chat-language">
-          Chat language
-        </label>
-        <select
+        <SelectInput
           id="chat-language"
           value={chatLanguage}
-          onChange={(event) => onChangeLanguage(event.target.value as ChatLanguageCode)}
-          className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm font-medium text-slate-700 shadow-sm shadow-slate-200/60 focus:outline-none focus:ring-2 focus:ring-sky-500/35"
+          onChange={(v) => onChangeLanguage(v as ChatLanguageCode)}
+          options={CHAT_LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
+          className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm shadow-slate-200/60 focus:outline-none focus:ring-2 focus:ring-sky-500/35"
           aria-label="Chat language"
           data-testid="chat-language-select"
-        >
-          {CHAT_LANGUAGES.map((language) => (
-            <option key={language.code} value={language.code}>
-              {language.label}
-            </option>
-          ))}
-        </select>
+        />
 
         {/* RAG mode toggle — icon-only with aria-label for accessibility and tooltip via title */}
         <div

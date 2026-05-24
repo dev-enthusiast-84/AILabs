@@ -179,7 +179,7 @@ test.describe('Dashboard (requires auth)', () => {
 
   test('chat language and transcript export controls are visible', async ({ page }) => {
     await expect(page.getByTestId('chat-language-select')).toBeVisible()
-    await expect(page.getByTestId('chat-language-select')).toHaveValue('en')
+    await expect(page.getByTestId('chat-language-select')).toContainText('English')
     await expect(page.getByTestId('export-btn')).toBeVisible()
     await expect(page.getByTestId('export-btn')).toBeDisabled()
   })
@@ -210,7 +210,8 @@ test.describe('Dashboard (requires auth)', () => {
       })
     })
 
-    await page.getByTestId('chat-language-select').selectOption('es')
+    await page.getByTestId('chat-language-select').click()
+    await page.getByRole('option', { name: 'Spanish' }).click()
     await page.getByTestId('query-input').fill('¿Qué dice el documento sobre Agentic RAG?')
     await page.keyboard.press('Enter')
 

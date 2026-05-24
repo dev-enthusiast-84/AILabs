@@ -13,6 +13,14 @@ class RedactionPattern:
     pattern: re.Pattern[str]
 
 
+@dataclass(frozen=True)
+class RedactionResult:
+    """Return type of :func:`redact_and_flag` — redacted text plus an occurrence flag."""
+
+    text: str
+    was_redacted: bool
+
+
 _PATTERNS: tuple[RedactionPattern, ...] = (
     RedactionPattern(
         "[REDACTED_PRIVATE_KEY]",
@@ -77,12 +85,17 @@ _PATTERNS: tuple[RedactionPattern, ...] = (
 )
 
 
-def redact_sensitive_text(text: str) -> str:
-    """Return text with common secrets and PII replaced by readable labels."""
+def redact_and_flag(text: str) -> RedactionResult:
+    """Return a :class:`RedactionResult` with redacted text and occurrence flag."""
     redacted = text
     for item in _PATTERNS:
         redacted = item.pattern.sub(item.label, redacted)
-    return redacted
+    return RedactionResult(text=redacted, was_redacted=redacted != text)
+
+
+def redact_sensitive_text(text: str) -> str:
+    """Return text with common secrets and PII replaced by readable labels."""
+    return redact_and_flag(text).text
 
 
 def build_redacted_transcript(messages: Iterable[tuple[str, str]]) -> str:

@@ -1,5 +1,5 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import DocumentList from '@/components/DocumentList'
 
 vi.mock('@/services/api', () => ({
@@ -8,6 +8,11 @@ vi.mock('@/services/api', () => ({
     remove: vi.fn(),
     getChunks: vi.fn(),
     getMetadata: vi.fn(),
+    cleanup: vi.fn(),
+    triggerCleanup: vi.fn(),
+  },
+  settingsApi: {
+    get: vi.fn().mockResolvedValue({ admin_doc_retention_days: 30 }),
   },
   extractErrorMessage: vi.fn((e) => String(e)),
 }))
@@ -312,5 +317,190 @@ describe('DocumentList', () => {
     render(<DocumentList refreshKey={0} />)
     await waitFor(() => screen.getByText('stale-guest.txt'))
     expect(screen.queryByText('Stale')).toBeNull()
+  })
+})
+
+// ── T008: Guest session-pruned banner ─────────────────────────────────────────
+
+import { act } from '@testing-library/react'
+import { settingsApi } from '@/services/api'
+
+describe('DocumentList — guest session-pruned banner (T008)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    setGuest(true)
+    vi.mocked(documentsApi.getChunks).mockResolvedValue({ filename: 'doc.txt', chunks: [], total_chunks: 0 })
+    vi.mocked(documentsApi.getMetadata).mockRejectedValue(new Error('not implemented'))
+    vi.mocked(settingsApi.get).mockResolvedValue({
+      admin_docs_near_limit: false,
+      admin_doc_count: 0,
+      admin_doc_limit: 100,
+      admin_doc_retention_days: 30,
+    } as any)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+  })
+
+  it('shows pruned banner when pruned_previous_session_count > 0', async () => {
+    vi.mocked(documentsApi.list).mockResolvedValue({
+      documents: [],
+      count: 0,
+      pruned_previous_session_count: 2,
+    } as any)
+
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => {
+      expect(screen.getByText(/previous session documents have been cleared/i)).toBeInTheDocument()
+    })
+  })
+
+  it('auto-dismisses pruned banner after 5000 ms', async () => {
+    vi.mocked(documentsApi.list).mockResolvedValue({
+      documents: [],
+      count: 0,
+      pruned_previous_session_count: 2,
+    } as any)
+
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => {
+      expect(screen.getByText(/previous session documents have been cleared/i)).toBeInTheDocument()
+    })
+
+    act(() => { vi.advanceTimersByTime(5000) })
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/previous session documents have been cleared/i),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('does not show banner when pruned_previous_session_count is 0', async () => {
+    vi.mocked(documentsApi.list).mockResolvedValue({
+      documents: [],
+      count: 0,
+      pruned_previous_session_count: 0,
+    } as any)
+
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/previous session documents have been cleared/i),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('does not show banner when field is absent from response', async () => {
+    vi.mocked(documentsApi.list).mockResolvedValue({
+      documents: [],
+      count: 0,
+    } as any)
+
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/previous session documents have been cleared/i),
+      ).not.toBeInTheDocument()
+    })
+  })
+})
+
+// ── T021: Admin near-limit amber banner ───────────────────────────────────────
+
+import userEvent from '@testing-library/user-event'
+
+describe('DocumentList — admin near-limit banner (T021)', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    setGuest(false)
+    vi.mocked(documentsApi.list).mockResolvedValue({ documents: [], count: 0 } as any)
+    vi.mocked(documentsApi.getChunks).mockResolvedValue({ filename: 'doc.txt', chunks: [], total_chunks: 0 })
+    vi.mocked(documentsApi.getMetadata).mockRejectedValue(new Error('not implemented'))
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
+    sessionStorage.clear()
+  })
+
+  it('shows amber banner when admin_docs_near_limit=true', async () => {
+    vi.mocked(settingsApi.get).mockResolvedValue({
+      admin_docs_near_limit: true,
+      admin_doc_count: 85,
+      admin_doc_limit: 100,
+      admin_doc_retention_days: 30,
+    } as any)
+
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => {
+      expect(screen.getByText(/85\/100/)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/go to settings/i)).toBeInTheDocument()
+  })
+
+  it('does not show amber banner when admin_docs_near_limit=false', async () => {
+    vi.mocked(settingsApi.get).mockResolvedValue({
+      admin_docs_near_limit: false,
+      admin_doc_count: 20,
+      admin_doc_limit: 100,
+      admin_doc_retention_days: 30,
+    } as any)
+
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => screen.getByText(/No documents indexed yet/i))
+    expect(screen.queryByText(/go to settings/i)).not.toBeInTheDocument()
+  })
+
+  it('does not show amber banner when sessionStorage key is set', async () => {
+    sessionStorage.setItem('doc_limit_banner_dismissed', '1')
+    vi.mocked(settingsApi.get).mockResolvedValue({
+      admin_docs_near_limit: true,
+      admin_doc_count: 85,
+      admin_doc_limit: 100,
+      admin_doc_retention_days: 30,
+    } as any)
+
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => screen.getByText(/No documents indexed yet/i))
+    expect(screen.queryByText(/85\/100/)).not.toBeInTheDocument()
+  })
+
+  it('dismisses banner on close click and writes sessionStorage key', async () => {
+    vi.mocked(settingsApi.get).mockResolvedValue({
+      admin_docs_near_limit: true,
+      admin_doc_count: 85,
+      admin_doc_limit: 100,
+      admin_doc_retention_days: 30,
+    } as any)
+
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => {
+      expect(screen.getByText(/85\/100/)).toBeInTheDocument()
+    })
+
+    // The close button is the ✕ inside the amber banner
+    const closeButtons = screen.getAllByText('✕')
+    await userEvent.click(closeButtons[closeButtons.length - 1])
+
+    await waitFor(() => {
+      expect(screen.queryByText(/85\/100/)).not.toBeInTheDocument()
+    })
+    expect(sessionStorage.getItem('doc_limit_banner_dismissed')).toBe('1')
+  })
+
+  it('does not show amber banner for guest users', async () => {
+    setGuest(true)
+    vi.mocked(settingsApi.get).mockResolvedValue({
+      admin_docs_near_limit: true,
+      admin_doc_count: 85,
+      admin_doc_limit: 100,
+      admin_doc_retention_days: 30,
+    } as any)
+
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => screen.getByText(/No documents are indexed yet/i))
+    expect(screen.queryByText(/85\/100/)).not.toBeInTheDocument()
   })
 })

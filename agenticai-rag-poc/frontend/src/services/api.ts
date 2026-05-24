@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import { useAuthStore } from '@/store/authStore'
-import type { LoginRequest, TokenResponse, DocumentListResponse, DocumentMetadataResponse, DocumentChunksResponse, DocumentContentResponse, DocumentSuggestionsResponse, UploadResponse, QueryRequest, QueryResponse, SettingsResponse, SettingsUpdateRequest, GuardrailRule, GuardrailRuleCreate, GuardrailRuleUpdate, GuardrailCheckRequest, GuardrailCheckResponse, RagasScores, ChatVoiceExportRequest, ChatVoiceExportResponse, ChatVoiceExportAcceptedResponse, ChatVoiceExportJobResponse, TranscriptRedactionRequest, TranscriptRedactionResponse } from '@/types'
+import type { LoginRequest, TokenResponse, DocumentListResponse, DocumentMetadataResponse, DocumentChunksResponse, DocumentContentResponse, DocumentSuggestionsResponse, UploadResponse, QueryRequest, QueryResponse, SettingsResponse, SettingsUpdateRequest, GuardrailRule, GuardrailRuleCreate, GuardrailRuleUpdate, GuardrailCheckRequest, GuardrailCheckResponse, RagasScores, ChatVoiceExportRequest, ChatVoiceExportResponse, ChatVoiceExportAcceptedResponse, ChatVoiceExportJobResponse, TranscriptRedactionRequest, TranscriptRedactionResponse, TroubleshootResponse, TroubleshootComponent, TroubleshootEnvironment, TroubleshootSeverity, CleanupResult, CleanupStatusResponse } from '@/types'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 const SESSION_COMPAT_HEADER = 'x-app-session-compatibility'
@@ -125,6 +125,21 @@ export const documentsApi = {
     const res = await http.get<DocumentSuggestionsResponse>(`/documents/suggestions?${params.toString()}`)
     return res.data
   },
+  triggerCleanup: async (force: boolean = false): Promise<CleanupResult> => {
+    const res = await http.post<CleanupResult>('/documents/cleanup', { force })
+    return res.data
+  },
+  getCleanupStatus: async (): Promise<CleanupStatusResponse> => {
+    const res = await http.get<CleanupStatusResponse>('/documents/cleanup/status')
+    return res.data
+  },
+}
+
+export const notificationsApi = {
+  sendTest: async (): Promise<{ email_sent: boolean; ntfy_sent: boolean; errors: string[] }> => {
+    const res = await http.post<{ email_sent: boolean; ntfy_sent: boolean; errors: string[] }>('/notifications/test')
+    return res.data
+  },
 }
 
 export const queryApi = {
@@ -222,6 +237,9 @@ export const settingsApi = {
     const res = await http.post<{ status: string; message: string }>('/settings/ragas-trigger')
     return res.data
   },
+  clearRagasScores: async (): Promise<void> => {
+    await http.delete('/settings/ragas-scores')
+  },
 }
 
 export const guardrailsApi = {
@@ -247,6 +265,31 @@ export const guardrailsApi = {
   check: async (data: GuardrailCheckRequest): Promise<GuardrailCheckResponse> => {
     const res = await http.post<GuardrailCheckResponse>('/guardrails/check', data)
     return res.data
+  },
+}
+
+export interface TroubleshootRequest {
+  errorMessage: string
+  logContent?: string
+  component?: TroubleshootComponent
+  environment?: TroubleshootEnvironment
+  severity?: TroubleshootSeverity
+  screenshots?: File[]
+}
+
+export const troubleshootApi = {
+  analyze(req: TroubleshootRequest): Promise<TroubleshootResponse> {
+    const fd = new FormData()
+    fd.append('error_message', req.errorMessage)
+    if (req.logContent) fd.append('log_content', req.logContent)
+    if (req.component) fd.append('component', req.component)
+    if (req.environment) fd.append('environment', req.environment)
+    if (req.severity) fd.append('severity', req.severity)
+    req.screenshots?.forEach((f) => fd.append('screenshots', f))
+    return http.post<TroubleshootResponse>('/troubleshoot/analyze', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60_000,
+    }).then((r) => r.data)
   },
 }
 

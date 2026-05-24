@@ -1,5 +1,5 @@
 # Production runtime — Vercel backend (Pinecone vector store, no ChromaDB).
-# Heavy optional deps, test tools, and local-only packages → requirements-dev.txt.
+# Heavy optional deps, test tools, and ChromaDB-only packages → requirements-dev.txt.
 fastapi==0.115.6
 python-multipart==0.0.20
 pydantic==2.10.6
@@ -39,3 +39,6 @@ bleach==6.2.0
 
 # Logging
 structlog==25.1.0
+
+# Vercel Blob storage (required when BLOB_READ_WRITE_TOKEN is configured)
+vercel==0.5.6

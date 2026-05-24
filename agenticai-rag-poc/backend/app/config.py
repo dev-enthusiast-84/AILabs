@@ -38,14 +38,20 @@ class Settings(BaseSettings):
     langchain_project: str = "agenticai-rag-poc"
 
     # Vector store
-    # "chroma" is the local/Docker default and requires a writable persistent
-    # filesystem. Use "pinecone" for Vercel/full-stack production. "memory" is
-    # for tests only. "blob" is retained for small Vercel Blob demos/fallbacks.
+    # Local/Docker default: "chroma" (requires writable filesystem).
+    # Production (Vercel): _vector_store_type() auto-selects pinecone (when
+    # PINECONE_API_KEY is set) → blob (when blob token is set) → memory.
+    # Set VECTOR_STORE_TYPE=pinecone in Vercel env vars for production.
+    # "memory" is for tests only.
     vector_store_type: str = "chroma"
     chroma_persist_dir: str = "./chroma_db"
 
-    # Original uploaded file storage. "blob" uses Vercel Blob for durable
-    # previews/downloads; token may come from env or runtime Settings UI.
+    # Original uploaded file storage.
+    # Local/Docker default: "local" (writes to uploads/ directory).
+    # Production (Vercel): _use_blob_store() automatically activates Vercel Blob
+    # when VERCEL env var is set and a blob token is configured, regardless of
+    # this setting. Set FILE_STORE_TYPE=blob or ensure BLOB_READ_WRITE_TOKEN is
+    # present in Vercel env vars.
     file_store_type: str = "local"
     blob_read_write_token: str = ""
     vercel_blob_read_write_token: str = ""
@@ -72,7 +78,7 @@ class Settings(BaseSettings):
     # dropped even if they are in the top-k results. Set to 0.0 to disable.
     similarity_score_threshold: float = 0.0
     # When True, use Max Marginal Relevance search to balance relevance + diversity.
-    retriever_use_mmr: bool = False
+    retriever_use_mmr: bool = True
     # fetch_k candidates before MMR re-ranking (should be >= retriever_k)
     retriever_fetch_k: int = 20
     # ── Multi-query fusion strategy ───────────────────────────────────────────
@@ -92,7 +98,7 @@ class Settings(BaseSettings):
     # ── Ragas quality evaluation ──────────────────────────────────────────────
     # When true, Ragas evaluation runs automatically every N queries (see api/query.py).
     # Can be toggled at runtime via POST /api/settings/ {ragas_evaluation_enabled: true}.
-    ragas_evaluation_enabled: bool = False
+    ragas_evaluation_enabled: bool = True
     # ── Cross-encoder / LLM-as-judge reranker ────────────────────────────────
     # "none"          — disabled
     # "cross-encoder" — requires: pip install sentence-transformers (~80 MB model download)
@@ -131,6 +137,29 @@ class Settings(BaseSettings):
     guest_token_expire_minutes: int = 15  # 15-minute session timeout
     guest_doc_retention_seconds: int = 3600  # 1 hour
 
+    # Admin document retention — stale documents older than this are eligible for cleanup.
+    # Override via ADMIN_DOC_RETENTION_DAYS env var; configurable at runtime via Settings UI.
+    admin_doc_retention_days: int = 30
+
+    # Admin document cleanup cadence (replaces the scalar admin_doc_retention_days for UI)
+    admin_cleanup_cadence: str = "monthly"       # hourly|daily|weekly|biweekly|monthly|custom
+    admin_cleanup_custom_value: int = 30         # numeric part when cadence="custom"
+    admin_cleanup_custom_unit: str = "days"      # "hours" or "days" when cadence="custom"
+    admin_max_indexed_documents: int = 100       # near-limit warning threshold
+
+    # Notifications — zero-cost channels (off by default; never logged)
+    notification_enabled: bool = False
+    notification_email: str = ""
+    notification_smtp_host: str = ""
+    notification_smtp_port: int = 587
+    notification_smtp_user: str = ""
+    notification_smtp_password: str = ""         # never logged
+    notification_ntfy_topic: str = ""            # treated as shared secret
+
+    # Ragas auto-evaluation trigger: 1-in-N query probability.
+    # Override via RAGAS_AUTO_TRIGGER_INTERVAL env var; configurable at runtime via Settings UI.
+    ragas_auto_trigger_interval: int = 50
+
     @cached_property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
@@ -145,13 +174,7 @@ class Settings(BaseSettings):
 
     @property
     def effective_max_upload_size_mb(self) -> int:
-        """Cap admin uploads at 4 MB on Vercel (serverless body size limit is ~4.5 MB).
-
-        Not cached — reads os.environ at call time so Vercel detection stays accurate.
-        """
-        import os
-        if os.environ.get("VERCEL"):
-            return min(self.max_upload_size_mb, 4)
+        """Return the configured upload limit. Not cached — reads at call time."""
         return self.max_upload_size_mb
 
     @cached_property

@@ -69,12 +69,29 @@ def _vector_store_type() -> str:
     Existing Vercel deployments may still have VECTOR_STORE_TYPE=memory from
     earlier scripts. When a Blob store is connected, prefer durable blob storage
     automatically to avoid serverless instance drift.
+
+    ChromaDB requires a writable persistent filesystem which is not available on
+    Vercel (read-only /var/task). When running on Vercel with store_type=chroma,
+    fall back to blob (if token configured) or memory to prevent initialization
+    failures that surface as "vector index unavailable" errors.
     """
     import os
 
     store_type = get_effective_vector_store_type()
+    on_vercel = bool(os.environ.get("VERCEL"))
 
-    if store_type == "memory" and os.environ.get("VERCEL") and _blob_token_configured():
+    if store_type == "chroma" and on_vercel:
+        # ChromaDB requires a writable persistent filesystem; Vercel is read-only.
+        # Prefer pinecone → blob → memory in priority order.
+        if get_effective_pinecone_api_key():
+            logger.warning("chroma_not_supported_on_vercel_falling_back_to_pinecone")
+            return "pinecone"
+        if _blob_token_configured():
+            logger.warning("chroma_not_supported_on_vercel_falling_back_to_blob")
+            return "blob"
+        logger.warning("chroma_not_supported_on_vercel_falling_back_to_memory")
+        return "memory"
+    if store_type == "memory" and on_vercel and _blob_token_configured():
         return "blob"
     if store_type == "blob" and not _blob_token_configured():
         logger.warning("blob_vector_store_requested_without_token_falling_back_to_memory")
@@ -299,15 +316,21 @@ class BlobVectorStore:
         return len(paths)
 
     def similarity_search_with_relevance_scores(self, query: str, k: int = 4) -> list[tuple[Document, float]]:
+        # Apply the retrieval filter BEFORE scoring so that guest docs are
+        # not crowded out of top-k by higher-scoring admin docs.
+        metadata_filter = _retrieval_metadata_filter.get()
         query_vector = self.embedding.embed_query(query)
         scored: list[tuple[Document, float]] = []
         for payload in self._load_payloads():
+            meta = payload.get("metadata") or {}
+            if not _metadata_matches_filter(meta, metadata_filter):
+                continue
             vector = payload.get("embedding") or []
             score = _cosine_similarity(query_vector, vector)
             scored.append((
                 Document(
                     page_content=payload.get("text", ""),
-                    metadata=payload.get("metadata") or {},
+                    metadata=meta,
                 ),
                 score,
             ))

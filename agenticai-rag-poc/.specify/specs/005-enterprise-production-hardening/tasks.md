@@ -1,238 +1,152 @@
-# Tasks: LangGraph / LangChain Ecosystem Upgrade
+# Tasks: Document Cleanup
 
-**Input**: Design documents from `.specify/specs/005-enterprise-production-hardening/`  
-**Prerequisites**: plan.md ✓ | spec.md ✓ | research.md ✓ | data-model.md ✓ | contracts/requirements-target.txt ✓
-
-**Scope**: This tasks.md covers the LangGraph/LangChain upgrade (Foundational phase for spec 005).  
-Enterprise production hardening user stories (US1–US7) follow in subsequent sessions once the  
-dependency foundation is stable.
+**Input**: plan.md (Document Cleanup) + contracts/api-doc-cleanup.json
+**Branch**: `005-enterprise-production-hardening`
+**Stack**: FastAPI + ChromaDB/Pinecone + Vercel Blob (backend) · React 18 + TypeScript + Vitest (frontend)
 
 ## Format: `[ID] [P?] [Story] Description`
-
-- **[P]**: Can run in parallel (different files, no dependencies on incomplete tasks)
-- **[Story]**: User story label — US0 = foundational upgrade, US6 = Operational Readiness (spec.md)
-- Exact file paths included in every task description
-
----
-
-## Phase 1: Setup (Rollback Preparation)
-
-**Purpose**: Capture a clean baseline and prepare rollback artefacts before any file changes.  
-Every step in this phase is a safety net for the 3-level rollback plan in plan.md.
-
-- [x] T001 Confirm current test baseline passes: run `cd backend && source .venv/bin/activate && pytest tests/unit/ tests/integration/ -v --tb=short` and record pass count (expect 280 unit + 158 integration)
-- [x] T002 Record current installed package versions: run `pip freeze | grep -E "langchain|langgraph|openai|chromadb"` and save output to `.specify/specs/005-enterprise-production-hardening/baseline-packages.txt`
-- [x] T003 [P] Verify git working tree is clean: run `git status` — commit or stash any uncommitted changes before proceeding so Level 3 rollback is safe
+- **[P]** = parallelisable (independent files, no pending deps)
+- **[USn]** = user story scope
+- TDD order: test tasks precede implementation tasks within each phase
 
 ---
 
-## Phase 2: Foundational (TDD Gate — Tests Before Code)
+## Dependency Graph
 
-**Purpose**: Write and verify the regression tests that will guard the upgrade.  
-**⚠️ CRITICAL**: These tests must exist and produce a known result BEFORE any package version changes.  
-No upgrade work begins until this phase is complete.
-
-- [x] T004 Verify existing compile test covers the new entry-point pattern: open `backend/tests/unit/test_rag_agent.py` and confirm `test_graph_compiles_without_error` calls `build_agent_graph()` or equivalent and asserts no exception — if absent, add it
-- [x] T005 Add smoke-import test for `get_openai_callback` in `backend/tests/unit/test_rag_agent.py`: assert `from langchain_community.callbacks import get_openai_callback` does not raise `ImportError` — this test must PASS on current deps, then PASS again after upgrade
-- [x] T006 [P] Add smoke-import test for `langchain_chroma.Chroma` in a new test `backend/tests/unit/test_vector_store_imports.py`: assert `from langchain_chroma import Chroma` does not raise and `Chroma` is a class
-- [x] T007 Run `pytest tests/unit/ -v -k "compile or import" --tb=short` and confirm T004–T006 tests pass on current deps — record as green baseline
-
-**Checkpoint**: TDD gate complete — regression tests are green on current deps.
-
----
-
-## Phase 3: Code Fix (US0 — Confirmed Breaking Change)
-
-**Purpose**: Apply the single confirmed API-removal fix BEFORE bumping package versions,  
-so the code is compatible with both 0.2.x (still installed) and 1.x (coming).
-
-- [x] T008 In `backend/app/agents/rag_agent.py` line 64: add `START` to the langgraph import — change `from langgraph.graph import END, StateGraph` to `from langgraph.graph import END, START, StateGraph`
-- [x] T009 In `backend/app/agents/rag_agent.py` line 645: replace `graph.set_entry_point("planner")` with `graph.add_edge(START, "planner")`
-- [x] T010 Run `pytest tests/unit/ -v -k "compile or route or agent" --tb=short` to confirm the graph still compiles and existing route tests pass with the new entry-point style
-
-**Checkpoint**: Code fix applied and verified on current langgraph 0.2.73 — graph compiles cleanly.
-
----
-
-## Phase 4: Dependency Upgrade (US0 — Version Bumps)
-
-**Purpose**: Bump all seven packages together (they share a hard `langchain-core>=1.4.0` boundary  
-and cannot be upgraded one at a time). Remove the bridge pin and suppression filters added in the  
-previous session.
-
-- [x] T011 Update `backend/requirements.txt`: apply the following changes per `contracts/requirements-target.txt`:
-  - Change `langchain==0.3.18` → `langchain==1.3.1`
-  - Change `langchain-core==0.3.86` → `langchain-core==1.4.0`
-  - Change `langchain-openai==0.3.6` → `langchain-openai==1.2.1`
-  - Change `langchain-community==0.3.17` → `langchain-community==0.4.1`
-  - Change `langgraph==0.2.73` → `langgraph==1.2.0`
-  - Add `langchain-text-splitters==1.1.2` (new package, split from langchain)
-
-- [x] T012 Update `backend/requirements-dev.txt`: apply the following changes:
-  - Change `langchain==0.3.18` → `langchain==1.3.1`
-  - Change `langchain-openai==0.3.6` → `langchain-openai==1.2.1`
-  - Change `langchain-community==0.3.17` → `langchain-community==0.4.1`
-  - Change `langchain-chroma==0.2.2` → `langchain-chroma==1.1.0`
-  - Change `langchain-experimental==0.3.4` → `langchain-experimental==0.4.1`
-  - Change `langgraph==0.2.73` → `langgraph==1.2.0`
-  - Add `langchain-text-splitters==1.1.2`
-  - Change `openai==1.61.1` → `openai==2.37.0` (forced by langchain-openai 1.2.1)
-
-- [x] T013 [P] Remove the bridge warning suppression added in the previous session — these are now obsolete:
-  - In `backend/pytest.ini`: remove the line `ignore::langchain_core._api.deprecation.LangChainPendingDeprecationWarning`
-  - In `backend/tests/live/conftest.py`: remove the `warnings.filterwarnings(...)` block for `LangChainPendingDeprecationWarning` (lines added in prior session) and the `import warnings` line if it was added solely for that filter
-
-- [x] T014 Install the new dependencies: run `cd backend && source .venv/bin/activate && pip install -r requirements-dev.txt` and confirm it completes without resolution errors
-
-**Checkpoint**: New packages installed. No rollback yet — T015–T016 verify before committing.
-
----
-
-## Phase 5: Import Verification (US0 — Verify At Runtime)
-
-**Purpose**: Confirm the two "verify-at-runtime" items from research.md resolve cleanly  
-before running the full suite. Fix if needed; update test mocks to match.
-
-- [x] T015 Verify `get_openai_callback` import path in the newly installed environment: run `python -c "from langchain_community.callbacks import get_openai_callback; print('OK')"` inside the venv — if it raises `ImportError`, update the import in `backend/app/agents/rag_agent.py:58` and `backend/app/rag/pipeline.py:15` to the new path (likely `langchain_community.callbacks.openai_info`) and update the four test mocks in `backend/tests/unit/test_rag_agent.py` at lines 165, 195, 443, 472 to patch the new module path
-
-- [x] T016 [P] Verify `langchain_chroma.Chroma` constructor compatibility: run `python -c "from langchain_chroma import Chroma; print(Chroma.__module__)"` inside the venv — if it raises, inspect `backend/app/rag/vector_store.py:286` and update the `Chroma(...)` constructor kwargs to match langchain-chroma 1.x API (typically `persist_directory` and `embedding_function` args are unchanged; `client_settings` may differ)
-
-**Checkpoint**: Both import paths verified. Any needed fixes applied and tested locally.
-
----
-
-## Phase 6: Full Test Suite (US0 / US6 — Verification Gate)
-
-**Purpose**: Confirm zero regressions across unit and integration layers.  
-This is the primary go/no-go gate before Docker and live testing.
-
-- [x] T017 Run the full backend unit test suite: `cd backend && pytest tests/unit/ -v --tb=short` — all tests must pass; any failure triggers Level 2 rollback per plan.md
-
-- [x] T018 [P] Run the full backend integration test suite: `cd backend && pytest tests/integration/ -v --tb=short` — all tests must pass; any failure triggers Level 2 rollback
-
-- [ ] T019 Run the live agent pipeline test: `cd backend && bash ../scripts/test/run-live-tests.sh agent` — all 6 tests must pass with **0 warnings** (the `LangChainPendingDeprecationWarning` must no longer appear) — **EXTERNAL GATE: requires OPENAI_API_KEY; current environment has no key**
-
-**Checkpoint**: Full test suite green on new deps. Ready for Docker and deployment verification.
-
----
-
-## Phase 7: Deployment Verification (US6 — Operational Readiness)
-
-**Purpose**: Confirm the upgraded stack builds and starts cleanly in the Docker environment.
-
-- [ ] T020 Build and start the full stack: run `docker compose up --build` from the project root — both backend (:8000) and frontend (:3000) containers must start without errors — **EXTERNAL GATE: Docker CLI is not installed in the current environment**
-
-- [ ] T021 [P] Verify the health endpoint responds after Docker start: run `curl -sf http://localhost:8000/api/health` — expect HTTP 200 with a JSON body; any non-200 triggers investigation before proceeding — **EXTERNAL GATE: blocked until T020 can run**
-
-- [ ] T022 Stop Docker containers: run `docker compose down` — **EXTERNAL GATE: blocked until T020 can run**
-
-**Checkpoint**: Docker build passes. Upgrade is functionally complete.
-
----
-
-## Phase 8: Polish & Documentation (US6)
-
-**Purpose**: Update all documentation that references the old LangGraph/LangChain versions  
-so future agents and developers have accurate context.
-
-- [x] T023 Update `CLAUDE.md` constitution tech-stack table: change `| Agent pipeline | LangGraph StateGraph | 0.2.73 |` to `1.2.0` and update the `langchain` row from `0.3.18` to `1.3.1`
-
-- [x] T024 [P] Update `docs/ARCHITECTURE.md` tech-stack section: update the LangGraph and LangChain version references to 1.2.0 and 1.3.1 respectively
-
-- [x] T025 [P] Update `backend/.env.example` if any new env vars were introduced by the upgrade (expect none — verify by scanning the langchain-core 1.x and langgraph 1.x changelogs for new required config)
-
-- [x] T026 Update `PENDING_TASKS.md` at the project root: mark the LangGraph upgrade as complete, note that enterprise production hardening user stories US1–US7 are next
-
-**Checkpoint**: Documentation complete. PR ready for review.
-
----
-
-## Dependencies & Execution Order
-
-### Phase Dependencies
-
-- **Phase 1 (Setup)**: No dependencies — start immediately
-- **Phase 2 (TDD Gate)**: Depends on Phase 1 completion — must confirm green baseline first
-- **Phase 3 (Code Fix)**: Depends on Phase 2 — apply fix only after baseline tests exist
-- **Phase 4 (Version Bumps)**: Depends on Phase 3 — bump versions only after code is compatible
-- **Phase 5 (Import Verification)**: Depends on Phase 4 — verify only after install completes
-- **Phase 6 (Test Suite)**: Depends on Phase 5 — run suite only after imports are clean
-- **Phase 7 (Docker)**: Depends on Phase 6 — Docker gate after test suite passes
-- **Phase 8 (Docs)**: Depends on Phase 7 — document only after deployment verified
-
-### Rollback Decision Points
-
-| After phase | Trigger | Action |
-|-------------|---------|--------|
-| Phase 2 | Baseline tests fail | Investigate; fix existing code before proceeding |
-| Phase 3 | Compile test fails after code fix | Fix rag_agent.py; do NOT proceed to T011 |
-| Phase 4 | `pip install` resolution error | Check constraints; do NOT run T015 |
-| Phase 5 | Import error not fixable in <30 min | Level 2 rollback — `git checkout` all files + recreate venv |
-| Phase 6 | Any new test failure | Level 2 rollback |
-| Phase 6 | Live test warning still present | Investigate; not a blocker but note in PR |
-| Phase 7 | Docker build fails | Level 2 rollback |
-
-### Parallel Opportunities
-
-```bash
-# Phase 2 — T005 and T006 can run in parallel (different test files):
-Task T005: smoke-import test for get_openai_callback in test_rag_agent.py
-Task T006: smoke-import test for Chroma in test_vector_store_imports.py
-
-# Phase 4 — T011, T012, T013 can be edited in parallel (different files):
-Task T011: requirements.txt
-Task T012: requirements-dev.txt
-Task T013: pytest.ini + conftest.py cleanup
-
-# Phase 5 — T015 and T016 can be verified in parallel (independent imports):
-Task T015: get_openai_callback path
-Task T016: langchain_chroma.Chroma constructor
-
-# Phase 6 — T017 and T018 can run in parallel (separate pytest paths):
-Task T017: tests/unit/
-Task T018: tests/integration/
-
-# Phase 8 — T023, T024, T025 can be edited in parallel (different docs):
-Task T023: CLAUDE.md
-Task T024: docs/ARCHITECTURE.md
-Task T025: backend/.env.example
+```
+Phase 1 (Setup) → Phase 2 (Foundational)
+                       ├─► Phase 3 (US1 Guest auto-cleanup)       ─┐
+                       ├─► Phase 4 (US2 Admin cleanup + cadence)  ─┤ parallel
+                       ├─► Phase 5 (US3 Limit warning + force)      ← needs US2 cadence fields
+                       └─► Phase 6 (US4 Notifications)              ← needs US3 upload hook
+Phase 7 (Polish) ← all phases complete
 ```
 
+**MVP scope**: Phases 1–4 (18 tasks) → guest auto-cleanup + admin manual cleanup with cadence.
+US3 and US4 are independently testable increments.
+
 ---
 
-## Implementation Strategy
+## Phase 1: Setup (Shared Infrastructure)
 
-### MVP (Minimum Viable Upgrade)
+**Purpose**: Wire new config fields and TypeScript types so all later tasks compile cleanly.
 
-1. Complete Phase 1 — baseline captured
-2. Complete Phase 2 — TDD gate green
-3. Complete Phase 3 — code fix applied
-4. Complete Phase 4 — versions bumped and installed
-5. Complete Phase 5 — imports verified
-6. Complete Phase 6 — full test suite green
-7. **STOP AND VALIDATE**: 0 test regressions, 0 new warnings → ready to merge
+- [ ] T001 Add cadence + notification config fields to `backend/app/config.py`: `admin_cleanup_cadence` (str, default `"monthly"`), `admin_cleanup_custom_value` (int, default 30), `admin_cleanup_custom_unit` (str, default `"days"`), `admin_max_indexed_documents` (int, default 100), `notification_enabled` (bool, default False), `notification_email`, `notification_smtp_host`, `notification_smtp_port` (int, 587), `notification_smtp_user`, `notification_smtp_password`, `notification_ntfy_topic` — all with matching env-var aliases
+- [ ] T002 [P] Add TypeScript types to `frontend/src/types/index.ts`: `CleanupResult`, `CleanupStatusResponse`, `CleanupCadence` union type (`"hourly"|"daily"|"weekly"|"biweekly"|"monthly"|"custom"`); extend `SettingsResponse` with `admin_cleanup_cadence`, `admin_cleanup_custom_value`, `admin_cleanup_custom_unit`, `admin_cleanup_retention_hours`, `admin_doc_count`, `admin_doc_limit`, `admin_docs_near_limit`, `notification_enabled`, `notification_email`, `notification_ntfy_topic`
+- [ ] T003 [P] Add API client methods to `frontend/src/services/api.ts`: `triggerCleanup(force?: boolean): Promise<CleanupResult>` (POST `/api/documents/cleanup`), `getCleanupStatus(): Promise<CleanupStatusResponse>` (GET `/api/documents/cleanup/status`), `sendTestNotification(): Promise<{email_sent: boolean; ntfy_sent: boolean; errors: string[]}>` (POST `/api/notifications/test`)
 
-Phases 7 and 8 (Docker + docs) complete the merge checklist but are non-blocking for a dev-environment validation.
+---
 
-### Total Task Count: 26 tasks across 8 phases
+## Phase 2: Foundational (Blocking Prerequisites)
+
+**Purpose**: CleanupService core and settings_store cadence functions — shared by all user-story phases.
+
+- [ ] T004 Implement `backend/app/rag/cleanup.py`: `CADENCE_HOURS: dict[str, int]` = `{hourly:1, daily:24, weekly:168, biweekly:336, monthly:720}`; isolation predicates `_admin_filter(meta, cutoff_ts)`, `_admin_force_filter(meta)`, `_guest_session_filter(meta, session)`; `_select_documents_for_cleanup(filter_fn) → list[str]` (calls `get_all_documents()`, de-dupes by `source` key); `CleanupService` class with `sweep_admin(force: bool = False) → CleanupResult` and `sweep_guest(current_session: str) → CleanupResult`; module-level `_last_cleanup_result: CleanupResult | None = None`; each sweep calls `_cleanup_document_storage()` + `invalidate_doc_cache()` per source key, collects errors without aborting; import `CleanupResult` Pydantic model from `app.core.errors` or define locally in this file
+- [ ] T005 [P] Add cadence resolution to `backend/app/runtime/settings_store.py`: module-level globals `_runtime_cleanup_cadence`, `_runtime_cleanup_custom_value`, `_runtime_cleanup_custom_unit`; `get_effective_cleanup_retention_hours() → int` resolving preset via `CADENCE_HOURS` (imported from `cleanup.py`) or custom formula `value × (1 if unit=="hours" else 24)`; update `apply_runtime_settings()` to accept and store all three cadence fields; retain `get_effective_admin_doc_retention_days()` as a deprecated alias; update `persist_infra_credentials()` to promote cadence globals for cross-request availability
+
+---
+
+## Phase 3: US1 — Guest Auto-Cleanup
+
+**Story goal**: Previous-session guest documents are pruned automatically on first document list load of a new session. The list reflects the cleaned state; an info message shows if docs were removed.
+
+**Independent test criteria**: Upload a doc as guest session A; call `GET /api/documents/` as guest session B; the doc is absent and the response contains `pruned_previous_session_count > 0`.
+
+- [ ] T006 [US1] Write unit tests in `backend/tests/unit/test_cleanup.py` for `_guest_session_filter`: verify it includes docs with `owner_role="guest"` and `owner_session != current`; verify it excludes admin docs, current-session guest docs, and docs with missing session; test empty document list → empty `CleanupResult`
+- [ ] T007 [US1] Write unit tests in `backend/tests/unit/test_cleanup.py` for `CleanupService.sweep_guest`: mock `get_all_documents()` with admin doc + current-session guest doc + two previous-session guest docs; assert `_cleanup_document_storage` called exactly twice (once per previous-session doc); assert `CleanupResult` fields `trigger="session_start"`, `scope="guest"`, `deleted_count=2`, `force_mode=False`; assert `_last_cleanup_result` updated
+- [ ] T008 [P] [US1] Write unit test in `frontend/tests/unit/DocumentList.test.tsx` for guest session-pruned info banner: mock `getDocuments()` returning `{documents: [], pruned_previous_session_count: 2}`; assert info banner "Previous session documents have been cleared." renders; assert banner is removed from DOM after 5 000 ms (use `vi.useFakeTimers()`)
+- [ ] T009 [US1] Extend `backend/app/api/documents.py` `GET /api/documents/` handler: after cookie restore, if user is guest call `CleanupService().sweep_guest(user.session_id)` in a `BackgroundTasks`; add `pruned_previous_session_count: int = 0` field to `DocumentListResponse` Pydantic model; populate it from the cleanup result's `deleted_count` before returning (since `BackgroundTasks` runs after response, capture the count synchronously before handing off); import `CleanupService` from `app.rag.cleanup`
+- [ ] T010 [P] [US1] Add guest session-pruned info banner to `frontend/src/components/DocumentList.tsx`: when `response.pruned_previous_session_count > 0` show a blue dismissible `<div>` with "Previous session documents have been cleared."; use `useEffect` + `setTimeout(5000)` to auto-dismiss; render only for guest users (check `authStore`)
+
+---
+
+## Phase 4: US2 — Admin Manual Cleanup + Cadence Configuration
+
+**Story goal**: Admin triggers background cleanup from Settings. Cadence dropdown sets the retention age. CleanupResultCard shows deleted files, cadence used, and any errors.
+
+**Independent test criteria**: `POST /api/documents/cleanup` returns `CleanupResult` with `scope="admin"`, `trigger="manual"`, correct `cadence`; `GET /api/documents/cleanup/status` returns the same cached result.
+
+- [ ] T011 [US2] Write unit tests in `backend/tests/unit/test_cleanup.py` for `CleanupService.sweep_admin`: mock `get_all_documents()` with admin docs at ages 10 h, 200 h, 800 h; test monthly cadence deletes only the 800 h doc; test weekly (168 h) deletes 800 h and 200 h docs; test custom `14 days (336 h)` deletes only 800 h doc; test `force=True` deletes all three regardless of age; assert `CleanupResult.force_mode` matches `force` arg; assert partial file-store error captured in `errors` without aborting sweep; assert guest docs are never selected regardless of age
+- [ ] T012 [P] [US2] Write unit tests in `backend/tests/unit/test_documents_cleanup.py` for cleanup endpoints: mock `CleanupService.sweep_admin()` and `get_current_user` returning admin; assert `POST /cleanup` → 200 + `CleanupResult` schema; assert `GET /cleanup/status` → `{has_result: true, result: {...}}`; assert guest JWT → 403; assert `POST /cleanup` third call within one minute → 429; assert `restore_runtime_settings_from_cookie` is called on both endpoints
+- [ ] T013 [US2] Add `POST /api/documents/cleanup` and `GET /api/documents/cleanup/status` to `backend/app/api/documents.py`: define `CleanupRequest(force: bool = False)` Pydantic model; `POST` requires `require_full_access`, `@limiter.limit("2/minute")`; calls `CleanupService().sweep_admin(force=body.force)` and stores result in `cleanup._last_cleanup_result`; returns `CleanupResult`; `GET /status` requires `require_full_access`; returns `CleanupStatusResponse(has_result=bool(_last_cleanup_result), result=_last_cleanup_result)`; both endpoints call `restore_runtime_settings_from_cookie(request, _user)` and `audit_event("document_cleanup", ...)`
+- [ ] T014 [P] [US2] Extend `SettingsUpdateRequest` in `backend/app/api/settings.py`: add `admin_cleanup_cadence: str | None`, `admin_cleanup_custom_value: int | None`, `admin_cleanup_custom_unit: str | None`; add bleach sanitisation for cadence and unit strings; add validation: cadence must be in `{"hourly","daily","weekly","biweekly","monthly","custom"}`; custom_value range 1–8760; custom_unit must be `"hours"` or `"days"` if provided
+- [ ] T015 [P] [US2] Extend `SettingsResponse` in `backend/app/api/settings.py`: add `admin_cleanup_cadence: str`, `admin_cleanup_custom_value: int | None`, `admin_cleanup_custom_unit: str`, `admin_cleanup_retention_hours: int`; update `_build_response()` to populate from `get_effective_cleanup_retention_hours()` and the current cadence globals
+- [ ] T016 [P] [US2] Update `POST /api/settings` handler to pass cadence fields to `apply_runtime_settings()` when role is admin; update `persist_infra_credentials()` in `backend/app/runtime/settings_store.py` to persist cadence globals so BackgroundTask sweep uses current cadence
+- [ ] T017 [US2] Add Document Retention section to `frontend/src/components/SettingsModal.tsx` (admin-only, rendered below Ragas section): cadence `<select>` with options Hourly/Daily/Weekly/Bi-weekly/Monthly/Custom; when cadence = `"custom"` reveal `<input type="number" min=1 max=8760>` and `<select>` for Hours/Days unit; live count badge `"{count} / {limit}"` with amber Tailwind classes when `admin_docs_near_limit`; `handleRunCleanup` async function calling `triggerCleanup(false)`; `CleanupResultCard` component showing trigger badge (Manual/Session start), mode badge (Force/Normal), scope badge (Admin/Guest), cadence label, deleted count, deleted filenames `<ul>`, errors list; button disabled and shows spinner while `cleanupRunning` state is true
+- [ ] T018 [P] [US2] Write unit tests in `frontend/tests/unit/SettingsModal.test.tsx` for Document Retention section: assert section absent for guest user; assert cadence `<select>` renders "Monthly" selected by default; assert custom number+unit inputs hidden until "Custom" selected; mock `triggerCleanup(false)` returning a valid `CleanupResult`; assert CleanupResultCard renders with correct deleted count and cadence string after button click; assert button disabled during in-flight request; assert amber styling on count badge when `admin_docs_near_limit=true`
+
+---
+
+## Phase 5: US3 — Upload-Limit Warning + Force Mode
+
+**Story goal**: When admin doc count ≥ 80% of limit, an amber banner appears and the cleanup button becomes a force-mode trigger that deletes all admin docs regardless of age.
+
+**Independent test criteria**: `GET /api/settings` returns `admin_docs_near_limit=true` when count ≥ 80% of limit; `POST /api/documents/cleanup` with `force=true` deletes all admin docs; frontend shows amber banner and force-mode button.
+
+- [ ] T019 [US3] Write unit tests in `backend/tests/unit/test_cleanup.py` for force mode: mock docs all uploaded within the last 1 h; normal monthly sweep → `deleted_count=0`; force sweep → all admin docs deleted; assert `CleanupResult.force_mode=True`, `retention_hours=None`
+- [ ] T020 [P] [US3] Write unit test in `backend/tests/unit/test_documents_cleanup.py` for force request: POST `/cleanup` body `{"force": true}`; mock `sweep_admin(force=True)` returning result with `force_mode=True`; assert response `force_mode=True`
+- [ ] T021 [P] [US3] Write unit test in `frontend/tests/unit/DocumentList.test.tsx` for amber banner: mock settings `admin_docs_near_limit=true`, `admin_doc_count=85`, `admin_doc_limit=100`; assert amber banner text contains "85/100"; assert "Go to Settings →" link present; assert banner dismissed and hidden after close button click (sessionStorage key set)
+- [ ] T022 [US3] Add `admin_doc_count`, `admin_doc_limit`, `admin_docs_near_limit` to `backend/app/api/settings.py` `_build_response()`: call `get_all_documents()`, count unique `source` values where `owner_role=="admin"`; cache the count in the existing doc-list LRU to avoid repeated full scans; `admin_doc_limit = get_settings().admin_max_indexed_documents`; `admin_docs_near_limit = count >= limit * 0.8`
+- [ ] T023 [P] [US3] Add `admin_docs_near_limit: bool` to `DocumentMetadataResponse` in `backend/app/api/documents.py` and populate it in `GET /api/documents/metadata` handler using the same LRU-cached count
+- [ ] T024 [P] [US3] Hook near-limit detection into `POST /api/documents/upload` in `backend/app/api/documents.py`: after successful indexing when user is admin, recompute count; if `admin_docs_near_limit` just became true and module-level `_near_limit_notified_at` is `0` or more than `NOTIFICATION_DEDUP_SECONDS` ago, enqueue `send_limit_warning(count, limit)` in `BackgroundTasks`; guard with `if get_settings().notification_enabled`
+- [ ] T025 [US3] Add amber near-limit banner to `frontend/src/components/DocumentList.tsx` (admin-only): read `admin_docs_near_limit`, `admin_doc_count`, `admin_doc_limit` from the settings API response (fetched on mount); render persistent amber banner "You have {count}/{limit} documents indexed. Consider running cleanup." with "Go to Settings →" anchor `href="#document-retention"`; dismiss via ✕ button writing `sessionStorage.setItem("doc_limit_banner_dismissed", "1")`; add amber `●` dot on Settings gear icon in `ChatToolbar.tsx` or `DocumentList.tsx` header when `admin_docs_near_limit`
+- [ ] T026 [P] [US3] Update cleanup button in `frontend/src/components/SettingsModal.tsx` for force mode: when `settings.admin_docs_near_limit` is true change button text to "Force cleanup (limit reached)" and apply amber Tailwind classes; pass `force=true` to `triggerCleanup()`; CleanupResultCard shows `Force` badge in amber when `result.force_mode=true`, otherwise `Normal` badge in green
+
+---
+
+## Phase 6: US4 — Zero-Cost Notifications
+
+**Story goal**: Admin receives email (SMTP) and/or mobile push (ntfy.sh) when doc limit is approaching. Both channels are off by default, configurable in Settings, and unit-tested with mocks.
+
+**Independent test criteria**: `POST /api/notifications/test` returns `{email_sent, ntfy_sent, errors}` with mocked channels; unit tests confirm no real network calls; notification section visible and saveable in SettingsModal.
+
+- [ ] T027 [US4] Write unit tests in `backend/tests/unit/test_notifications.py` for `send_limit_warning`: patch `smtplib.SMTP` as context manager; with SMTP config set assert `starttls()`, `login()`, `sendmail()` called; message body contains count/limit but not SMTP password; with empty SMTP config assert no `SMTP()` instantiation; patch `httpx.AsyncClient.post`; with ntfy topic set assert POST to `https://ntfy.sh/{topic}` with title/message fields; with empty topic assert httpx not called; test deduplication: second call within `NOTIFICATION_DEDUP_SECONDS` is a no-op
+- [ ] T028 [P] [US4] Write unit test in `backend/tests/unit/test_notifications.py` for `POST /api/notifications/test` endpoint: mock `send_test_notification()` returning `{email_sent: True, ntfy_sent: True, errors: []}`; assert 200; test 422 when `notification_enabled=False` and no channels configured; test guest → 403
+- [ ] T029 [US4] Implement `backend/app/core/notifications.py`: `NOTIFICATION_DEDUP_SECONDS = 86400`; module-level `_last_notified_at: float = 0.0`; `async def send_limit_warning(doc_count: int, doc_limit: int) -> None` checks master switch + dedup timestamp then fires SMTP in `asyncio.to_thread(_send_smtp, ...)` and ntfy via `httpx.AsyncClient().post(url, headers=..., data=...)` independently (errors logged via structlog, never raised); `async def send_test_notification() -> dict` bypasses dedup; `def _send_smtp(host, port, user, password, to_email, count, limit)` helper using `smtplib.SMTP` STARTTLS; password excluded from all log calls
+- [ ] T030 [P] [US4] Create `backend/app/api/notifications.py` router: `POST /test` endpoint requires `require_full_access`, calls `await send_test_notification()`; returns `{email_sent: bool, ntfy_sent: bool, errors: list[str]}`; raises `HTTPException(422)` when no notification channels configured; register in `backend/app/main.py` under prefix `/api/notifications`
+- [ ] T031 [P] [US4] Add notification settings fields to `SettingsUpdateRequest` and `SettingsResponse` in `backend/app/api/settings.py`: accept `notification_enabled: bool | None`, `notification_email: str | None` (bleach-sanitised), `notification_ntfy_topic: str | None` (alphanumeric + hyphens pattern); return masked values in response (`notification_email` masked as `o**@example.com`, `notification_ntfy_topic` masked as first 4 chars + `***`); pass to `apply_runtime_settings()` and `persist_infra_credentials()`
+- [ ] T032 [P] [US4] Add Notifications section to `frontend/src/components/SettingsModal.tsx` (admin-only, below Document Retention): toggle `notification_enabled`; email `<input type="email">` and ntfy topic `<input type="text">` inputs (disabled when toggle off); "Send test notification" `<button>` calling `sendTestNotification()` then showing inline success/error toast via the existing `toast` helper; inputs show masked placeholder values from settings response
+- [ ] T033 [P] [US4] Write unit tests in `frontend/tests/unit/SettingsModal.test.tsx` for notifications section: assert section hidden for guest; assert inputs disabled when toggle off; mock `sendTestNotification()` success → assert success toast; mock failure → assert error toast; assert notification fields included in `PUT /api/settings` payload when saving
+
+---
+
+## Phase 7: Polish & Cross-Cutting Concerns
+
+- [ ] T034 Write integration test `backend/tests/integration/test_documents_cleanup_integration.py` using `TestClient`: upload two admin documents; patch their `uploaded_at` metadata to be > 720 h in the past; call `POST /api/documents/cleanup`; assert `GET /api/documents/` returns empty list; test guest cleanup isolation: upload as guest session A; call `GET /api/documents/` as guest session B (new `session_id`); assert session A doc absent
+- [ ] T035 [P] Update `docs/api/API.md` with new endpoints: `POST /api/documents/cleanup` (CleanupRequest → CleanupResult), `GET /api/documents/cleanup/status` (CleanupStatusResponse), `POST /api/notifications/test`; update `SettingsResponse` table with all new cadence, count, and notification fields
+- [ ] T036 [P] Update `backend/.env.example` with all new env vars: `ADMIN_CLEANUP_CADENCE`, `ADMIN_CLEANUP_CUSTOM_VALUE`, `ADMIN_CLEANUP_CUSTOM_UNIT`, `ADMIN_MAX_INDEXED_DOCUMENTS`, `NOTIFICATION_ENABLED`, `NOTIFICATION_EMAIL`, `NOTIFICATION_SMTP_HOST`, `NOTIFICATION_SMTP_PORT`, `NOTIFICATION_SMTP_USER`, `NOTIFICATION_SMTP_PASSWORD`, `NOTIFICATION_NTFY_TOPIC` — each with inline comment and example value
+- [ ] T037 [P] Update `README.md` env vars table and `docs/deployment/DEPLOY-LOCAL.md` with new cleanup and notification variables and their defaults
+- [ ] T038 [P] Update `docs/security/SECURITY.md`: document cleanup isolation guarantee (admin/guest filter disjointness by `owner_role`), SMTP password handling (env-only, never logged or returned), ntfy.sh topic treated as a shared secret (use long random slug), rate limit on cleanup endpoint (OWASP A04)
+- [ ] T039 Run `pytest tests/unit/ tests/integration/ --cov=app --cov-report=term-missing` in `backend/`; verify coverage ≥ 98% on `app/rag/cleanup.py`, `app/core/notifications.py`, and the new endpoints in `app/api/documents.py`; diagnose and fix any gaps
+- [ ] T040 Run `npm test` in `frontend/`; confirm all tests pass including new `DocumentList.test.tsx` suites and updated `SettingsModal.test.tsx`; fix any type errors from new `CleanupResult` / `SettingsResponse` fields
+
+---
+
+## Parallel Execution Plan
+
+| Sprint | Tasks | Notes |
+|--------|-------|-------|
+| 1 | T001, T002, T003 | All parallel — different files |
+| 2 | T004, T005 | Parallel — different files |
+| 3a | T006 → T007 → T009 → T010 | Guest stream (sequential within) |
+| 3b | T011 → T012 → T013 → T014 → T015 → T016 → T017 → T018 | Admin stream (parallel with 3a) |
+| 4 | T019, T020, T021 → T022 → T023, T024 → T025, T026 | US3 |
+| 5 | T027, T028 → T029 → T030, T031, T032, T033 | US4 |
+| 6 | T034 → T035, T036, T037, T038 → T039 → T040 | Polish |
+
+---
+
+## Task Count Summary
 
 | Phase | Tasks | Parallelisable |
-|-------|-------|---------------|
-| 1 — Setup | T001–T003 | T002, T003 |
-| 2 — TDD Gate | T004–T007 | T005, T006 |
-| 3 — Code Fix | T008–T010 | — |
-| 4 — Version Bumps | T011–T014 | T011, T012, T013 |
-| 5 — Import Verification | T015–T016 | T015, T016 |
-| 6 — Test Suite | T017–T019 | T017, T018 |
-| 7 — Docker | T020–T022 | T021 |
-| 8 — Documentation | T023–T026 | T023, T024, T025 |
+|-------|-------|----------------|
+| Phase 1 — Setup | 3 | 2 |
+| Phase 2 — Foundational | 2 | 1 |
+| Phase 3 — US1 Guest auto-cleanup | 5 | 2 |
+| Phase 4 — US2 Admin cleanup + cadence | 8 | 5 |
+| Phase 5 — US3 Limit warning + force | 8 | 5 |
+| Phase 6 — US4 Notifications | 7 | 5 |
+| Phase 7 — Polish | 7 | 4 |
+| **Total** | **40** | **24** |
 
----
-
-## Notes
-
-- All tasks follow the confirmed code path from `research.md` — no speculative changes
-- `[P]` tasks operate on different files with no shared write dependency
-- Level 2 rollback (5 min) is available at any point through Phase 6
-- Level 3 rollback (git revert) is available after any commit
-- Enterprise production hardening US1–US7 from spec.md are the next iteration after this upgrade lands
+**MVP scope (Phases 1–4)**: 18 tasks — delivers guest auto-cleanup + admin manual cleanup with full cadence configuration.

@@ -17,9 +17,11 @@ from app.config import Settings, get_settings
 from app.auth.router import router as auth_router
 from app.api.documents import router as documents_router
 from app.api.guardrails import router as guardrails_router
+from app.api.notifications import router as notifications_router
 from app.api.query import router as query_router
 from app.api.ragas import router as ragas_router
 from app.api.settings import router as settings_router
+from app.api.troubleshoot import router as troubleshoot_router
 from app.api.voice_export import router as voice_export_router
 from app.core.errors import SafeAppError, safe_error_response
 from app.runtime.settings_store import (
@@ -131,8 +133,8 @@ app.add_middleware(
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "PATCH"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-    expose_headers=["X-App-Session-Compatibility", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Runtime-Settings"],
+    expose_headers=["X-App-Session-Compatibility", "X-Request-ID", "X-Runtime-Settings"],
 )
 
 
@@ -233,20 +235,24 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(documents_router, prefix="/api/documents", tags=["documents"])
 app.include_router(guardrails_router, prefix="/api/guardrails", tags=["guardrails"])
+app.include_router(notifications_router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(query_router, prefix="/api/query", tags=["query"])
 app.include_router(voice_export_router, prefix="/api/chat/voice", tags=["chat-voice"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(ragas_router, prefix="/api/ragas", tags=["ragas"])
+app.include_router(troubleshoot_router, prefix="/api/troubleshoot", tags=["troubleshoot"])
 
 # Vercel Services mounts the backend at routePrefix="/api" and forwards the
 # stripped path to FastAPI, so /api/auth/guest arrives here as /auth/guest.
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(documents_router, prefix="/documents", tags=["documents"])
 app.include_router(guardrails_router, prefix="/guardrails", tags=["guardrails"])
+app.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
 app.include_router(query_router, prefix="/query", tags=["query"])
 app.include_router(voice_export_router, prefix="/chat/voice", tags=["chat-voice"])
 app.include_router(settings_router, prefix="/settings", tags=["settings"])
 app.include_router(ragas_router, prefix="/ragas", tags=["ragas"])
+app.include_router(troubleshoot_router, prefix="/troubleshoot", tags=["troubleshoot"])
 
 
 @app.get("/api/health", tags=["health"])
