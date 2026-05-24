@@ -1,17 +1,19 @@
 """
 Ragas evaluation API.
 
-POST /api/ragas/evaluate  — trigger in-process evaluation (admin only, OWASP A01)
+POST /api/ragas/evaluate  — trigger in-process evaluation (admin only)
 
 Results are persisted to disk via app.ragas_store (path: RAGAS_SCORES_FILE env var,
 default /tmp/ragas_scores.json) so they survive server restarts.
 
-Accepted risk: POST makes real OpenAI calls and can take 30-60 s.
-It is protected by require_full_access and wrapped in asyncio.to_thread.
+OWASP A01: evaluation is restricted to admin users (require_full_access).
+Guests can view scores via GET /api/settings/ragas-scores but cannot trigger
+a new evaluation.  Each run samples up to 5 indexed chunks and makes real
+OpenAI calls (30-60 s).  Concurrent runs are blocked with HTTP 429.
 
 GET /api/ragas/scores was removed — the canonical read endpoint is
-GET /api/settings/ragas-scores (admin only, returns 200 with has_results=False
-when no evaluation has been run yet).
+GET /api/settings/ragas-scores (returns 200 with has_results=False when no
+evaluation has been run yet).
 """
 import asyncio
 
@@ -130,8 +132,8 @@ async def trigger_evaluation(_user=Depends(require_full_access)):
     Builds a synthetic dataset from up to 5 indexed chunks, runs the 4 standard
     Ragas metrics, persists results, and returns them immediately.
 
-    Returns HTTP 503 if OPENAI_API_KEY is not configured or no documents are indexed.
-    OWASP A01 — restricted to full-access (admin) users.
+    Returns HTTP 401/403 for guests, HTTP 503 if OPENAI_API_KEY is not configured
+    or no documents are indexed. Concurrent runs are blocked with HTTP 429.
     """
     try:
         scores = await asyncio.to_thread(_run_ragas_evaluation)

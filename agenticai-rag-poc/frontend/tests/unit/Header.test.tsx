@@ -25,8 +25,14 @@ vi.mock('@/components/GuardrailsModal', () => ({
     open ? <div data-testid="guardrails-modal"><button onClick={onClose}>close-guardrails</button></div> : null,
 }))
 
+vi.mock('@/components/RagasDashboardModal', () => ({
+  default: ({ open, onClose }: { open: boolean; onClose: () => void }) =>
+    open ? <div data-testid="ragas-modal"><button onClick={onClose}>close-ragas</button></div> : null,
+}))
+
 vi.mock('@/services/api', () => ({
   authApi: { logout: vi.fn().mockResolvedValue(undefined) },
+  settingsApi: { get: vi.fn().mockResolvedValue({}) },
 }))
 
 import { useAuthStore, getTokenExpiry } from '@/store/authStore'
@@ -141,7 +147,7 @@ describe('Header', () => {
   it('shows guest info banner for guest users', () => {
     setAuth({ isGuest: true, username: 'guest' })
     renderHeader()
-    expect(screen.getByText(/Guest mode:/)).toBeTruthy()
+    expect(screen.getByText(/Guest:/)).toBeTruthy()
   })
 
   it('shows session countdown when guest token has near-expiry', () => {
@@ -155,5 +161,22 @@ describe('Header', () => {
   it('external settingsOpen prop controls the modal', () => {
     renderHeader({ settingsOpen: true, onSettingsOpenChange: vi.fn() })
     expect(screen.getByTestId('settings-modal')).toBeTruthy()
+  })
+
+  it('shows RAGAS dashboard button for admin', () => {
+    renderHeader()
+    expect(screen.getByLabelText('RAGAS evaluation dashboard')).toBeTruthy()
+  })
+
+  it('shows RAGAS dashboard button for guest (modal restricts trigger internally)', () => {
+    setAuth({ isGuest: true, username: 'guest' })
+    renderHeader()
+    expect(screen.getByLabelText('RAGAS evaluation dashboard')).toBeTruthy()
+  })
+
+  it('clicking RAGAS dashboard button opens RAGAS modal', () => {
+    renderHeader()
+    fireEvent.click(screen.getByLabelText('RAGAS evaluation dashboard'))
+    expect(screen.getByTestId('ragas-modal')).toBeTruthy()
   })
 })

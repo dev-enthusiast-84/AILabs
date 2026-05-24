@@ -1,22 +1,46 @@
-# Vercel Python serverless requirements.
-# Omits: chromadb, langchain-chroma (replaced by InMemoryVectorStore),
-#         python-magic (unused in app code), uvicorn (Vercel handles ASGI),
-#         and all test dependencies.
+# Vercel Python serverless requirements — smallest possible footprint.
+# Omits vs requirements-dev.txt:
+#   chromadb / langchain-chroma  — replaced by InMemoryVectorStore on Vercel serverless
+#   pinecone                     — no persistent vector store in stateless handler
+#   rank-bm25                    — BM25 hybrid search disabled for serverless
+#   pymupdf                      — too large (~12 MB); serverless uses pypdf fallback
+#   python-magic                 — optional magic-byte scanner; unused in serverless path
+#   uvicorn                      — Vercel handles ASGI directly
+#   sentence-transformers        — cross-encoder reranker; not available in serverless
+#   langchain-experimental       — SemanticChunker; dev / optional only
+#   langchain-google-vertexai    — ragas testing only
+#   clamd                        — optional ClamAV; unavailable on Vercel
+#   All test deps (pytest, httpx, ragas, …)
 fastapi==0.115.6
 python-multipart==0.0.20
 pydantic==2.10.6
-pydantic-settings==2.7.1
+pydantic-settings==2.14.1
 python-dotenv==1.0.1
+
+# Auth
 python-jose[cryptography]==3.3.0
 bcrypt==4.3.0
-langchain==0.3.18
-langchain-openai==0.3.6
-langchain-community==0.3.17
-langgraph==0.2.73
-openai==1.61.1
+
+# LangChain ecosystem — kept in sync with requirements-dev.txt
+langchain==1.3.1
+langchain-openai==1.2.2
+langchain-community==0.4.2
+langchain-text-splitters==1.1.2
+langgraph==1.2.1
+langgraph-checkpoint==4.1.1
+langsmith==0.8.5
+
+# OpenAI
+openai==2.38.0
+
+# Document processing
 pypdf==5.1.0
 pandas==2.2.3
 openpyxl==3.1.5
+
+# Security & rate limiting
 slowapi==0.1.9
 bleach==6.2.0
+
+# Logging
 structlog==25.1.0

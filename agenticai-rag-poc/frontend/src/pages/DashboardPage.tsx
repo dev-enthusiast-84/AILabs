@@ -11,6 +11,7 @@ export default function DashboardPage() {
   // Lifted documents state — shared between DocumentList and ChatInterface
   // so ChatInterface can show context-based query suggestions without a second fetch.
   const [documents, setDocuments] = useState<string[]>([])
+
   const handleDocumentsChange = useCallback((docs: string[]) => setDocuments(docs), [])
   const openSettingsForPrerequisite = useCallback((notice: string) => {
     setSettingsPrerequisiteNotice(notice)

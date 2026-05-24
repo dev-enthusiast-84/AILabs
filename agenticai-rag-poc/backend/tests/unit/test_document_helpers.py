@@ -520,3 +520,148 @@ class TestGuestUploadKey:
         result = _guest_upload_key(fake_request)
         # Invalid JWT → JoseError caught → fallback to IP
         assert result == "10.0.0.1"
+
+
+# ── get_document_suggestions ──────────────────────────────────────────────────
+
+
+class TestGetDocumentSuggestions:
+    """Unit tests for the /documents/suggestions endpoint helper logic."""
+
+    def _make_admin(self) -> "UserInDB":
+        return _make_user(role="admin")
+
+    async def test_returns_empty_when_no_files(self, monkeypatch):
+        """Empty files list → empty suggestions immediately."""
+        from app.api.documents import get_document_suggestions
+
+        result = await get_document_suggestions(files=[], _user=self._make_admin())
+        assert result.suggestions == []
+
+    async def test_returns_empty_when_chunks_not_found(self, monkeypatch):
+        """Files with no indexed chunks → empty suggestions."""
+        from app.api.documents import get_document_suggestions
+
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr("app.api.documents._load_document_chunks_for_display", lambda _: [])
+
+        result = await get_document_suggestions(files=["missing.txt"], _user=self._make_admin())
+        assert result.suggestions == []
+
+    async def test_returns_empty_when_api_key_not_configured(self, monkeypatch):
+        """No API key → skips LLM call and returns empty list."""
+        from app.api.documents import get_document_suggestions
+
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr(
+            "app.api.documents._load_document_chunks_for_display",
+            lambda _: ["This document describes RAG pipeline stages."],
+        )
+
+        result = await get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
+        # No API key configured in test env → suggestions must be empty
+        assert result.suggestions == []
+
+    async def test_returns_llm_questions_when_configured(self, monkeypatch):
+        """LLM returns valid JSON array → questions surfaced as suggestions."""
+        import json
+        from unittest.mock import MagicMock
+        from app.api.documents import get_document_suggestions
+
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr(
+            "app.api.documents._load_document_chunks_for_display",
+            lambda _: ["Retrieval-Augmented Generation (RAG) combines retrieval with generation."],
+        )
+
+        expected = [
+            "What is Retrieval-Augmented Generation?",
+            "How does RAG combine retrieval with generation?",
+            "What problem does RAG solve?",
+            "What are the stages of a RAG pipeline?",
+        ]
+
+        fake_llm = MagicMock()
+        fake_llm.invoke.return_value = MagicMock(content=json.dumps(expected))
+        fake_chat_class = MagicMock(return_value=fake_llm)
+
+        monkeypatch.setattr("app.api.documents.get_effective_api_key", lambda: "sk-test", raising=False)
+
+        import sys
+        fake_module = MagicMock()
+        fake_module.ChatOpenAI = fake_chat_class
+        monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+        result = await get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
+        assert result.suggestions == expected
+
+    async def test_multi_doc_uses_per_doc_prompt(self, monkeypatch):
+        """Multiple files → one question per doc, using the per-doc structured prompt."""
+        import json
+        from unittest.mock import MagicMock
+        from app.api.documents import get_document_suggestions
+
+        chunks_by_name = {
+            "hr.txt": ["HR policy content about leave."],
+            "it.csv": ["IT security controls CSV content."],
+            "training.xlsx": ["Training catalog XLSX content."],
+        }
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr(
+            "app.api.documents._load_document_chunks_for_display",
+            lambda name: chunks_by_name.get(name, []),
+        )
+
+        per_doc_questions = [
+            "What is the annual leave entitlement?",
+            "What MFA methods are required?",
+            "Which course awards the AI Practitioner Certificate?",
+        ]
+
+        prompts_seen: list[str] = []
+        fake_llm = MagicMock()
+        fake_llm.invoke.side_effect = lambda msgs: (
+            prompts_seen.append(msgs[0].content) or MagicMock(content=json.dumps(per_doc_questions))
+        )
+        fake_chat_class = MagicMock(return_value=fake_llm)
+
+        monkeypatch.setattr("app.api.documents.get_effective_api_key", lambda: "sk-test", raising=False)
+        import sys
+        fake_module = MagicMock()
+        fake_module.ChatOpenAI = fake_chat_class
+        monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+        result = await get_document_suggestions(
+            files=["hr.txt", "it.csv", "training.xlsx"], _user=self._make_admin()
+        )
+        assert result.suggestions == per_doc_questions
+        # Prompt must reference multiple documents (per-doc path)
+        assert len(prompts_seen) == 1
+        assert "Document 1" in prompts_seen[0]
+        assert "Document 2" in prompts_seen[0]
+        assert "Document 3" in prompts_seen[0]
+
+    async def test_returns_empty_on_llm_json_parse_error(self, monkeypatch):
+        """Malformed LLM response → empty list, no exception raised."""
+        from unittest.mock import MagicMock
+        from app.api.documents import get_document_suggestions
+
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr(
+            "app.api.documents._load_document_chunks_for_display",
+            lambda _: ["Some document content here."],
+        )
+
+        fake_llm = MagicMock()
+        fake_llm.invoke.return_value = MagicMock(content="not valid json at all")
+        fake_chat_class = MagicMock(return_value=fake_llm)
+
+        monkeypatch.setattr("app.api.documents.get_effective_api_key", lambda: "sk-test", raising=False)
+
+        import sys
+        fake_module = MagicMock()
+        fake_module.ChatOpenAI = fake_chat_class
+        monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+        result = await get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
+        assert result.suggestions == []

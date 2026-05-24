@@ -99,10 +99,14 @@ def save_chunk_manifest(filename: str, chunks: list[str]) -> None:
 
 def read_file(filename: str) -> bytes | None:
     if _use_blob_store():
-        from vercel.blob import get
+        from vercel.blob import get, BlobNotFoundError
 
-        result = get(_blob_path(filename), access="private")
-        return result.content if result and result.status_code == 200 else None
+        try:
+            result = get(_blob_path(filename), access="private")
+            return result.content if result and result.status_code == 200 else None
+        except BlobNotFoundError:
+            # File absent from blob storage — caller treats None as "stale".
+            return None
     path = _upload_dir() / filename
     return path.read_bytes() if path.exists() else None
 

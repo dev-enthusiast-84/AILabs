@@ -34,44 +34,29 @@
   --grad-green:  linear-gradient(135deg,#4C7A4C,#8B6914);
   --r:           10px;
   --r-sm:        7px;
-  --nav-h:       52px;
 }
 
 /* ═══════════════════════════════════════════════════
    OAT OVERRIDES — hardcoded-colour fixes
 ═══════════════════════════════════════════════════ */
 
-/* Nav: dark warm-oat bar with light text */
-.site-nav {
-  background:rgba(22,14,5,.97) !important;
-  border-bottom:1px solid rgba(139,103,20,.2);
-}
-.nav-brand                              { color:#F2E8D0 !important; }
-.nav-list a                             { color:rgba(196,164,107,.7) !important; }
-.nav-list a:hover                       { color:#F2E8D0 !important; background:rgba(255,255,255,.06) !important; }
-.nav-list a[aria-current="true"]        { color:#56CCF2 !important; background:rgba(56,189,248,.12) !important; box-shadow:inset 0 -2px 0 rgba(56,189,248,.6) !important; }
-.nav-badge { background:rgba(76,122,76,.2); color:#3D6B3D; border-color:rgba(76,122,76,.35); }
 
-/* Hero: captivating dark-oat gradient, override --text tokens for light text */
+/* Hero: light-oat surface with dark text for readability */
 .hero {
-  background:linear-gradient(135deg, #2C1A08 0%, #5C3D1E 60%, #8B6914 100%);
-  --text:#FAF6EE;
-  --text-dim:#D4B896;
-  --text-soft:#C4A46B;
   --border:rgba(196,164,107,.2);
 }
 .hero::before {
-  background-image:radial-gradient(circle, rgba(196,164,107,.22) 1px, transparent 1px);
+  background-image:radial-gradient(circle, rgba(196,164,107,.25) 1px, transparent 1px);
 }
 .hero::after {
-  background:radial-gradient(circle, rgba(181,83,42,.25) 0%, transparent 70%);
+  background:radial-gradient(circle, rgba(196,164,107,.18) 0%, transparent 70%);
 }
 .hero .eyebrow {
   background:rgba(196,164,107,.18);
   border-color:rgba(196,164,107,.38);
-  color:#F2E8D0;
+  color:#5C3D08;
 }
-.hero .eyebrow-dot { background:#F2E8D0; }
+.hero .eyebrow-dot { background:#8B6914; }
 
 /* Page container: warm oat border + shadow */
 .page {
@@ -138,7 +123,7 @@ a:focus-visible { outline:none; box-shadow:0 0 0 3px rgba(56,189,248,.7); }
    RESET & BASE
 ═══════════════════════════════════════════════════ */
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
-html { font-size:14px; scroll-behavior:smooth; scroll-padding-top:calc(var(--nav-h) + 16px); }
+html { font-size:14px; scroll-behavior:smooth; scroll-padding-top:24px; }
 body {
   font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
   background:var(--bg); color:var(--text); line-height:1.6; min-height:100vh;
@@ -147,48 +132,6 @@ body {
 /* ═══════════════════════════════════════════════════
    STICKY NAV — tab-style with gradient underline
 ═══════════════════════════════════════════════════ */
-.site-nav {
-  position:sticky; top:0; z-index:100;
-  background:rgba(22,14,5,.97); backdrop-filter:blur(18px);
-  -webkit-backdrop-filter:blur(18px);
-  border-bottom:1px solid rgba(139,103,20,.2);
-  height:var(--nav-h); display:flex; align-items:stretch;
-  padding:0 28px; gap:0;
-}
-.nav-brand {
-  display:flex; align-items:center; gap:8px;
-  font-size:13px; font-weight:800; color:var(--text);
-  text-decoration:none; margin-right:auto; flex-shrink:0;
-  padding-right:24px;
-}
-.nav-brand-dot {
-  width:8px; height:8px; border-radius:50%;
-  background:var(--grad-main); box-shadow:0 0 8px rgba(56,189,248,.6);
-  animation:pulse 2.5s ease-in-out infinite;
-}
-.nav-list { display:flex; list-style:none; gap:2px; align-items:center; }
-.nav-list a {
-  display:inline-flex; align-items:center; gap:6px;
-  padding:5px 14px; font-size:12px; font-weight:600;
-  color:rgba(196,164,107,.7); text-decoration:none;
-  border-radius:6px;
-  transition:color .18s, background .18s;
-}
-.nav-list a:hover {
-  color:#F2E8D0;
-  background:rgba(255,255,255,.06);
-}
-.nav-list a[aria-current="true"] {
-  color:#56CCF2;
-  background:rgba(56,189,248,.12);
-  box-shadow:inset 0 -2px 0 rgba(56,189,248,.6);
-}
-.nav-badge {
-  font-size:9px; font-weight:800; padding:1px 5px;
-  border-radius:10px; background:var(--emerald-dim);
-  color:var(--emerald); border:1px solid rgba(52,211,153,.3);
-  line-height:1.4;
-}
 
 /* ═══════════════════════════════════════════════════
    PAGE + HERO
@@ -197,7 +140,7 @@ body {
   width:980px; margin:24px auto 48px;
   border-radius:16px; overflow:hidden;
   border:1px solid var(--border-hi);
-  box-shadow:0 32px 80px rgba(0,0,0,.6), 0 0 120px rgba(56,189,248,.04);
+  box-shadow:0 24px 64px rgba(60,40,15,.18), 0 0 80px rgba(139,103,20,.07);
 }
 .hero {
   position:relative; background:var(--surface);
@@ -206,7 +149,7 @@ body {
 }
 .hero::before {
   content:''; position:absolute; inset:0;
-  background-image:radial-gradient(circle, rgba(56,189,248,.15) 1px, transparent 1px);
+  background-image:radial-gradient(circle, rgba(196,164,107,.25) 1px, transparent 1px);
   background-size:26px 26px;
   mask-image:linear-gradient(to bottom,transparent,rgba(0,0,0,.4) 40%,transparent);
   pointer-events:none;
@@ -214,7 +157,7 @@ body {
 .hero::after {
   content:''; position:absolute; top:-60px; right:-60px;
   width:320px; height:320px;
-  background:radial-gradient(circle, rgba(167,139,250,.16) 0%, transparent 70%);
+  background:radial-gradient(circle, rgba(196,164,107,.18) 0%, transparent 70%);
   pointer-events:none;
 }
 .hero-inner { position:relative; z-index:1; display:flex; align-items:flex-start; gap:28px; }
@@ -224,7 +167,7 @@ body {
   font-size:11px; font-weight:700; letter-spacing:.08em;
   text-transform:uppercase; color:var(--cyan);
   margin-bottom:14px; padding:4px 12px;
-  background:var(--cyan-dim); border:1px solid rgba(56,189,248,.28); border-radius:20px;
+  background:var(--cyan-dim); border:1px solid rgba(196,164,107,.28); border-radius:20px;
 }
 .eyebrow-dot {
   width:6px; height:6px; border-radius:50%; background:var(--cyan);
@@ -246,7 +189,7 @@ body {
   align-self:flex-end; flex-shrink:0; width:200px;
 }
 .hl-card {
-  background:rgba(255,255,255,.03); border:1px solid var(--border-hi);
+  background:rgba(255,255,255,.5); border:1px solid var(--border-hi);
   border-radius:var(--r-sm); padding:10px 14px;
   position:relative; overflow:hidden;
 }
@@ -585,23 +528,24 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
 ═══════════════════════════════════════════════════ */
 /* ── Vertical section rail — always-visible labels ── */
 .side-nav {
-  position:fixed; right:18px; top:50%; transform:translateY(-50%);
+  /* Track the left gutter: right edge stays 12px left of the 980px page edge */
+  position:fixed; left:calc(50vw - 490px - 168px); top:50%; transform:translateY(-50%);
   z-index:200;
-  display:flex; flex-direction:column; gap:2px;
-  background:rgba(13,22,39,.88);
+  display:flex; flex-direction:column; align-items:stretch; gap:2px;
+  background:rgba(22,14,5,.93);
   border:1px solid var(--border-hi);
   border-radius:12px; padding:10px 6px;
   backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
-  box-shadow:0 8px 32px rgba(0,0,0,.5);
+  box-shadow:0 8px 32px rgba(60,40,15,.35);
   min-width:136px;
 }
 .side-nav::before {
   content:'SECTIONS';
   display:block;
   font-size:8.5px; font-weight:800; letter-spacing:.14em;
-  color:rgba(148,163,184,.45);
+  color:rgba(196,164,107,.5);
   text-align:center; padding:0 6px 8px;
-  border-bottom:1px solid var(--border);
+  border-bottom:1px solid rgba(139,103,20,.2);
   margin-bottom:4px;
 }
 .side-nav-item {
@@ -611,68 +555,54 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
   transition:background .15s;
   position:relative;
 }
-.side-nav-item:hover { background:rgba(255,255,255,.05); }
+.side-nav-item:hover { background:rgba(196,164,107,.08); }
 .side-nav-item[aria-current="true"] {
-  background:linear-gradient(90deg, rgba(56,189,248,.14), rgba(167,139,250,.07));
+  background:linear-gradient(90deg, rgba(139,103,20,.18), rgba(196,164,107,.06));
 }
 .side-nav-dot {
   width:7px; height:7px; border-radius:50%; flex-shrink:0;
-  background:rgba(148,163,184,.3); border:1.5px solid rgba(148,163,184,.4);
+  background:rgba(196,164,107,.3); border:1.5px solid rgba(196,164,107,.4);
   transition:all .2s;
 }
 .side-nav-item:hover .side-nav-dot {
-  background:rgba(56,189,248,.5); border-color:rgba(56,189,248,.6);
+  background:rgba(196,164,107,.6); border-color:rgba(196,164,107,.8);
 }
 .side-nav-item[aria-current="true"] .side-nav-dot {
   background:var(--cyan); border-color:var(--cyan);
-  box-shadow:0 0 8px rgba(56,189,248,.7);
+  box-shadow:0 0 8px rgba(139,103,20,.5);
 }
 .side-nav-label {
   font-size:11.5px; font-weight:600;
-  color:rgba(148,163,184,.7);
+  color:rgba(196,164,107,.75);
   white-space:nowrap;
   transition:color .15s;
   pointer-events:none;
 }
-.side-nav-item:hover .side-nav-label { color:var(--text); }
-.side-nav-item[aria-current="true"] .side-nav-label { color:var(--cyan); font-weight:700; }
-.side-nav-item:focus-visible { outline:none; box-shadow:0 0 0 2px rgba(56,189,248,.6); }
-@media (max-width:1200px) { .side-nav { display:none; } }
-
-/* ═══════════════════════════════════════════════════
-   FLOATING PREV / NEXT CONTROLLER
-═══════════════════════════════════════════════════ */
-.float-nav {
-  position:fixed; bottom:26px; right:18px; z-index:300;
-  display:flex; flex-direction:column; align-items:center; gap:5px;
-  background:rgba(13,22,39,.93); border:1px solid var(--border-hi);
-  border-radius:28px; padding:9px 8px;
-  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
-  box-shadow:0 8px 32px rgba(0,0,0,.55), 0 0 0 1px rgba(56,189,248,.04);
-  transition:opacity .2s;
+.side-nav-item:hover .side-nav-label { color:#F2E8D0; }
+.side-nav-item[aria-current="true"] .side-nav-label { color:#C4A46B; font-weight:700; }
+.side-nav-item:focus-visible { outline:none; box-shadow:0 0 0 2px rgba(139,103,20,.6); }
+@media (max-width:1350px) { .side-nav { display:none; } }
+.side-nav-controls {
+  display:flex; justify-content:center; align-items:center; gap:10px;
+  padding:8px 6px 4px;
+  margin-top:4px;
+  width:100%;
+  border-top:1px solid rgba(139,103,20,.25);
+  box-sizing:border-box;
 }
-.float-btn {
+.side-nav-btn {
   width:30px; height:30px; border-radius:50%; flex-shrink:0;
-  background:rgba(255,255,255,.05); border:1px solid var(--border);
-  color:var(--text-dim); font-size:14px; font-weight:900;
+  background:rgba(196,164,107,.1); border:1.5px solid rgba(196,164,107,.4);
+  color:rgba(196,164,107,.9); font-size:14px; font-weight:700;
   display:flex; align-items:center; justify-content:center;
   cursor:pointer; transition:background .15s, color .15s, border-color .15s, opacity .15s;
-  line-height:1;
 }
-.float-btn:hover:not(:disabled) {
-  background:var(--cyan-dim); border-color:rgba(56,189,248,.4); color:var(--cyan);
+.side-nav-btn:hover:not(:disabled) {
+  background:rgba(139,103,20,.25); border-color:var(--cyan); color:#F2E8D0;
 }
-.float-btn:disabled { opacity:.25; cursor:not-allowed; }
-.float-btn:focus-visible { outline:none; box-shadow:0 0 0 3px rgba(56,189,248,.6); }
-.float-section-pill {
-  font-size:9px; font-weight:800; color:var(--text-soft);
-  text-transform:uppercase; letter-spacing:.07em;
-  text-align:center; max-width:52px; line-height:1.3;
-  padding:2px 0;
-}
-@media (max-width:640px) {
-  .float-nav { bottom:14px; right:12px; }
-}
+.side-nav-btn:disabled { opacity:.2; cursor:not-allowed; }
+.side-nav-btn:focus-visible { outline:none; box-shadow:0 0 0 2px rgba(139,103,20,.5); }
+
 
 /* ═══════════════════════════════════════════════════
    SCROLL PROGRESS BAR
@@ -686,7 +616,6 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
 
 @media print {
   body { background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  .site-nav { display:none; }
   .page { width:100%; margin:0; border-radius:0; box-shadow:none; border:none; }
   @page { margin:8mm 10mm; size:A4 landscape; }
 }
@@ -698,7 +627,6 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
   .page { width:100%; margin:0; border-radius:0; }
   .hero-inner { flex-direction:column; }
   .checklist-grid,.submission-grid,.feature-grid,.trust-row { grid-template-columns:1fr 1fr; }
-  .nav-list { display:none; }
 }
 @media (max-width:640px) {
   .checklist-grid,.submission-grid,.feature-grid,.trust-row { grid-template-columns:1fr; }
@@ -732,36 +660,13 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     <span class="side-nav-dot" aria-hidden="true"></span>
     <span class="side-nav-label">Advanced</span>
   </a>
+  <div class="side-nav-controls">
+    <button class="side-nav-btn" id="side-prev" aria-label="Go to previous section" title="Previous section" disabled>&#8593;</button>
+    <button class="side-nav-btn" id="side-next" aria-label="Go to next section" title="Next section">&#8595;</button>
+  </div>
 </nav>
 
-<!-- FLOATING PREV / NEXT CONTROLLER (bottom-right) -->
-<div class="float-nav" id="float-nav" role="navigation" aria-label="Navigate between sections">
-  <button class="float-btn" id="float-prev" aria-label="Go to previous section" title="Previous section" disabled>&#8593;</button>
-  <div class="float-section-pill" id="float-pill" aria-live="polite" aria-atomic="true">Overview</div>
-  <button class="float-btn" id="float-next" aria-label="Go to next section" title="Next section">&#8595;</button>
-</div>
 
-<!-- ═══════════════════════════════════════════
-     STICKY NAV
-════════════════════════════════════════════ -->
-<nav class="site-nav" aria-label="Document sections">
-  <a href="#hero" class="nav-brand" aria-label="Agentic RAG — go to top">
-    <span class="nav-brand-dot" aria-hidden="true"></span>
-    Agentic RAG
-  </a>
-  <ul class="nav-list" role="list">
-    <li><a href="#requirements" id="nav-req">
-      <span aria-hidden="true">✅</span> Requirements
-      <span class="nav-badge">10 / 10</span>
-    </a></li>
-    <li><a href="#submission" id="nav-sub">
-      <span aria-hidden="true">📋</span> Submission
-    </a></li>
-    <li><a href="#pitch" id="nav-pitch">
-      <span aria-hidden="true">⚙️</span> Advanced Features
-    </a></li>
-  </ul>
-</nav>
 
 <!-- ═══════════════════════════════════════════
      PAGE
@@ -889,7 +794,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="check-body">
         <div class="check-num">Task 3</div>
         <div class="check-title">Document Ingestion</div>
-        <div class="check-detail">Upload and process PDF, TXT, CSV, and Excel files. File-type validation, size limits, and optional antivirus scanning applied at the boundary.</div>
+        <div class="check-detail">Upload and process PDF, TXT, CSV, and Excel files. Magic-byte validation, ZIP-bomb detection, and stored prompt-injection scanning run on every deployment. ClamAV virus scanning is available in Docker (set <code>CLAMAV_HOST</code>); not available on Vercel serverless.</div>
         <span class="check-tag tag-green">Delivered</span>
       </div>
     </article>
@@ -961,7 +866,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="check-body">
         <div class="check-num">Task 10</div>
         <div class="check-title">Deploy &amp; Document</div>
-        <div class="check-detail">Live on Vercel. Also runnable via Docker Compose, Railway, or local dev. Full documentation covers architecture, agent roles, limitations, and challenges.</div>
+        <div class="check-detail">Live on Vercel. Also runnable via Docker Compose or local dev. Full documentation covers architecture, agent roles, limitations, and challenges.</div>
         <span class="check-tag tag-cyan">Shipped</span>
         <div style="margin-top:6px">
           <a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-LOCAL" target="_blank" rel="noopener noreferrer">→ Local setup</a>
@@ -988,6 +893,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     All artifacts are present and linked below.
     &ensp;<a class="doc-ref" href="https://github.com/dev-enthusiast-84/AILabs" target="_blank" rel="noopener noreferrer">→ GitHub Repo</a>
     &ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/" target="_blank" rel="noopener noreferrer">→ GitHub Pages Docs</a>
+    &ensp;<a class="doc-ref" href="requirements/edureka-project.pdf" target="_blank" rel="noopener noreferrer">→ Project Brief (PDF)</a>
   </p>
 
   <!-- Delivery summary -->
@@ -1014,8 +920,8 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="sub-check" aria-label="Covered">✓</div>
       <div>
         <div class="sub-title">System Setup Documentation</div>
-        <div class="sub-detail">Step-by-step local setup, environment variable reference, Python and Node prerequisites, and one-command startup for all four deployment targets.</div>
-        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-LOCAL" target="_blank" rel="noopener noreferrer">→ DEPLOY-LOCAL.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/SETUP" target="_blank" rel="noopener noreferrer">→ SETUP.md</a></div>
+        <div class="sub-detail">Step-by-step local setup, environment variable reference, Python and Node prerequisites, and one-command startup for all three deployment targets (local, Docker Compose, Vercel).</div>
+        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/SETUP" target="_blank" rel="noopener noreferrer">→ SETUP.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-LOCAL-ENV" target="_blank" rel="noopener noreferrer">→ Env Vars</a></div>
       </div>
     </div>
 
@@ -1032,7 +938,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="sub-check" aria-label="Covered">✓</div>
       <div>
         <div class="sub-title">Agent Roles Documented</div>
-        <div class="sub-detail">Each of the 7 LangGraph nodes is described — its responsibility, inputs, outputs, and how it connects to the next node in the reasoning chain.</div>
+        <div class="sub-detail">Each of the 7 LangGraph nodes is described — responsibility, inputs, outputs, search features (HyDE, BM25, reranking), retry logic, per-node token cost, and known limitations.</div>
         <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/architecture/AGENT-PIPELINE" target="_blank" rel="noopener noreferrer">→ AGENT-PIPELINE.md</a></div>
       </div>
     </div>
@@ -1041,8 +947,8 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="sub-check" aria-label="Covered">✓</div>
       <div>
         <div class="sub-title">Deployment Steps</div>
-        <div class="sub-detail">Separate guides for local development, Docker Compose (persistent storage), Vercel full-stack, and Vercel frontend with Railway/Render backend.</div>
-        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-LOCAL" target="_blank" rel="noopener noreferrer">→ DEPLOY-LOCAL.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-VERCEL" target="_blank" rel="noopener noreferrer">→ DEPLOY-VERCEL.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-VERCEL-ADVANCED" target="_blank" rel="noopener noreferrer">→ DEPLOY-VERCEL-ADVANCED.md</a></div>
+        <div class="sub-detail">Separate guides for local development, Docker Compose (ChromaDB persistent volume — no Pinecone required), and Vercel full-stack serverless deployment.</div>
+        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-LOCAL" target="_blank" rel="noopener noreferrer">→ DEPLOY-LOCAL.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-VERCEL" target="_blank" rel="noopener noreferrer">→ DEPLOY-VERCEL.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-VERCEL-OPS" target="_blank" rel="noopener noreferrer">→ DEPLOY-VERCEL-OPS.md</a></div>
       </div>
     </div>
 
@@ -1050,8 +956,17 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="sub-check" aria-label="Covered">✓</div>
       <div>
         <div class="sub-title">Limitations &amp; Challenges</div>
-        <div class="sub-detail">Storage constraints on serverless platforms (ChromaDB incompatibility → Pinecone), cold-start latency, token budget limits, and known edge cases all documented.</div>
-        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-LIMITS" target="_blank" rel="noopener noreferrer">→ DEPLOY-LIMITS.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/" target="_blank" rel="noopener noreferrer">→ README.md</a></div>
+        <div class="sub-detail">Vercel serverless constraints (ephemeral filesystem → Pinecone), cold-start latency, token budget limits, retrieval edge cases, and agent pipeline challenges all documented.</div>
+        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/project/CHALLENGES" target="_blank" rel="noopener noreferrer">→ CHALLENGES.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/deployment/DEPLOY-LIMITS" target="_blank" rel="noopener noreferrer">→ DEPLOY-LIMITS.md</a></div>
+      </div>
+    </div>
+
+    <div class="sub-item" role="listitem">
+      <div class="sub-check" aria-label="Covered">✓</div>
+      <div>
+        <div class="sub-title">Capstone Audit</div>
+        <div class="sub-detail">All 10 capstone requirements mapped to implementation files, test cases, and documentation references — one row per requirement with evidence links.</div>
+        <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/project/CAPSTONE-AUDIT" target="_blank" rel="noopener noreferrer">→ CAPSTONE-AUDIT.md</a>&ensp;·&ensp;<a class="doc-ref" href="requirements/edureka-project.pdf" target="_blank" rel="noopener noreferrer">→ Project Brief (PDF)</a></div>
       </div>
     </div>
 
@@ -1059,7 +974,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
       <div class="sub-check" aria-label="Covered">✓</div>
       <div>
         <div class="sub-title">Testing &amp; Quality Evidence</div>
-        <div class="sub-detail">1112+ tests across unit, integration, end-to-end, and live-dependency layers. HTML coverage reports included. CI pipeline runs on every pull request with a ≥ 98% backend coverage gate and OWASP-aligned quality checks.</div>
+        <div class="sub-detail">1500+ tests across unit, integration, end-to-end, and live-dependency layers. HTML coverage reports included. CI pipeline runs on every pull request with a ≥ 98% backend coverage gate and OWASP-aligned quality checks.</div>
         <div class="sub-ref"><a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/testing/TESTING" target="_blank" rel="noopener noreferrer">→ TESTING.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/testing/TESTING-FRONTEND" target="_blank" rel="noopener noreferrer">→ TESTING-FRONTEND.md</a>&ensp;·&ensp;<a class="doc-ref" href="https://dev-enthusiast-84.github.io/AILabs/#/testing/COVERAGE-MATRIX" target="_blank" rel="noopener noreferrer">→ COVERAGE-MATRIX.md</a></div>
       </div>
     </div>
@@ -1215,7 +1130,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     <article class="feat-card fc-emerald" role="listitem">
       <div class="feat-icon" aria-hidden="true">🚀</div>
       <div class="feat-title">Four Deployment Paths</div>
-      <div class="feat-body">Local development, Docker Compose with persistent storage, Vercel full-stack serverless, and Vercel frontend with Railway/Render backend — all scripted and documented, all supported.</div>
+      <div class="feat-body">Local development, Docker Compose with persistent storage, and Vercel full-stack serverless — all scripted and documented, all supported.</div>
       <span class="feat-badge tag-green">Production Ready</span>
     </article>
 
@@ -1229,7 +1144,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
   </h3>
   <div class="trust-row" role="list" aria-label="Key metrics">
     <div class="trust-card" role="listitem">
-      <div class="trust-num">1112+</div>
+      <div class="trust-num">1500+</div>
       <div class="trust-label">Automated Tests</div>
     </div>
     <div class="trust-card" role="listitem">
@@ -1299,7 +1214,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     <div>
       <h3 style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px">Technology Stack</h3>
       <div class="stack-row" role="list" aria-label="Technologies used">
-        <span class="chip chip-c" role="listitem">OpenAI GPT-4o-mini</span>
+        <span class="chip chip-c" role="listitem">OpenAI (configurable model)</span>
         <span class="chip chip-p" role="listitem">LangGraph</span>
         <span class="chip chip-e" role="listitem">FastAPI</span>
         <span class="chip chip-p" role="listitem">ChromaDB</span>
@@ -1307,7 +1222,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
         <span class="chip chip-c" role="listitem">React 18 + TypeScript</span>
         <span class="chip chip-a" role="listitem">Vite + Tailwind</span>
         <span class="chip chip-e" role="listitem">pytest · Vitest · Playwright</span>
-        <span class="chip" role="listitem">Docker · Vercel · Railway</span>
+        <span class="chip" role="listitem">Docker · Vercel</span>
         <span class="chip chip-c" role="listitem">JWT + bcrypt</span>
         <span class="chip chip-a" role="listitem">Ragas evaluation</span>
         <span class="chip chip-c" role="listitem">LangSmith tracing</span>
@@ -1349,7 +1264,7 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     Agentic RAG — Edureka / Illinois Tech Generative AI &amp; ML Capstone
   </div>
   <div class="footer-meta">FastAPI · LangGraph · ChromaDB / Pinecone · React 18 · OpenAI · 10 / 10 requirements</div>
-  <div class="footer-hint" aria-label="PDF export tip"><strong>→ PDF:</strong> Print → Save as PDF → Landscape A4</div>
+  <div class="footer-hint" aria-label="PDF export tip" style="display:none"><strong>→ PDF:</strong> Print → Save as PDF → Landscape A4</div>
 </footer>
 
 </div><!-- /page -->
@@ -1361,15 +1276,12 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
 <script>
 (function () {
   var SECTIONS   = ['hero', 'requirements', 'submission', 'pitch'];
-  var LABELS     = ['Overview', 'Requirements', 'Submission', 'Advanced'];
-  var TOP_MAP    = { requirements: 'nav-req', submission: 'nav-sub', pitch: 'nav-pitch' };
 
   /* ── element refs ─────────────────────────────── */
   var scrollBar  = document.getElementById('scroll-bar');
   var sideItems  = document.querySelectorAll('.side-nav-item');
-  var floatPrev  = document.getElementById('float-prev');
-  var floatNext  = document.getElementById('float-next');
-  var floatPill  = document.getElementById('float-pill');
+  var sidePrev   = document.getElementById('side-prev');
+  var sideNext   = document.getElementById('side-next');
   var current    = 0;
 
   /* ── set active section ───────────────────────── */
@@ -1378,15 +1290,6 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
     current = idx;
     var id = SECTIONS[idx];
 
-    /* top nav */
-    document.querySelectorAll('.nav-list a').forEach(function (a) {
-      a.removeAttribute('aria-current');
-    });
-    if (TOP_MAP[id]) {
-      var tl = document.getElementById(TOP_MAP[id]);
-      if (tl) tl.setAttribute('aria-current', 'true');
-    }
-
     /* side dots */
     sideItems.forEach(function (item) {
       item.getAttribute('data-section') === id
@@ -1394,10 +1297,9 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
         : item.removeAttribute('aria-current');
     });
 
-    /* float pill + button states */
-    if (floatPill) floatPill.textContent = LABELS[idx];
-    if (floatPrev) floatPrev.disabled = idx === 0;
-    if (floatNext) floatNext.disabled = idx === SECTIONS.length - 1;
+    /* side-nav button states */
+    if (sidePrev) sidePrev.disabled = idx === 0;
+    if (sideNext) sideNext.disabled = idx === SECTIONS.length - 1;
   }
 
   /* ── scroll-to helper ─────────────────────────── */
@@ -1409,8 +1311,8 @@ span.res-link:hover { border-color:var(--border); color:var(--text-dim); }
   }
 
   /* ── button handlers ──────────────────────────── */
-  if (floatPrev) floatPrev.addEventListener('click', function () { scrollTo(current - 1); });
-  if (floatNext) floatNext.addEventListener('click', function () { scrollTo(current + 1); });
+  if (sidePrev) sidePrev.addEventListener('click', function () { scrollTo(current - 1); });
+  if (sideNext) sideNext.addEventListener('click', function () { scrollTo(current + 1); });
 
   /* ── scroll progress bar ──────────────────────── */
   function updateProgress() {

@@ -54,6 +54,83 @@ npm run test:coverage
 
 ---
 
+## Walkthrough Video Recorder
+
+**Location:** `frontend/tests/walkthrough/` · **Run via:** `bash scripts/record-walkthrough.sh --url <app-url> [options]`
+
+The walkthrough recorder captures a full Playwright video of the deployed application — guest and admin flows — with an overlay caption showing each task step.
+
+### Walkthrough steps covered
+
+| Step | Feature demonstrated |
+|------|---------------------|
+| Settings | Runtime configuration; local (env vars + ChromaDB) vs remote (Pinecone + Blob) storage differences |
+| Upload | Guest: single TXT · Admin: 4 docs (TXT · CSV · XLSX · PDF) on distinct topics |
+| Text chat — Simple RAG | Direct one-shot retrieval — lowest latency |
+| Text chat — Agentic AI | 7-node pipeline with agent trace and grounded sources |
+| Export transcript | Download the conversation as a portable text file |
+| Voice chat — Simple RAG | Speech transcription → same retrieval path |
+| Voice chat — Agentic AI | Voice input + full agentic pipeline + trace |
+| Multilingual RAG | Switch to Spanish (or other language) — same retrieval, translated answer; reset to English |
+| Guardrails | Input/output safety controls |
+| Ragas evaluation (admin) | Automated RAG quality metrics |
+
+### Demo document generation
+
+Admin walkthroughs upload 4 in-memory documents generated at runtime — **no hardcoded or cached questions**.
+
+| Function | Use case | Topic selection |
+|----------|----------|----------------|
+| `getWalkthroughDocSet()` | Walkthrough recording | Always random; `WALKTHROUGH_TOPICS` ignored |
+| `getDeploymentDocSet()` | Seeding / smoke tests | Reads `WALKTHROUGH_TOPICS` env var first, then random |
+
+**Non-repetition guarantee:** the last 5 topic-combination hashes are stored in `$TMPDIR/walkthrough-topic-history.json`. The same combination of 4 topics cannot be chosen in consecutive runs.
+
+**File types generated:** `.txt` (topic 0) · `.csv` (topic 1) · `.xlsx` (topic 2) · `.pdf` (topic 3)
+
+**Available topic IDs** (for `WALKTHROUGH_TOPICS`):
+`hr-policy` · `it-security` · `travel-expense` · `training-catalog` · `project-portfolio` · `vendor-procurement` · `customer-faq` · `finance-budget`
+
+### Question generation
+
+Questions are derived from the actual uploaded document content using `generateWalkthroughQuestions()` — never hardcoded:
+
+- **TXT / CSV**: heading and definition extraction from file text
+- **XLSX**: SheetJS `sheet_to_txt` → same heading/definition extraction
+- **PDF**: `pdf-parse` text extraction → same extraction; falls back to companion `.txt` if parsing fails
+
+For multi-document admin uploads, each query slot takes the best question from a different document, exercising all 4 file types in a single walkthrough.
+
+### Local vs remote deployment
+
+| Aspect | Local | Remote (Vercel) |
+|--------|-------|-----------------|
+| Vector store | ChromaDB (built-in, no credentials) | Pinecone (API key via Settings) |
+| File storage | Local disk | Vercel Blob / S3 (token via Settings) |
+| Credentials | `backend/.env` env vars | Settings UI (before first upload) |
+| Query timeout | 40 s | 60 s (cold-start headroom) |
+| Upload wait | 4 s (4 docs) | 6 s (4 docs + network) |
+| Doc upload method | In-memory buffers via Playwright | In-memory buffers via Playwright (same) |
+
+In-memory buffers work identically for local and remote: Playwright creates virtual files in the browser and uploads them over HTTP to whichever backend is running.
+
+```bash
+# Local recording
+bash scripts/record-walkthrough.sh --url http://localhost:5173
+
+# Remote recording (admin mode, interactive settings)
+bash scripts/record-walkthrough.sh \
+  --url https://your-app.vercel.app \
+  --username admin --password <pw> \
+  --interactive-settings
+
+# Pin topics for a deployment seed run
+WALKTHROUGH_TOPICS="hr-policy,it-security,training-catalog,finance-budget" \
+  node -e "require('./frontend/tests/walkthrough/demo-docs').getDeploymentDocSet().then(console.log)"
+```
+
+---
+
 ## Live Dependency Tests
 
 **Location:** `backend/tests/live/` · **Run via:** `bash scripts/test/run-live-tests.sh` · Never run in CI by default.

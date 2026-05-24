@@ -2097,6 +2097,23 @@ def test_get_effective_embedding_model_uses_guest_override():
 
 # ── get_masked_api_key env fallback with runtime key unset (lines 451-452) ───
 
+def test_apply_runtime_settings_blob_token_clears_vector_store_cache(monkeypatch):
+    """apply_runtime_settings clears the vector store cache when blob_read_write_token is set."""
+    import app.runtime.settings_store as store
+    import app.rag.vector_store as vs_mod
+
+    cleared = []
+
+    def _fake_cache_clear():
+        cleared.append(True)
+
+    monkeypatch.setattr(vs_mod.get_vector_store, "cache_clear", _fake_cache_clear)
+    store.apply_runtime_settings(blob_read_write_token="vercel_blob_rw_testtoken")
+    assert cleared, "cache_clear should be called when blob_read_write_token is set"
+    # cleanup
+    store._runtime_blob_read_write_token = ""  # type: ignore[attr-defined]
+
+
 def test_get_masked_api_key_env_fallback_masked_when_no_runtime_key(monkeypatch):
     """get_masked_api_key returns masked env key when no runtime key is set."""
     import app.runtime.settings_store as store

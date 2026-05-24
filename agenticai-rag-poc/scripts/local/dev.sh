@@ -20,6 +20,13 @@
 
 set -euo pipefail
 
+# ── Cross-platform setsid shim ────────────────────────────────────────────────
+# setsid is Linux-only; on macOS, backgrounding with & provides equivalent
+# process-group isolation for our use case.
+if ! command -v setsid > /dev/null 2>&1; then
+    setsid() { "$@"; }
+fi
+
 # ── Colours ───────────────────────────────────────────────────────────────────
 NC='\033[0m'
 BOLD='\033[1m'

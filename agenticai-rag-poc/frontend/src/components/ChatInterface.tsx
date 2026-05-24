@@ -6,7 +6,6 @@ import DocumentViewerModal from '@/components/DocumentViewerModal'
 import { ChatComposer } from '@/components/chat/ChatComposer'
 import { ChatMessageList } from '@/components/chat/ChatMessageList'
 import { ChatToolbar } from '@/components/chat/ChatToolbar'
-import { buildSuggestionsFromContent } from '@/components/chat/suggestions'
 import { useToggleSet } from '@/hooks/useToggleSet'
 import { redactSensitiveText, useChatExport } from '@/hooks/useChatExport'
 import { languageByCode, type ChatLanguageCode } from '@/lib/chatLanguages'
@@ -52,9 +51,9 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
   const [viewing, setViewing] = useState<string | null>(null)
   const [ragMode, setRagMode] = useState<'simple' | 'agentic'>('agentic')
   const [chatLanguage, setChatLanguage] = useState<ChatLanguageCode>('en')
-  const [expandedTraces, toggleTrace] = useToggleSet()
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [expandedTraces, toggleTrace] = useToggleSet()
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [maxQueryLength, setMaxQueryLength] = useState<number>(1000)
   const [voiceSupported, setVoiceSupported] = useState(false)
@@ -72,36 +71,20 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
   const transcriptRef = useRef('')
   const { exportAudio, exportTranscript } = useChatExport(languageByCode)
 
+
   useEffect(() => {
     let cancelled = false
-
     if (documents.length === 0) {
       setSuggestions([])
       setSuggestionsLoading(false)
       return
     }
-
     setSuggestionsLoading(true)
-    Promise.allSettled(
-      documents.slice(0, 3).map((filename) => documentsApi.getContent(filename)),
-    )
-      .then((results) => {
-        if (cancelled) return
-        const contents = results
-          .filter((result) => result.status === 'fulfilled')
-          .map((result) => result.value.content)
-        setSuggestions(buildSuggestionsFromContent(contents))
-      })
-      .catch(() => {
-        if (!cancelled) setSuggestions(buildSuggestionsFromContent([]))
-      })
-      .finally(() => {
-        if (!cancelled) setSuggestionsLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
+    documentsApi.getSuggestions(documents.slice(0, 4))
+      .then((res) => { if (!cancelled) setSuggestions(res.suggestions) })
+      .catch(() => { if (!cancelled) setSuggestions([]) })
+      .finally(() => { if (!cancelled) setSuggestionsLoading(false) })
+    return () => { cancelled = true }
   }, [documents])
 
   useEffect(() => {
@@ -175,6 +158,7 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
         role: 'assistant',
         content: result.answer,
         sources: result.sources,
+        citations: result.citations,
         validation: result.validation,
         tokens_used: result.tokens_used,
         mode: result.mode,
@@ -219,6 +203,10 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
   const voiceOnlyConversation = useMemo(() => {
     const userMessages = messages.filter((message) => message.role === 'user')
     return userMessages.length > 0 && userMessages.every((message) => message.input_method === 'voice')
+  }, [messages])
+
+  const hasVoiceMessages = useMemo(() => {
+    return messages.some((m) => m.role === 'user' && m.input_method === 'voice')
   }, [messages])
 
   const startRecording = useCallback(() => {
@@ -297,10 +285,6 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
 
   const exportAudioConversation = useCallback(async () => {
     setVoiceError(null)
-    if (!voiceOnlyConversation) {
-      setVoiceError('Audio export is available for voice-only conversations. Transcript export is available for every chat.')
-      return
-    }
     setExportingAudio(true)
     try {
       const settings = await settingsApi.get()
@@ -344,9 +328,9 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
         chatLanguage={chatLanguage}
         exportingAudio={exportingAudio}
         exportJobStatus={exportJobStatus}
+        hasVoiceMessages={hasVoiceMessages}
         messageCount={messages.length}
         ragMode={ragMode}
-        voiceOnlyConversation={voiceOnlyConversation}
         onCancelExport={async () => {
           if (currentExportJobIdRef.current) {
             try {

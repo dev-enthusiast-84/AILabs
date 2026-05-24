@@ -111,13 +111,15 @@ export default function DocumentViewerModal({ filename, onClose, onUnavailable }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 backdrop-blur-sm overflow-y-auto py-8 px-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="doc-viewer-title"
     >
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/40 w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div
+        className="bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/40 w-full max-w-3xl flex flex-col overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="doc-viewer-title"
+      >
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
@@ -174,9 +176,9 @@ export default function DocumentViewerModal({ filename, onClose, onUnavailable }
         )}
 
         {/* Body */}
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col max-h-[65vh]">
           {activeTab === 'content' && (
-            <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
               {loading ? (
                 <div className="flex items-center justify-center gap-3 py-10">
                   <div className="w-4 h-4 rounded-full border-2 border-sky-500 border-t-transparent animate-spin" />

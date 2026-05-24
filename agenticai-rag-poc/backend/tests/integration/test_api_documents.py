@@ -384,7 +384,7 @@ def guest_headers_docs(client):
 
 
 def test_guest_upload_txt_succeeds(client, guest_headers_docs):
-    """Guests can upload a TXT file within the 2 MB limit."""
+    """Guests can upload a TXT file within the 3 MB limit."""
     resp = client.post(
         "/api/documents/upload",
         headers=guest_headers_docs,
@@ -395,7 +395,7 @@ def test_guest_upload_txt_succeeds(client, guest_headers_docs):
 
 
 def test_guest_upload_exceeds_size_limit(client, guest_headers_docs):
-    """Files larger than the 2 MB guest limit must return 413."""
+    """Files larger than the 3 MB guest limit must return 413."""
     from unittest.mock import patch, PropertyMock
     from app.config import Settings
     with patch.object(Settings, "guest_max_upload_size_bytes", new_callable=PropertyMock, return_value=10):
@@ -1298,3 +1298,17 @@ def test_get_metadata_admin_returns_200(client, auth_headers):
 def test_get_metadata_guest_returns_403(client, guest_headers):
     resp = client.get("/api/documents/metadata", headers=guest_headers)
     assert resp.status_code == 403
+
+
+def test_upload_missing_api_key_returns_503(client, auth_headers):
+    """Upload must return 503 with openai_provider_error when no API key is configured."""
+    with patch("app.api.documents.get_effective_api_key", return_value=""):
+        resp = client.post(
+            "/api/documents/upload",
+            headers=auth_headers,
+            files={"file": ("finance-budget.txt", b"Revenue Q1 data.", "text/plain")},
+        )
+    body = resp.json()
+    assert resp.status_code == 503
+    assert body["error_category"] == "openai_provider_error"
+    assert "api key" in body["detail"].lower() or "settings" in body["detail"].lower()

@@ -26,35 +26,60 @@ bash scripts/local/dev.sh --port-backend 9000 --port-frontend 3000 # custom port
 | Backend | `uvicorn --reload` | Any `.py` file saved under `backend/app/` |
 | Frontend | Vite HMR | Any `.tsx`, `.ts`, or `.css` file — instant browser update |
 
-## 2. Local Production Run
+## 2. `deploy-local.sh` — Dev and Production-Preview Modes
 
-Use `scripts/local/deploy-local.sh` for production-like builds — demos, presentations, or validating the built frontend before deploying to Vercel.
-
-| | `dev.sh` | `deploy-local.sh` |
-|---|---|---|
-| Frontend | Vite dev server on `:5173` | Production build served on `:4173` |
-| Backend | `uvicorn --reload` | `uvicorn --workers 1` (no watcher) |
-| Bind host | `127.0.0.1` | `0.0.0.0` (LAN accessible) |
+`scripts/local/deploy-local.sh` is the full-featured launcher. It handles first-time setup automatically, manages ephemeral credentials, and supports both dev and production-preview modes via the `--prod` flag.
 
 ```bash
-bash scripts/local/deploy-local.sh          # backend :8000 · frontend :4173
+bash scripts/local/deploy-local.sh          # dev mode (hot reload) — backend :8000 · frontend :5173
+bash scripts/local/deploy-local.sh --prod   # production preview     — backend :8000 · frontend :4173
 bash scripts/local/deploy-local.sh --open   # same + opens browser
-bash scripts/local/deploy-local.sh --skip-build  # reuse existing dist/ (faster restart)
+bash scripts/local/deploy-local.sh --skip-build  # reuse existing dist/ (--prod only, faster restart)
 bash scripts/local/deploy-local.sh --sample-data --sample-topic "Healthcare Policy"
 make deploy-local                           # Makefile shortcut
 ```
 
-## 3. Environment Variables
+| | `deploy-local.sh` (default) | `deploy-local.sh --prod` |
+|---|---|---|
+| Frontend | Vite dev server on `:5173` (HMR) | `npm run build` → preview on `:4173` |
+| Backend | `uvicorn --reload` | `uvicorn --workers 1` (no watcher) |
+| Hot reload | ✅ Both layers | ❌ None |
+| Bind host | `127.0.0.1` | `0.0.0.0` (LAN accessible) |
+| Use case | Active development | Demo, presentation, pre-Vercel validation |
+
+Credentials are ephemeral in both modes — written to `backend/.env` for the session and wiped automatically on Ctrl-C.
+
+## 3. Hot Reload Quick Reference
+
+| Command | Backend hot reload | Frontend hot reload | Notes |
+|---------|-------------------|---------------------|-------|
+| `bash scripts/local/dev.sh` | ✅ `uvicorn --reload` watches `backend/app/` | ✅ Vite HMR — instant browser update | Scoped watcher; avoids false restarts from test/chroma files |
+| `bash scripts/local/deploy-local.sh` | ✅ `uvicorn --reload` | ✅ Vite HMR on `:5173` | Default dev mode; also handles setup and ephemeral credentials |
+| `bash scripts/local/deploy-local.sh --prod` | ❌ No reload | ❌ Static nginx-style preview on `:4173` | Production-parity build; requires `--build` or existing `dist/` |
+| `docker compose up` | ❌ No reload | ❌ Static nginx build on `:3000` | No source volume mounts; code changes require `docker compose up --build` |
+
+**When to use each:**
+
+- **`dev.sh`** — fastest iteration; assumes setup already done; no credential management.
+- **`deploy-local.sh`** (default) — same hot reload, but auto-runs setup on first use and manages ephemeral credentials.
+- **`deploy-local.sh --prod`** — demos and pre-Vercel validation; matches production build pipeline.
+- **`docker compose up`** — full-stack integration testing; production parity including ClamAV; not for active development.
+
+---
+
+## 4. Environment Variables
 
 `OPENAI_API_KEY`, `SECRET_KEY` (prod), `ADMIN_PASSWORD` required; all others have defaults. Full reference → [Environment Variables](deployment/DEPLOY-LOCAL-ENV.md) · [Pipeline & Retrieval Vars](deployment/DEPLOY-LOCAL-ENV-PIPELINE.md).
 
 ---
 
-## 4. Docker Compose
+## 5. Docker Compose
 
 Runs the full stack with ChromaDB data stored in a named Docker volume that survives container restarts.
 
 **Prerequisites:** Docker Desktop 26+ running (whale icon solid in menu bar).
+
+> **No hot reload.** The backend Dockerfile starts uvicorn without `--reload` and the frontend Dockerfile runs `npm run build` served by nginx. There are no source volume mounts — any code change requires `docker compose up --build`.
 
 ```bash
 # First run: set required env vars
@@ -91,7 +116,7 @@ make docker-sample-data TOPIC="Healthcare Policy"  # generate files to upload
 
 ---
 
-## 5. ClamAV Antivirus (Docker only)
+## 6. ClamAV Antivirus (Docker only)
 
 The Compose stack includes a `clamav` service that scans every uploaded file before indexing.
 
@@ -101,13 +126,13 @@ To **disable AV scanning**: remove `CLAMAV_HOST`/`CLAMAV_PORT` from the backend 
 
 ---
 
-## 6. Ragas Evaluation (Optional)
+## 7. Ragas Evaluation (Optional)
 
 Trigger via **Settings → Ragas Evaluation** (`POST /api/settings/ragas-trigger`) or `LIVE_TESTS=1 OPENAI_API_KEY=<key> pytest tests/live/test_live_ragas.py -v`. Scores persist to `RAGAS_SCORES_FILE` (default `/tmp/ragas_scores.json`). See [Frontend & E2E Tests](testing/TESTING-FRONTEND.md) for full Ragas details.
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|

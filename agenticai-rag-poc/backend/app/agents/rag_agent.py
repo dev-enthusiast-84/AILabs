@@ -114,6 +114,7 @@ class AgentState(TypedDict):
     retry_count: int              # generator retry counter; incremented by validator
     messages: Annotated[list[BaseMessage], operator.add]
     sources: list[str]
+    citations: list        # Citation objects for chunk-level provenance
     # ── Telemetry fields ──────────────────────────────────────────────────────
     original_question: str        # set once in run_agent(), never mutated
     refined_query: str            # primary rewritten query from planner_node
@@ -181,6 +182,25 @@ class AgentTrace(PydanticBaseModel):
     planner_model: str
     generator_model: str
     validator_model: str
+
+
+class Citation(PydanticBaseModel):
+    """A single chunk-level citation returned with each query response."""
+    source: str        # document filename (raw stored key)
+    chunk_index: int   # position within document
+    text: str          # chunk text, truncated to 300 chars
+
+
+def _docs_to_citations(docs: list[Document]) -> list:
+    """Convert a list of Documents to Citation objects (truncated to 300 chars)."""
+    return [
+        Citation(
+            source=doc.metadata.get("source", "unknown"),
+            chunk_index=int(doc.metadata.get("chunk_index", 0)),
+            text=(doc.metadata.get("raw_chunk", doc.page_content) or "")[:300],
+        )
+        for doc in docs
+    ]
 
 
 # ── LLM factory — per-node model override ────────────────────────────────────
@@ -370,6 +390,8 @@ def retriever_node(state: AgentState) -> AgentState:
         context = format_context(all_docs)
         sources = list({doc.metadata.get("source", "unknown") for doc in all_docs})
 
+    citations = _docs_to_citations(all_docs)
+
     log.info(
         "retriever",
         fusion=fusion_mode,
@@ -383,6 +405,7 @@ def retriever_node(state: AgentState) -> AgentState:
         "retrieved_docs": all_docs,
         "retrieved_context": context,
         "sources": sources,
+        "citations": citations,
         "chunks_found": len(all_docs),
         "chunks_after_grading": len(all_docs),  # pre-grading default
         "chunks_after_rerank": len(all_docs),   # pre-reranking default
@@ -448,6 +471,7 @@ def grader_node(state: AgentState) -> AgentState:
 
     context = format_context(filtered_docs) if filtered_docs else "No relevant documents found."
     sources = list({doc.metadata.get("source", "unknown") for doc in filtered_docs})
+    citations = _docs_to_citations(filtered_docs)
 
     log.info("grader", total=len(docs), kept=len(filtered_docs),
              reason=grade.reason, tokens=_cb_tokens(cb), latency_ms=latency)
@@ -456,6 +480,7 @@ def grader_node(state: AgentState) -> AgentState:
         "retrieved_docs": filtered_docs,
         "retrieved_context": context,
         "sources": sources,
+        "citations": citations,
         "chunks_after_grading": len(filtered_docs),
         "grader_tokens": _cb_tokens(cb),
         "grader_latency_ms": latency,
@@ -592,6 +617,7 @@ def reranker_node(state: AgentState) -> AgentState:
 
         context = format_context(top_docs)
         sources = list({doc.metadata.get("source", "unknown") for doc in top_docs})
+        citations = _docs_to_citations(top_docs)
 
         log.info("reranker", model=settings.reranker_model,
                  input_chunks=len(docs), output_chunks=len(top_docs), latency_ms=latency)
@@ -600,6 +626,7 @@ def reranker_node(state: AgentState) -> AgentState:
             "retrieved_docs": top_docs,
             "retrieved_context": context,
             "sources": sources,
+            "citations": citations,
             "chunks_after_rerank": len(top_docs),
             "reranker_latency_ms": latency,
             "messages": [AIMessage(
@@ -621,6 +648,7 @@ def reranker_node(state: AgentState) -> AgentState:
 
         context = format_context(top_docs)
         sources = list({doc.metadata.get("source", "unknown") for doc in top_docs})
+        citations = _docs_to_citations(top_docs)
 
         log.info(
             "reranker",
@@ -636,6 +664,7 @@ def reranker_node(state: AgentState) -> AgentState:
             "retrieved_docs": top_docs,
             "retrieved_context": context,
             "sources": sources,
+            "citations": citations,
             "chunks_after_rerank": len(top_docs),
             "reranker_latency_ms": latency,
             "messages": [AIMessage(
@@ -661,7 +690,8 @@ _GENERATOR_PROMPT = ChatPromptTemplate.from_messages([
         "3. If the context partially addresses the question, share what you can find and note any gaps.\n"
         "4. Only if the context contains NO information whatsoever related to the question, respond exactly:\n"
         "   \"I could not find sufficient information in the uploaded documents to answer this question.\"\n"
-        "5. Do not answer a broader or different planner interpretation when the original question is narrower.\n"
+        "5. If the context covers a concept closely related to or synonymous with the question term,\n"
+        "   answer using that related content rather than refusing.\n"
         "6. Do not fabricate statistics, names, or details absent from the context.\n"
         "7. Be concise, factual, and cite the source name when helpful.\n\n"
         "{answer_instruction}\n\n"
@@ -819,6 +849,7 @@ def _initial_state(
         "retry_count": 0,
         "messages": [],
         "sources": [],
+        "citations": [],
         "refined_query": "",
         "chunks_found": 0,
         "chunks_after_grading": 0,
@@ -884,6 +915,7 @@ def run_agent(
     return {
         "answer": result["answer"],
         "sources": result["sources"],
+        "citations": result.get("citations", []),
         "validation": result["validation"],
         "tokens_used": result["tokens_used"],
         "mode": "agentic",

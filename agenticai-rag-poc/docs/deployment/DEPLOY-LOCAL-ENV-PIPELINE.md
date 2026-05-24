@@ -31,7 +31,7 @@ Tuning variables for retrieval, chunking, reranking, and Ragas evaluation. These
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `RERANKER_TYPE` | `llm-judge` | `llm-judge` (default — OpenAI batch scoring, no extra deps), `cross-encoder` (requires `sentence-transformers`, not on Vercel), or `none` |
-| `RERANKER_JUDGE_MODEL` | `gpt-4.1-mini` | OpenAI model used when `RERANKER_TYPE=llm-judge`. Must differ from pipeline models. Configurable at runtime via Settings UI. |
+| `RERANKER_JUDGE_MODEL` | `gpt-4.1-mini` | OpenAI model used when `RERANKER_TYPE=llm-judge`. Uses a separate allowlist (`gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-4.1`) — intentionally excluded from pipeline models to prevent circular reasoning where the generator's framing biases chunk selection. Approx. $0.40 / $1.60 per 1M in/out tokens ($0.10 / $0.40 for `gpt-4.1-nano`). Configurable at runtime via Settings UI without restart. |
 | `RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Model used when `RERANKER_TYPE=cross-encoder` |
 | `RERANKER_TOP_K` | `4` | Chunks kept after reranking |
 | `HF_TOKEN` | — | HuggingFace token for cross-encoder download. Unset = anonymous (rate-limited); app passes `token=False` explicitly so no warning is emitted. |

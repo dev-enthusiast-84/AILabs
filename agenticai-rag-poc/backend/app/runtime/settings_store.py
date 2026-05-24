@@ -37,6 +37,7 @@ _PRODUCTION_SAFE_DEFAULTS = {
     "planner_model": "",
     "generator_model": "",
     "validator_model": "",
+    "reranker_judge_model": "gpt-4.1-mini",
     "retriever_k": 4,
     "retriever_fetch_k": 20,
     "max_context_chunks": 4,
@@ -795,8 +796,9 @@ def get_effective_blob_read_write_token() -> str:
     """Return runtime/env Vercel Blob token. Supports both Vercel token names.
 
     Request-restored Settings UI values are scoped by the encrypted runtime token
-    and, for guests, the token's session id. Deployment env fallback remains local
-    dev/test only via _account_env_value.
+    and, for guests, the token's session id. Deployment env fallback is local
+    dev/test only — in production all billable attributes must come from the
+    Settings UI.
     """
     with _lock:
         cfg = get_settings()
@@ -938,7 +940,11 @@ def get_effective_reranker_type() -> str:
 def get_effective_reranker_judge_model() -> str:
     """Return the effective LLM-as-judge reranker model (falls back to config default)."""
     with _lock:
-        return _runtime_reranker_judge_model or get_settings().reranker_judge_model
+        return _first_non_empty(
+            str(_request_value("reranker_judge_model")),
+            _runtime_reranker_judge_model,
+            str(_account_env_default("reranker_judge_model")),
+        )
 
 
 def get_effective_chunker_type() -> str:
@@ -1142,6 +1148,11 @@ def apply_runtime_settings(
 
     if blob_read_write_token is not None:
         sync_effective_blob_token_to_env()
+        # The vector store type changes from memory → blob when a token is first
+        # configured; clear the singleton so the next call builds the correct store.
+        import app.rag.vector_store as _vector_store_mod
+        _vector_store_mod.get_vector_store.cache_clear()
+        _vector_store_mod.invalidate_doc_cache()
 
     log.info(
         "runtime_settings_applied",

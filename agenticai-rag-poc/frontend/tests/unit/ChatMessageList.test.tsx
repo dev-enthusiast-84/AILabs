@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { createRef } from 'react'
 import { ChatMessageList } from '@/components/chat/ChatMessageList'
-import type { ChatMessage, AgentTrace } from '@/types'
+import type { ChatMessage, AgentTrace, Citation } from '@/types'
 
 // Clipboard mock
 const writeTextMock = vi.fn().mockResolvedValue(undefined)
@@ -218,5 +218,68 @@ describe('ChatMessageList', () => {
     const msg = makeAssistantMessage({ id: 'msg-simple', mode: 'simple' })
     renderList({ messages: [msg] })
     expect(screen.queryByTestId('trace-toggle-msg-simple')).toBeNull()
+  })
+
+  it('renders citation cards when citations are present', () => {
+    const citations: Citation[] = [
+      { source: 'test.txt', chunk_index: 0, text: 'Sample text from the document.' },
+    ]
+    const msg = makeAssistantMessage({ citations })
+    renderList({ messages: [msg] })
+    const cards = document.querySelectorAll('[data-testid="citation-card"]')
+    expect(cards.length).toBe(1)
+    expect(screen.getByText('test.txt')).toBeTruthy()
+    expect(screen.getByText('chunk 1')).toBeTruthy()
+  })
+
+  it('clicking the source name in a citation card calls onOpenSource', () => {
+    const citations: Citation[] = [
+      { source: 'report.pdf', chunk_index: 2, text: 'Short text.' },
+    ]
+    const msg = makeAssistantMessage({ citations })
+    const { onOpenSource } = renderList({ messages: [msg] })
+    fireEvent.click(screen.getByText('report.pdf'))
+    expect(onOpenSource).toHaveBeenCalledWith('report.pdf')
+  })
+
+  it('shows expand button and toggles full text for long citations', () => {
+    const longText = 'A'.repeat(150)
+    const citations: Citation[] = [
+      { source: 'doc.pdf', chunk_index: 0, text: longText },
+    ]
+    const msg = makeAssistantMessage({ citations })
+    renderList({ messages: [msg] })
+    // expand button should be present (▼)
+    const expandBtn = screen.getByLabelText('Expand citation')
+    expect(expandBtn).toBeTruthy()
+    // preview text should be truncated (120 chars + ellipsis)
+    expect(screen.queryByText(longText)).toBeNull()
+    // click expand
+    fireEvent.click(expandBtn)
+    // full text should now be visible
+    expect(screen.getByText(longText)).toBeTruthy()
+    // collapse button should appear
+    expect(screen.getByLabelText('Collapse citation')).toBeTruthy()
+  })
+
+  it('falls back to source chips when citations is empty but sources is present', () => {
+    const msg = makeAssistantMessage({ sources: ['fallback.pdf'], citations: [] })
+    renderList({ messages: [msg] })
+    expect(screen.getByText('fallback.pdf')).toBeTruthy()
+    const cards = document.querySelectorAll('[data-testid="citation-card"]')
+    expect(cards.length).toBe(0)
+  })
+
+  it('renders multiple citation cards for multiple citations', () => {
+    const citations: Citation[] = [
+      { source: 'doc1.pdf', chunk_index: 0, text: 'First chunk text.' },
+      { source: 'doc2.pdf', chunk_index: 1, text: 'Second chunk text.' },
+    ]
+    const msg = makeAssistantMessage({ citations })
+    renderList({ messages: [msg] })
+    const cards = document.querySelectorAll('[data-testid="citation-card"]')
+    expect(cards.length).toBe(2)
+    expect(screen.getByText('doc1.pdf')).toBeTruthy()
+    expect(screen.getByText('doc2.pdf')).toBeTruthy()
   })
 })

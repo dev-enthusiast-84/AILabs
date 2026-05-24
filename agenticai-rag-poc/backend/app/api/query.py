@@ -12,12 +12,13 @@ from slowapi.util import get_remote_address
 import structlog
 
 from app.core.audit import audit_event
-from app.agents.rag_agent import run_agent, AgentTrace
+from app.agents.rag_agent import run_agent, AgentTrace, Citation
 from app.auth.utils import get_current_user
 from app.auth.models import UserInDB
 from app.core.chat_languages import SUPPORTED_LANGUAGES, ChatLanguageCode
 from app.config import get_settings
 from app.core.errors import SafeAppError, safe_app_error_from_exception
+from app.runtime.runtime_settings_cookie import restore_runtime_settings_from_cookie
 from app.runtime.settings_store import get_effective_ragas_evaluation_enabled, is_runtime_key_set
 from app.guardrails.engine import GuardrailEngine
 from app.guardrails.store import get_guardrail_store
@@ -46,6 +47,14 @@ def _has_visible_documents(user: UserInDB) -> bool:
     return bool(_list_visible_document_names(user))
 
 
+def _strip_guest_source_prefix(source: str, user: UserInDB) -> str:
+    """Remove the guest session prefix from a source filename for guest users."""
+    if user.role != "guest" or not user.session_id:
+        return source
+    prefix = f"guest-{user.session_id}-"
+    return source[len(prefix):] if source.startswith(prefix) else source
+
+
 class QueryHistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(..., min_length=1, max_length=1200)
@@ -61,6 +70,7 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: list[str]
+    citations: list[Citation] = Field(default_factory=list)
     validation: str
     tokens_used: int = 0
     mode: str
@@ -161,6 +171,9 @@ async def query_documents(request: Request, body: QueryRequest, background_tasks
     - Output blocked: answer is replaced with a policy-blocked message.
     - Flagged violations are logged server-side only (OWASP A09).
     """
+    # Restore settings saved via the UI from the encrypted cookie so the API key
+    # and model choices survive across Vercel serverless invocations.
+    restore_runtime_settings_from_cookie(request, user)
     set_retrieval_metadata_filter(_retrieval_filter_for_user(user))
     try:
         visible_documents = _has_visible_documents(user)
@@ -266,5 +279,21 @@ async def query_documents(request: Request, body: QueryRequest, background_tasks
         from app.api.settings import _run_ragas_eval_background  # local import avoids circular dep
         background_tasks.add_task(_run_ragas_eval_background)
         log.info("ragas_auto_trigger.queued")
+
+    if user.role == "guest":
+        result["sources"] = [_strip_guest_source_prefix(s, user) for s in result.get("sources", [])]
+        result["citations"] = [
+            Citation(
+                source=_strip_guest_source_prefix(c["source"] if isinstance(c, dict) else c.source, user),
+                chunk_index=c["chunk_index"] if isinstance(c, dict) else c.chunk_index,
+                text=c["text"] if isinstance(c, dict) else c.text,
+            )
+            for c in result.get("citations", [])
+        ]
+    else:
+        result["citations"] = [
+            Citation(**c) if isinstance(c, dict) else c
+            for c in result.get("citations", [])
+        ]
 
     return QueryResponse(**result, latency_ms=latency_ms, output_flagged=output_flagged, language=body.language)

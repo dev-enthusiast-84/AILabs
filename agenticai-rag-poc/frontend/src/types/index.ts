@@ -28,9 +28,16 @@ export interface QueryRequest {
   history?: QueryHistoryMessage[]
 }
 
+export interface Citation {
+  source: string
+  chunk_index: number
+  text: string
+}
+
 export interface QueryResponse {
   answer: string
   sources: string[]
+  citations?: Citation[]
   validation: 'VALID' | 'NEEDS_REVISION'
   tokens_used: number
   mode: 'simple' | 'agentic'
@@ -79,6 +86,7 @@ export interface ChatMessage {
   input_method?: 'text' | 'voice'
   language?: string
   sources?: string[]
+  citations?: Citation[]
   validation?: 'VALID' | 'NEEDS_REVISION'
   tokens_used?: number
   mode?: 'simple' | 'agentic'
@@ -235,6 +243,7 @@ export interface SettingsResponse {
   query_rate_limit_per_minute?: number
   max_upload_size_mb?: number
   guest_max_upload_size_mb?: number
+  guest_max_indexed_documents?: number
   // Guest session limits
   guest_session_ttl_minutes?: number
 }
@@ -302,6 +311,10 @@ export interface DocumentContentResponse {
   filename: string
   content: string
   word_count: number
+}
+
+export interface DocumentSuggestionsResponse {
+  suggestions: string[]
 }
 
 export interface GuardrailRule {

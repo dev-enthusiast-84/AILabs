@@ -64,16 +64,19 @@ export default defineConfig({
     setupFiles: './tests/setup.ts',
     include: ['tests/unit/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['tests/e2e/**', 'node_modules/**'],
-    // vmThreads shares the process with worker threads — faster than the default
-    // forks pool for jsdom tests because there's no per-file process spawn cost.
-    pool: 'vmThreads',
-    poolOptions: {
-      vmThreads: {
-        // Cap at 8 to avoid memory pressure; CI runners typically have 4 vCPUs.
-        maxThreads: 8,
-        minThreads: 2,
-      },
-    },
+    // CI: use forks pool with a single fork so V8 coverage instrumentation does
+    // not run across multiple concurrent V8 isolates.  vmThreads + coverage-v8
+    // can cause segfaults on 2-CPU GitHub runners due to memory pressure.
+    // Local: vmThreads is faster because there is no per-file process spawn cost.
+    pool: process.env.CI ? 'forks' : 'vmThreads',
+    poolOptions: process.env.CI
+      ? { forks: { singleFork: true } }
+      : {
+          vmThreads: {
+            maxThreads: 4,
+            minThreads: 1,
+          },
+        },
     // Only flag tests that genuinely block the suite (> 2 s), not fast ones.
     slowTestThreshold: 2000,
     coverage: {

@@ -229,6 +229,16 @@ _backend_reachable() {
   curl -sf --connect-timeout 3 --max-time 5 "$BACKEND_URL/api/health" > /dev/null 2>&1
 }
 
+_backend_reachable_with_retry() {
+  # Retry up to ~10s to absorb a transient reload triggered by .env writes.
+  local i
+  for i in 1 2 3 4 5; do
+    if _backend_reachable; then return 0; fi
+    sleep 2
+  done
+  return 1
+}
+
 _start_local_backend() {
   local host port log_file elapsed max_wait
   host="$(_backend_url_host)"
@@ -240,6 +250,24 @@ _start_local_backend() {
       return 1
       ;;
   esac
+
+  # If the port is already occupied the server is likely mid-reload after we
+  # wrote ADMIN_PASSWORD/SECRET_KEY to backend/.env.  Wait for it to recover
+  # rather than spawning a competing uvicorn that will fail to bind.
+  if lsof -ti tcp:"$port" > /dev/null 2>&1; then
+    yellow "  Port $port already in use — waiting up to 15s for existing server to recover..."
+    local wait_elapsed=0
+    while [[ $wait_elapsed -lt 15 ]]; do
+      if _backend_reachable; then
+        green "✓ Backend reachable at $BACKEND_URL (recovered after reload)"
+        return 0
+      fi
+      sleep 1
+      ((wait_elapsed++)) || true
+    done
+    red "✗ Port $port in use but backend not reachable after ${wait_elapsed}s"
+    return 1
+  fi
 
   log_file="$REPORTS/live-backend.log"
   mkdir -p "$REPORTS"
@@ -297,7 +325,9 @@ _kill_port_process() {
 }
 
 if [[ "$SUITE" == "api" || "$SUITE" == "all" ]] && [[ "$RUN_API" == "true" ]]; then
-  if _backend_reachable; then
+  # Use the retry variant: a .env write can trigger uvicorn --reload, causing a
+  # brief (~2s) window where the server is down even though the port is held.
+  if _backend_reachable_with_retry; then
     if [[ "$AUTO_START_BACKEND" == "true" ]]; then
       # Always restart when we manage the backend — ensures ADMIN_PASSWORD,
       # SECRET_KEY, and other .env values the script just wrote are picked up.

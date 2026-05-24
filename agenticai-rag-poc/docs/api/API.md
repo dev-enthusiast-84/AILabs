@@ -22,7 +22,7 @@ Interactive docs at `http://localhost:8000/api/docs` (development only).
 | **Chat** — query against indexed documents | ✅ | ✅ |
 | **List documents** — see what is indexed | ✅ | ✅ |
 | **Document metadata** (`GET /api/documents/metadata`) | ❌ 403 | ✅ |
-| **Upload TXT** (1 file, max 2 MB) | ✅ | ✅ |
+| **Upload TXT** (1 file, max 3 MB) | ✅ | ✅ |
 | **Upload PDF / CSV / XLSX / XLS** (up to 20 MB) | ❌ | ✅ |
 | **Delete documents** | ❌ 403 | ✅ |
 | **Settings — provide OpenAI API key** | ✅ any time | ✅ |
@@ -82,7 +82,7 @@ grep ADMIN_PASSWORD backend/.env
 | `GET`  | `/api/documents/{filename}/chunks` | Bearer | ✅ | All indexed text chunks for a document |
 | `GET`  | `/api/documents/{filename}/content` | Bearer | ✅ | Reconstructed full document text |
 | `GET`  | `/api/documents/{filename}/file` | Bearer | ✅ | Original uploaded file bytes (correct MIME) |
-| `POST` | `/api/documents/upload` | Bearer | ✅ TXT/2MB | Upload + index a document. **409** if filename already indexed. |
+| `POST` | `/api/documents/upload` | Bearer | ✅ TXT/3MB | Upload + index a document. **409** if filename already indexed. |
 | `DELETE` | `/api/documents/{filename}` | Bearer | ❌ 403 | Remove document + all vector-store chunks. **404** if not found. |
 | `POST` | `/api/query/` | Bearer | ✅ | Run RAG query (`mode="agentic"` default or `mode="simple"`). **422** for unknown mode. |
 | `POST` | `/api/chat/voice/redact` | Bearer | ✅ | Return backend-redacted export transcript without generating audio. |

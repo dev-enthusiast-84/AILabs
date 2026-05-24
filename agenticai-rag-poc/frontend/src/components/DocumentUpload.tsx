@@ -22,7 +22,6 @@ const ACCEPTED_GUEST = {
 
 // Vercel serverless body limit is ~4.5 MB; cap admin uploads at 4 MB when deployed there.
 const MAX_SIZE_ADMIN = (__IS_VERCEL__ ? 4 : 20) * 1024 * 1024
-const MAX_SIZE_GUEST  = 2 * 1024 * 1024
 
 interface Props {
   onUploaded: () => void
@@ -40,21 +39,25 @@ export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([])
   const [settingsMaxUploadMb, setSettingsMaxUploadMb] = useState<number | undefined>(undefined)
   const [settingsGuestMaxUploadMb, setSettingsGuestMaxUploadMb] = useState<number | undefined>(undefined)
-  const [guestDocRetentionHours, setGuestDocRetentionHours] = useState<number | undefined>(undefined)
+  const [settingsGuestMaxDocs, setSettingsGuestMaxDocs] = useState<number | undefined>(undefined)
   const { isGuest, addGuestUploadedDoc } = useAuthStore()
 
   useEffect(() => {
     settingsApi.get().then((s) => {
       setSettingsMaxUploadMb(s.max_upload_size_mb)
       setSettingsGuestMaxUploadMb(s.guest_max_upload_size_mb)
-      setGuestDocRetentionHours(s.guest_doc_retention_hours)
+      setSettingsGuestMaxDocs(s.guest_max_indexed_documents)
     }).catch(() => {
       // Silently keep defaults if settings fetch fails
     })
   }, [])
 
+  const guestMaxUploadMb = settingsGuestMaxUploadMb ?? 3
+  const guestMaxDocs = settingsGuestMaxDocs ?? 1
+  const adminLimitMb = settingsMaxUploadMb ?? (__IS_VERCEL__ ? 4 : 20)
+
   const accept  = isGuest ? ACCEPTED_GUEST : ACCEPTED_ADMIN
-  const maxSize = isGuest ? MAX_SIZE_GUEST  : MAX_SIZE_ADMIN
+  const maxSize = isGuest ? guestMaxUploadMb * 1024 * 1024 : MAX_SIZE_ADMIN
 
   const onDrop = useCallback(
     async (accepted: File[]) => {
@@ -65,6 +68,19 @@ export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
         message: 'Waiting to upload...',
       }))
       setUploadResults(pendingResults)
+
+      // Cumulative size guard: the limit applies to the whole batch, not each file.
+      const totalBytes = accepted.reduce((sum, f) => sum + f.size, 0)
+      if (totalBytes > maxSize) {
+        const totalMb = (totalBytes / 1024 / 1024).toFixed(1)
+        const limitMb = isGuest ? guestMaxUploadMb : adminLimitMb
+        setUploadResults(accepted.map((file) => ({
+          filename: file.name,
+          status: 'error' as const,
+          message: `Total batch size ${totalMb} MB exceeds the ${limitMb} MB limit. Choose fewer or smaller files.`,
+        })))
+        return
+      }
 
       const failAll = (message: string) => {
         setUploadResults(pendingResults.map((result) => ({
@@ -134,7 +150,7 @@ export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
       setUploading(false)
       onUploaded()
     },
-    [onUploaded, onOpenSettings, isGuest, addGuestUploadedDoc],
+    [onUploaded, onOpenSettings, isGuest, addGuestUploadedDoc, maxSize, guestMaxUploadMb, adminLimitMb],
   )
 
   const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
@@ -142,27 +158,17 @@ export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
     accept,
     maxSize,
     multiple: !isGuest,
-    maxFiles: isGuest ? 1 : undefined,
+    maxFiles: isGuest ? guestMaxDocs : undefined,
     disabled: uploading,
   })
 
-  const adminLimitMb = __IS_VERCEL__ ? 4 : 20
   const formatNote = isGuest
-    ? 'TXT only — up to 2 MB (guest limit)'
-    : `PDF, TXT, CSV, XLSX — up to ${adminLimitMb} MB each`
+    ? `TXT only — up to ${guestMaxUploadMb} MB (guest limit)`
+    : `PDF, TXT, CSV, XLSX — up to ${adminLimitMb} MB total`
 
   return (
     <div className="card p-5">
       <h2 className="text-base font-semibold text-slate-900 mb-4">Upload Documents</h2>
-      {isGuest && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3" data-testid="guest-upload-note">
-          You can upload 1 TXT file (up to {settingsGuestMaxUploadMb ?? 2} MB).
-          {guestDocRetentionHours != null && (
-            <> Uploaded documents are automatically removed after {guestDocRetentionHours === 1 ? '1 hour' : `${guestDocRetentionHours} hours`}.</>
-          )}
-          {' '}Sign in to upload PDF, CSV, and XLSX files up to {settingsMaxUploadMb ?? 20} MB.
-        </p>
-      )}
       <div
         {...getRootProps()}
         data-testid="dropzone"
@@ -199,10 +205,6 @@ export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
           </>
         )}
       </div>
-      <p className="text-xs text-slate-400 mt-1" data-testid="upload-size-hint">
-        Max {isGuest ? (settingsGuestMaxUploadMb ?? 2) : (settingsMaxUploadMb ?? (__IS_VERCEL__ ? 4 : 20))} MB
-        {isGuest ? ' · TXT only' : ' · PDF, TXT, CSV, XLSX'}
-      </p>
       {fileRejections.length > 0 && (
         <ul className="mt-2 space-y-1">
           {fileRejections.map(({ file, errors }) => (

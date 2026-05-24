@@ -52,7 +52,8 @@ def production_settings(**overrides):
         "max_query_length": 1000,
         "query_rate_limit_per_minute": 10,
         "effective_max_upload_size_mb": 20,
-        "guest_max_upload_size_mb": 2,
+        "guest_max_upload_size_mb": 3,
+        "guest_max_indexed_documents": 1,
         "guest_token_expire_minutes": 15,
         "guest_doc_retention_seconds": 3600,
     }
@@ -1669,7 +1670,7 @@ def test_build_response_pinecone_source_environment(monkeypatch):
     fake_settings.max_query_length = 1000
     fake_settings.query_rate_limit_per_minute = 10
     fake_settings.effective_max_upload_size_mb = 20
-    fake_settings.guest_max_upload_size_mb = 2
+    fake_settings.guest_max_upload_size_mb = 3
     fake_settings.guest_token_expire_minutes = 15
     fake_settings.guest_doc_retention_seconds = 3600
     monkeypatch.setattr(settings_api, "settings", fake_settings)
@@ -1699,7 +1700,7 @@ def test_build_response_blob_source_environment(monkeypatch):
     fake_settings.max_query_length = 1000
     fake_settings.query_rate_limit_per_minute = 10
     fake_settings.effective_max_upload_size_mb = 20
-    fake_settings.guest_max_upload_size_mb = 2
+    fake_settings.guest_max_upload_size_mb = 3
     fake_settings.guest_token_expire_minutes = 15
     fake_settings.guest_doc_retention_seconds = 3600
     monkeypatch.setattr(settings_api, "settings", fake_settings)
@@ -1733,7 +1734,7 @@ def test_build_response_blob_source_not_configured(monkeypatch):
     fake_settings.max_query_length = 1000
     fake_settings.query_rate_limit_per_minute = 10
     fake_settings.effective_max_upload_size_mb = 20
-    fake_settings.guest_max_upload_size_mb = 2
+    fake_settings.guest_max_upload_size_mb = 3
     fake_settings.guest_token_expire_minutes = 15
     fake_settings.guest_doc_retention_seconds = 3600
     monkeypatch.setattr(settings_api, "settings", fake_settings)

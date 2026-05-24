@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { SelectInput } from '@/components/SelectInput'
 import {
   ShieldCheckIcon,
   XMarkIcon,
@@ -809,42 +810,45 @@ export default function GuardrailsModal({ open, onClose, isGuest = false }: Prop
 
               {/* Filter bar */}
               <div className="flex flex-wrap items-center gap-2">
-                <select
+                <SelectInput
                   value={filterType}
-                  onChange={(e) => setFilterType(e.target.value as FilterType)}
+                  onChange={(v) => setFilterType(v as FilterType)}
+                  options={[
+                    { value: 'all', label: 'All types' },
+                    { value: 'word', label: 'Word' },
+                    { value: 'topic', label: 'Topic' },
+                    { value: 'regex', label: 'Regex' },
+                  ]}
                   className="input text-sm py-1.5 w-auto"
                   aria-label="Filter by type"
                   data-testid="filter-type"
-                >
-                  <option value="all">All types</option>
-                  <option value="word">Word</option>
-                  <option value="topic">Topic</option>
-                  <option value="regex">Regex</option>
-                </select>
-                <select
+                />
+                <SelectInput
                   value={filterTarget}
-                  onChange={(e) => setFilterTarget(e.target.value as FilterTarget)}
+                  onChange={(v) => setFilterTarget(v as FilterTarget)}
+                  options={[
+                    { value: 'all', label: 'All targets' },
+                    { value: 'input', label: 'Input' },
+                    { value: 'output', label: 'Output' },
+                    { value: 'both', label: 'Both' },
+                  ]}
                   className="input text-sm py-1.5 w-auto"
                   aria-label="Filter by target"
                   data-testid="filter-target"
-                >
-                  <option value="all">All targets</option>
-                  <option value="input">Input</option>
-                  <option value="output">Output</option>
-                  <option value="both">Both</option>
-                </select>
-                <select
+                />
+                <SelectInput
                   value={filterAction}
-                  onChange={(e) => setFilterAction(e.target.value as FilterAction)}
+                  onChange={(v) => setFilterAction(v as FilterAction)}
+                  options={[
+                    { value: 'all', label: 'All actions' },
+                    { value: 'block', label: 'Block' },
+                    { value: 'flag', label: 'Flag' },
+                    { value: 'redact', label: 'Redact' },
+                  ]}
                   className="input text-sm py-1.5 w-auto"
                   aria-label="Filter by action"
                   data-testid="filter-action"
-                >
-                  <option value="all">All actions</option>
-                  <option value="block">Block</option>
-                  <option value="flag">Flag</option>
-                  <option value="redact">Redact</option>
-                </select>
+                />
                 <span className="text-xs text-slate-400 ml-auto">
                   {filteredRules.length} of {rules.length} rule{rules.length !== 1 ? 's' : ''}
                 </span>

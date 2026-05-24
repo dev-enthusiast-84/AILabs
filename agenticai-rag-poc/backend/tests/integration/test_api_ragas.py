@@ -10,8 +10,8 @@ import pytest
 
 # ── POST /api/ragas/evaluate ─────────────────────────────────────────────────
 
-def test_evaluate_requires_admin(client, guest_headers):
-    """Guest tokens cannot trigger evaluation (OWASP A01)."""
+def test_evaluate_guest_returns_403(client, guest_headers):
+    """Guest tokens are rejected with 403 — evaluation is admin-only."""
     resp = client.post("/api/ragas/evaluate", headers=guest_headers)
     assert resp.status_code == 403
 

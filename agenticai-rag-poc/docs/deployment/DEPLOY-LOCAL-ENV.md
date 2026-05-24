@@ -64,16 +64,20 @@ Production ignores billing-bearing provider values (`OPENAI_API_KEY`, `PINECONE_
 
 ## LLM & Token Budget
 
-| Variable | Default | Required | Purpose |
-|----------|---------|----------|---------|
-| `LLM_MODEL` | `gpt-4o-mini` | No | Default OpenAI model (local dev only; production uses Settings UI) |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` | No | OpenAI embedding model for indexing and query vectors |
-| `MAX_COMPLETION_TOKENS` | `1024` | No | Hard cap on LLM output tokens per response |
-| `TOKEN_BUDGET_WARNING_THRESHOLD` | `800` | No | Soft warning logged when approaching the token cap |
-| `MAX_CONTEXT_CHUNKS` | `4` | No | Maximum chunks included in the LLM prompt |
-| `PLANNER_MODEL` | _(llm_model)_ | No | Per-node model override for the Planner node |
-| `GENERATOR_MODEL` | _(llm_model)_ | No | Per-node model override for the Generator node |
-| `VALIDATOR_MODEL` | _(llm_model)_ | No | Per-node model override for the Validator node |
+| Variable | Default | Required | Approx. cost | Purpose |
+|----------|---------|----------|-------------|---------|
+| `LLM_MODEL` | `gpt-4o-mini` | No | $0.15 / $0.60 per 1M in/out | Default OpenAI model (local dev only; production uses Settings UI) |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | No | $0.02 per 1M tokens | OpenAI embedding model for indexing and query vectors |
+| `MAX_COMPLETION_TOKENS` | `1024` | No | — | Hard cap on LLM output tokens per response |
+| `TOKEN_BUDGET_WARNING_THRESHOLD` | `800` | No | — | Soft warning logged when approaching the token cap |
+| `MAX_CONTEXT_CHUNKS` | `4` | No | — | Maximum chunks included in the LLM prompt |
+| `PLANNER_MODEL` | _(llm_model)_ | No | same as `LLM_MODEL` | Per-node model override for the Planner node |
+| `GENERATOR_MODEL` | _(llm_model)_ | No | same as `LLM_MODEL` | Per-node model override for the Generator node |
+| `VALIDATOR_MODEL` | _(llm_model)_ | No | same as `LLM_MODEL` | Per-node model override for the Validator node |
+
+Per-node models (`PLANNER_MODEL`, `GENERATOR_MODEL`, `VALIDATOR_MODEL`) fall back to `LLM_MODEL` when unset. In production, env values are ignored — all model choices must be entered via the Settings UI; safe defaults apply if omitted. See [Billable Parameter Isolation](security/SECURITY.md#billable-parameter-isolation-runtimesettings_storepy).
+
+The reranker judge model (`RERANKER_JUDGE_MODEL`) is configured separately — see [Pipeline & Retrieval Variables](deployment/DEPLOY-LOCAL-ENV-PIPELINE.md#reranker).
 
 ---
 

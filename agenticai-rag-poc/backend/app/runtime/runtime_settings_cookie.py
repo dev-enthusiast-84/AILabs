@@ -46,6 +46,7 @@ _ALLOWED_KEYS = {
     # Pipeline settings — included so Vercel serverless instances honour
     # Settings UI changes across cold starts without requiring a restart.
     "reranker_type",
+    "reranker_judge_model",
     "relevance_grader_enabled",
     "retriever_k",
     "retriever_use_mmr",
@@ -137,11 +138,28 @@ def restore_runtime_settings_from_token(raw: str | None, user: UserInDB) -> bool
     if not isinstance(settings_payload, dict):
         return False
 
-    set_request_runtime_settings({
+    restored = {
         key: value
         for key, value in settings_payload.items()
         if key in _ALLOWED_KEYS and value not in (None, "")
-    })
+    }
+    set_request_runtime_settings(restored)
+
+    # If the cookie carries a blob token, reset the vector store singleton so the
+    # next call builds BlobVectorStore with the restored token.  On a cold Vercel
+    # start the cache may already hold an InMemoryVectorStore (built by an earlier
+    # unauthenticated request); clearing it here costs one store rebuild but
+    # ensures durable Blob-backed retrieval for all authenticated requests.
+    # BlobVectorStore is stateless on init (all data lives in Vercel Blob), so no
+    # indexed documents are lost by this reset.
+    if restored.get("blob_read_write_token"):
+        try:
+            import app.rag.vector_store as _vs_mod
+            _vs_mod.get_vector_store.cache_clear()
+            _vs_mod.invalidate_doc_cache()
+        except Exception:
+            pass
+
     return True
 
 

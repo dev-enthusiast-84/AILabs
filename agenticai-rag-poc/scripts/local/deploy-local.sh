@@ -33,6 +33,14 @@
 
 set -euo pipefail
 
+# ── Cross-platform setsid shim ────────────────────────────────────────────────
+# setsid (Linux) detaches a process into a new session so it survives terminal
+# close and is isolated from the parent's process group.  macOS ships without
+# setsid; backgrounding with & achieves the same isolation for our use case.
+if ! command -v setsid > /dev/null 2>&1; then
+    setsid() { "$@"; }
+fi
+
 # ── Colours ───────────────────────────────────────────────────────────────────
 NC='\033[0m'; BOLD='\033[1m'
 CYAN='\033[0;36m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'

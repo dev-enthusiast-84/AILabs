@@ -2,7 +2,7 @@
 
 > [← Home](README.md) · [← Project](project/PROJECT.md) · [Operational Limits](deployment/DEPLOY-LIMITS.md)
 
-Architectural decisions, trade-offs, and known limitations. Retrieval and reranking decisions → [Retrieval & Reranking](project/CHALLENGES-RETRIEVAL.md). Hard operational limits → [Operational Limits](deployment/DEPLOY-LIMITS.md). Testing challenges → [Testing Challenges](testing/TESTING-CHALLENGES.md).
+Architectural decisions, trade-offs, and known limitations. Retrieval and reranking decisions → [Retrieval & Reranking](project/CHALLENGES-RETRIEVAL.md). Agent pipeline implementation challenges → [Agent Pipeline Challenges](project/CHALLENGES-AGENT-PIPELINE.md). Hard operational limits → [Operational Limits](deployment/DEPLOY-LIMITS.md). Testing challenges → [Testing Challenges](testing/TESTING-CHALLENGES.md).
 
 ---
 
@@ -41,6 +41,8 @@ Provider credentials must be available at runtime but must not appear in logs, r
 - API responses use masked sources; raw keys are never returned.
 - Settings UI is role-aware: guests configure keys exactly once per session; admins update without restriction.
 
+**Billable parameter isolation:** Credentials, cost-shaping model choices, and deployment infrastructure config each follow a different env-fallback policy in production. Full classification, per-node model fallback chain, Vercel cross-instance persistence via encrypted cookie, and the `reranker_judge_model` guard fix are documented in [Billable Parameter Isolation](security/SECURITY.md#billable-parameter-isolation-runtimesettings_storepy).
+
 **Test isolation:** Unit and integration tests run without real credentials using mocks. Live tests (`backend/tests/live/`) require real keys and are excluded from standard CI.
 
 ---
@@ -77,7 +79,7 @@ The in-process async job store enforces TTL-based expiry (job TTL 900 s, artifac
 ## Known Limitations
 
 - **OpenAI dependency:** All embedding and generation require an OpenAI-compatible key; no offline fallback.
-- **Vercel upload cap:** Admin uploads limited to 4 MB (serverless body constraint); 20 MB locally/Docker.
+- **Vercel upload cap:** Admin batch total limited to 4 MB (serverless body constraint); 20 MB locally/Docker.
 - **Reranker on Vercel:** Cross-encoder (`sentence-transformers` ~80 MB) disabled; `llm-judge` used instead. Semantic chunker falls back to recursive if `langchain-experimental` absent. See [Environment Variables Reference](deployment/DEPLOY-LOCAL-ENV.md) for all optional dep defaults.
 - **In-memory/Blob vector stores:** `memory` is tests-only; `blob` is a small demo/fallback only.
 - **Live/Ragas tests:** Require external services (OpenAI, Pinecone) and are excluded from standard CI.

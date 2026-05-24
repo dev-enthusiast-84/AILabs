@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import { useAuthStore } from '@/store/authStore'
-import type { LoginRequest, TokenResponse, DocumentListResponse, DocumentMetadataResponse, DocumentChunksResponse, DocumentContentResponse, UploadResponse, QueryRequest, QueryResponse, SettingsResponse, SettingsUpdateRequest, GuardrailRule, GuardrailRuleCreate, GuardrailRuleUpdate, GuardrailCheckRequest, GuardrailCheckResponse, RagasScores, ChatVoiceExportRequest, ChatVoiceExportResponse, ChatVoiceExportAcceptedResponse, ChatVoiceExportJobResponse, TranscriptRedactionRequest, TranscriptRedactionResponse } from '@/types'
+import type { LoginRequest, TokenResponse, DocumentListResponse, DocumentMetadataResponse, DocumentChunksResponse, DocumentContentResponse, DocumentSuggestionsResponse, UploadResponse, QueryRequest, QueryResponse, SettingsResponse, SettingsUpdateRequest, GuardrailRule, GuardrailRuleCreate, GuardrailRuleUpdate, GuardrailCheckRequest, GuardrailCheckResponse, RagasScores, ChatVoiceExportRequest, ChatVoiceExportResponse, ChatVoiceExportAcceptedResponse, ChatVoiceExportJobResponse, TranscriptRedactionRequest, TranscriptRedactionResponse } from '@/types'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 const SESSION_COMPAT_HEADER = 'x-app-session-compatibility'
@@ -117,6 +117,12 @@ export const documentsApi = {
   },
   getMetadata: async (): Promise<DocumentMetadataResponse> => {
     const res = await http.get<DocumentMetadataResponse>('/documents/metadata')
+    return res.data
+  },
+  getSuggestions: async (files: string[]): Promise<DocumentSuggestionsResponse> => {
+    const params = new URLSearchParams()
+    files.forEach((f) => params.append('files', f))
+    const res = await http.get<DocumentSuggestionsResponse>(`/documents/suggestions?${params.toString()}`)
     return res.data
   },
 }

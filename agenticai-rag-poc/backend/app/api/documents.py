@@ -2,7 +2,7 @@ import structlog
 import time
 from pathlib import Path
 from typing import Literal
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 from slowapi import Limiter
@@ -10,9 +10,11 @@ from slowapi.util import get_remote_address
 
 from app.core.audit import audit_event
 from app.auth.utils import get_current_user, is_token_revoked, require_full_access
+from app.runtime.runtime_settings_cookie import restore_runtime_settings_from_cookie
 from app.auth.models import UserInDB
 from app.config import get_settings
 from app.core.errors import SafeAppError, safe_app_error_from_exception
+from app.runtime.settings_store import get_effective_api_key
 from app.guardrails.safety import validate_filename
 from app.rag.chunking import chunk_text
 from app.rag.file_store import (
@@ -355,11 +357,18 @@ async def upload_document(
 ):
     """Upload and index a document (PDF, TXT, CSV, Excel).
 
-    Any authenticated user may upload. Guests are limited to 2 MB per file and
-    {guest_upload_rate_limit_per_minute} uploads/minute per IP; admins are exempt
-    from the upload rate limit. All content undergoes basic safety validation
-    (magic bytes, executable detection, script injection) before indexing (OWASP A04).
+    Any authenticated user may upload. Guests are limited to 3 MB per file and
+    {guest_upload_rate_limit_per_minute} uploads/minute per IP; admins are limited
+    to 20 MB total per batch (enforced client-side) with a per-file server-side
+    fallback check. Admins are exempt from the upload rate limit. All content
+    undergoes basic safety validation (magic bytes, executable detection, script
+    injection) before indexing (OWASP A04).
     """
+    # Restore settings saved via the UI (e.g. OpenAI key) from the encrypted
+    # httponly cookie. Required on Vercel where each invocation is a fresh process
+    # with no shared memory — the module-level _runtime_api_key global is empty.
+    restore_runtime_settings_from_cookie(request, user)
+
     safe_name = validate_filename(file.filename or "upload")
     source_key = _document_source_key(safe_name, user)
 
@@ -483,6 +492,11 @@ async def upload_document(
         scan_upload(safe_name, content, extracted_text=text)  # stored injection
         docs = chunk_text(text, metadata=_document_metadata(safe_name, source_key, user))
         manifest_chunks = _chunks_from_docs(docs)
+        if not get_effective_api_key():
+            raise SafeAppError(
+                "openai_provider_error",
+                public_message="OpenAI API key is not configured. Add it in Settings before uploading.",
+            )
         ids = add_documents(docs)
         try:
             save_file(source_key, content)
@@ -588,6 +602,99 @@ async def get_documents_metadata(user=Depends(require_full_access)):
         ))
 
     return DocumentMetadataResponse(documents=items, count=len(items))
+
+
+class DocumentSuggestionsResponse(BaseModel):
+    suggestions: list[str]
+
+
+@router.get("/suggestions", response_model=DocumentSuggestionsResponse)
+async def get_document_suggestions(
+    files: list[str] = Query(default=[]),
+    _user: UserInDB = Depends(get_current_user),
+):
+    """Generate LLM-based answerable questions from uploaded documents.
+
+    With 1 file: returns up to 4 diverse questions about that document.
+    With 2-4 files: returns exactly 1 question per file, each grounded in that
+    file's specific content — so each walkthrough query slot covers a distinct doc.
+
+    Returns an empty list when the LLM is not configured or content is insufficient.
+    Read-only; any authenticated user (OWASP A01 — same access as /content).
+    """
+    if not files:
+        return DocumentSuggestionsResponse(suggestions=[])
+
+    from app.runtime.settings_store import get_effective_api_key, get_effective_model
+    api_key = get_effective_api_key()
+    if not api_key:
+        return DocumentSuggestionsResponse(suggestions=[])
+
+    target_files = files[:4]
+
+    # Build per-doc content snippets
+    doc_snippets: list[str] = []
+    for filename in target_files:
+        try:
+            safe_name = validate_filename(filename)
+            source_key = _document_source_key(safe_name, _user)
+            chunks = _load_document_chunks_for_display(source_key)
+            if chunks:
+                doc_snippets.append("\n".join(chunks[:8])[:800])
+        except Exception:
+            continue
+
+    if not doc_snippets:
+        return DocumentSuggestionsResponse(suggestions=[])
+
+    try:
+        import json
+        from langchain_core.messages import HumanMessage
+        from langchain_openai import ChatOpenAI as _ChatOpenAI
+
+        llm = _ChatOpenAI(
+            model=get_effective_model(),
+            temperature=0.0,
+            openai_api_key=api_key,
+            max_tokens=400,
+        )
+
+        if len(doc_snippets) == 1:
+            # Single doc: generate 4 diverse answerable questions from it.
+            prompt = (
+                "Based on the document content below, generate exactly 4 specific questions "
+                "that a user could ask and receive a clear, factual answer from this document. "
+                "Each question must be directly and fully answerable from the content shown. "
+                "Return ONLY a JSON array of 4 question strings, nothing else.\n\n"
+                f"Document content:\n{doc_snippets[0]}"
+            )
+        else:
+            # Multiple docs: generate exactly 1 answerable question per document so
+            # each demo query slot covers a different document's content.
+            n = len(doc_snippets)
+            sections = "\n\n".join(
+                f"Document {i + 1}:\n{snippet}"
+                for i, snippet in enumerate(doc_snippets)
+            )
+            prompt = (
+                f"Below are excerpts from {n} different documents. "
+                f"For each document, generate exactly 1 specific question that is directly "
+                f"and fully answerable from THAT document's content. "
+                f"Return ONLY a JSON array of exactly {n} question strings in the same order "
+                f"as the documents, nothing else.\n\n{sections}"
+            )
+
+        result = llm.invoke([HumanMessage(content=prompt)])
+        raw = result.content.strip()
+        if raw.startswith("```"):
+            raw = "\n".join(raw.split("\n")[1:])
+            raw = raw.rsplit("```", 1)[0].strip()
+        parsed = json.loads(raw)
+        suggestions = [str(q) for q in parsed if isinstance(q, str) and q.strip()][:4]
+    except Exception:
+        suggestions = []
+
+    return DocumentSuggestionsResponse(suggestions=suggestions)
 
 
 @router.get("/{filename}/chunks", response_model=DocumentChunksResponse)

@@ -76,7 +76,7 @@ Written for the five core capabilities that existed at onboarding time — descr
 
 | Capability | Location | Key scenarios |
 |------------|----------|--------------|
-| Document ingestion | `.specify/specs/document-ingestion/` | Admin uploads PDF/TXT/CSV/XLSX; guests blocked; 20 MB cap |
+| Document ingestion | `.specify/specs/document-ingestion/` | Admin uploads PDF/TXT/CSV/XLSX; guests blocked; 20 MB total per batch |
 | RAG agent pipeline | `.specify/specs/rag-agent-pipeline/` | Planner rewrites query; Generator produces grounded answer; Validator checks faithfulness |
 | JWT auth tiers | `.specify/specs/auth-tiers/` | Admin bcrypt login; guest 15-min token; write endpoints → 403 for guest |
 | Content guardrails | `.specify/specs/content-guardrails/` | XSS stripped; injection blocked; filename traversal rejected |

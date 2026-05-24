@@ -1,24 +1,41 @@
-# Slim runtime dependencies for Vercel Services.
-# Full local/test dependencies live in requirements-dev.txt.
+# Production runtime — Vercel backend (Pinecone vector store, no ChromaDB).
+# Heavy optional deps, test tools, and local-only packages → requirements-dev.txt.
 fastapi==0.115.6
 python-multipart==0.0.20
 pydantic==2.10.6
-pydantic-settings==2.7.1
+pydantic-settings==2.14.1
 python-dotenv==1.0.1
+
+# Auth
 python-jose[cryptography]==3.3.0
 bcrypt==4.3.0
-langchain==0.3.18
-langchain-core==0.3.86
-langchain-openai==0.3.6
-langchain-community==0.3.17
+
+# LangChain ecosystem — kept in sync with requirements-dev.txt
+langchain==1.3.1
+langchain-openai==1.2.2
+langchain-community==0.4.2
+langchain-text-splitters==1.1.2
+langgraph==1.2.1
+langgraph-checkpoint==4.1.1
+langsmith==0.8.5
+
+# OpenAI
+openai==2.38.0
+
+# Vector store — production uses Pinecone (Vercel has no persistent filesystem for ChromaDB)
 pinecone>=5.0.0
-langgraph==0.2.73
-openai==1.61.1
+
+# Document processing — pypdf only (pymupdf is too large for Vercel; kept in dev)
 pypdf==5.1.0
 pandas==2.2.3
 openpyxl==3.1.5
+
+# Hybrid search
 rank-bm25==0.2.2
+
+# Security & rate limiting
 slowapi==0.1.9
 bleach==6.2.0
+
+# Logging
 structlog==25.1.0
-vercel==0.5.6
