@@ -838,6 +838,103 @@ class TestRerankerNode:
         assert result["reranker_latency_ms"] == 0
         assert len(result["retrieved_docs"]) == original_count  # unchanged
 
+    def test_reranker_llm_judge_reorders_and_truncates(self):
+        """llm-judge reranker scores chunks via LLM and keeps top reranker_top_k."""
+        from app.agents.rag_agent import reranker_node
+        from langchain_core.documents import Document
+
+        docs = [
+            Document(page_content=f"doc {i}", metadata={"source": "f.txt", "raw_chunk": f"doc {i}"})
+            for i in range(4)
+        ]
+        state = _base_agent_state()
+        state["retrieved_docs"] = docs
+        state["retrieved_context"] = "ctx"
+
+        mock_scores_obj = MagicMock()
+        mock_scores_obj.scores = [2, 9, 4, 7]  # doc 1 best, doc 3 second
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = mock_scores_obj
+
+        with patch("app.agents.rag_agent.get_effective_reranker_type", return_value="llm-judge"), \
+             patch("app.agents.rag_agent.get_effective_reranker_judge_model", return_value="gpt-4.1-mini"), \
+             patch("app.agents.rag_agent.get_effective_api_key", return_value="sk-test"), \
+             patch("app.agents.rag_agent.settings") as mock_s, \
+             patch("app.agents.rag_agent.ChatOpenAI", return_value=MagicMock(
+                 with_structured_output=MagicMock(return_value=mock_llm)
+             )), \
+             patch("app.agents.rag_agent.format_context", return_value="reranked ctx"):
+            mock_s.reranker_top_k = 2
+            result = reranker_node(state)
+
+        assert result["chunks_after_rerank"] == 2
+        assert result["retrieved_docs"][0].page_content == "doc 1"
+        assert result["retrieved_docs"][1].page_content == "doc 3"
+        assert "llm-judge" in result["messages"][0].content
+
+    def test_reranker_llm_judge_falls_back_on_llm_error(self):
+        """When llm-judge call raises, reranker returns docs[:top_k] unchanged."""
+        from app.agents.rag_agent import reranker_node
+        from langchain_core.documents import Document
+
+        docs = [
+            Document(page_content=f"doc {i}", metadata={"source": "f.txt", "raw_chunk": f"doc {i}"})
+            for i in range(4)
+        ]
+        state = _base_agent_state()
+        state["retrieved_docs"] = docs
+        state["retrieved_context"] = "ctx"
+
+        mock_llm = MagicMock()
+        mock_llm.invoke.side_effect = Exception("API timeout")
+
+        with patch("app.agents.rag_agent.get_effective_reranker_type", return_value="llm-judge"), \
+             patch("app.agents.rag_agent.get_effective_reranker_judge_model", return_value="gpt-4.1-mini"), \
+             patch("app.agents.rag_agent.get_effective_api_key", return_value="sk-test"), \
+             patch("app.agents.rag_agent.settings") as mock_s, \
+             patch("app.agents.rag_agent.ChatOpenAI", return_value=MagicMock(
+                 with_structured_output=MagicMock(return_value=mock_llm)
+             )):
+            mock_s.reranker_top_k = 2
+            result = reranker_node(state)
+
+        # Fallback: returns first top_k docs unchanged; pipeline is never stalled
+        assert result["chunks_after_rerank"] == 2
+        assert result["retrieved_docs"][0].page_content == "doc 0"
+        assert result["retrieved_docs"][1].page_content == "doc 1"
+
+    def test_reranker_llm_judge_wrong_score_count_falls_back(self):
+        """When judge returns wrong number of scores, falls back to first top_k docs."""
+        from app.agents.rag_agent import reranker_node
+        from langchain_core.documents import Document
+
+        docs = [
+            Document(page_content=f"doc {i}", metadata={"source": "f.txt", "raw_chunk": f"doc {i}"})
+            for i in range(4)
+        ]
+        state = _base_agent_state()
+        state["retrieved_docs"] = docs
+        state["retrieved_context"] = "ctx"
+
+        mock_scores_obj = MagicMock()
+        mock_scores_obj.scores = [9, 8]  # only 2 scores for 4 docs
+
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = mock_scores_obj
+
+        with patch("app.agents.rag_agent.get_effective_reranker_type", return_value="llm-judge"), \
+             patch("app.agents.rag_agent.get_effective_reranker_judge_model", return_value="gpt-4.1-mini"), \
+             patch("app.agents.rag_agent.get_effective_api_key", return_value="sk-test"), \
+             patch("app.agents.rag_agent.settings") as mock_s, \
+             patch("app.agents.rag_agent.ChatOpenAI", return_value=MagicMock(
+                 with_structured_output=MagicMock(return_value=mock_llm)
+             )):
+            mock_s.reranker_top_k = 2
+            result = reranker_node(state)
+
+        assert result["chunks_after_rerank"] == 2
+        assert result["retrieved_docs"][0].page_content == "doc 0"
+
 
 # ── Features 4+6 telemetry in AgentTrace ─────────────────────────────────────
 

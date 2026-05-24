@@ -1,6 +1,6 @@
 # Vercel Deployment: Advanced Options
 
-> [← Home](README.md) · [Vercel Deployment](deployment/DEPLOY-VERCEL.md) · [Local & Docker](deployment/DEPLOY-LOCAL.md)
+> [← Home](README.md) · [← Deployment](deployment/DEPLOYMENT.md) · [Vercel](deployment/DEPLOY-VERCEL.md)
 
 Teardown, redeployment, and backend hosting alternatives for frontend-only mode.
 

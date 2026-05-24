@@ -1,6 +1,6 @@
 # SDD Workflow
 
-> [← Home](README.md)
+> [← Home](README.md) · [← Project](project/PROJECT.md)
 
 Spec-Kit Spec-Driven Development — every feature starts with a written spec committed before any implementation code.
 

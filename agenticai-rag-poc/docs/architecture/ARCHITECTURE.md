@@ -4,6 +4,11 @@
 
 System design, data flow, ingestion pipeline, and project structure.
 
+## In This Section
+
+- **[Agent Pipeline](architecture/AGENT-PIPELINE.md)** — All 7 nodes, HyDE, RRF fusion, self-RAG grader, reranker, retry loop, and limitations
+- **[Project Structure](architecture/ARCHITECTURE-STRUCTURE.md)** — Annotated directory layout and module boundaries
+
 ---
 
 ## System Overview
@@ -100,13 +105,7 @@ Pinecone uses serverless indexes (cosine metric). The index is auto-created on f
 
 ## Project Structure
 
-Full annotated directory layout → [Project Structure](architecture/ARCHITECTURE-STRUCTURE.md).
-
-Key paths:
-- `backend/app/agents/rag_agent.py` — LangGraph 7-node StateGraph
-- `backend/app/guardrails/` — safety.py, store.py, engine.py
-- `frontend/src/components/chat/` — ChatToolbar, ChatMessageList, ChatComposer
-- `frontend/src/components/RagasDashboardModal.tsx` — Ragas quality metrics panel
+Full annotated directory layout and module boundaries → [Project Structure](architecture/ARCHITECTURE-STRUCTURE.md).
 
 ---
 
@@ -114,6 +113,3 @@ Key paths:
 
 Voice export supports sync (inline audio) and async (202 + job_id) modes. The frontend polls `GET /api/chat/voice/export/jobs/{job_id}` every ~3 seconds until status reaches `succeeded` or a terminal state, with a 120-second timeout. Small non-production exports return audio inline in the same response (synchronous path). Production deployments, explicitly deferred requests (`defer: true`), and large transcripts return `202 Accepted` with a job descriptor; the polling loop in `ChatToolbar` resolves the artifact and triggers download once the job completes.
 
----
-
-See [Agent Pipeline](architecture/AGENT-PIPELINE.md) for full node details, search features, limitations, and engineering challenges.

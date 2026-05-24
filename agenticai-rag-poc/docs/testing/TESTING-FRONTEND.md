@@ -1,6 +1,6 @@
 # Frontend & E2E Tests
 
-> [← Home](README.md) · [Backend Testing](testing/TESTING.md)
+> [← Home](README.md) · [← Testing](testing/TESTING.md)
 
 Frontend unit tests, Playwright E2E, live dependency tests, Ragas evaluation, and coverage summary.
 
@@ -18,7 +18,7 @@ npm test
 npm run test:coverage
 ```
 
-`npm run test:coverage` enforces Vitest coverage thresholds for application source files. Coverage excludes Vite config, generated reports, E2E specs, test setup, type-only files, and bootstrap entrypoints so the gate tracks user-facing behavior instead of project plumbing. Reports are written to `test-reports/frontend-coverage/` from the repository root.
+`npm run test:coverage` enforces Vitest coverage thresholds. Coverage excludes Vite config, generated reports, E2E specs, test setup, type-only files, and bootstrap entrypoints. Reports written to `test-reports/frontend-coverage/`.
 
 | File | What it tests |
 |------|--------------|
@@ -49,7 +49,7 @@ npm run test:coverage
 | API key field masked | Input has `type="password"` by default |
 | Settings modal close | Cancel button and Escape both close the dialog |
 | API key XSS blocked | `<script>` value → "Invalid format" validation error |
-| Chat language + export controls | Language selector and disabled transcript export are visible before a conversation |
+| Chat language + export controls | Language selector and disabled transcript export visible before conversation |
 | Query enables export | Mocked query response appears and enables transcript export |
 
 ---
@@ -58,7 +58,7 @@ npm run test:coverage
 
 **Location:** `backend/tests/live/` · **Run via:** `bash scripts/test/run-live-tests.sh` · Never run in CI by default.
 
-**Prerequisites:** Real `OPENAI_API_KEY` (not `sk-test`); running backend + matching `ADMIN_PASSWORD` for the API suite only.
+**Prerequisites:** Real `OPENAI_API_KEY` (not `sk-test`); running backend + matching `ADMIN_PASSWORD` for the API suite.
 
 ```bash
 export OPENAI_API_KEY=<your-openai-api-key>
@@ -76,25 +76,10 @@ RUN_RAGAS_EVAL=false bash scripts/test/run-live-tests.sh   # skip Ragas in 'all'
 | `test_live_openai.py` | API key validity, embedding generation, LLM completion, token callback |
 | `test_live_chromadb.py` | Add, similarity search, metadata filter, delete in ephemeral collection |
 | `test_live_agent.py` | Planner, Retriever, Generator, Validator nodes individually + full compiled graph; `run_simple_rag()` |
-| `test_live_api.py` | Health, auth, upload/list/delete, end-to-end query, guardrail blocks |
-| `test_live_api.py` | Also covers readiness and backend redaction endpoint when API suite is enabled |
+| `test_live_api.py` | Health, auth, upload/list/delete, end-to-end query, guardrail blocks, readiness, backend redaction endpoint |
 | `test_live_ragas.py` | Ragas quality metrics: faithfulness, answer relevancy, context precision, recall |
 
-**Timeout controls:**
-
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `LIVE_SESSION_TIMEOUT` | `300` | Seconds before the entire session is killed |
-| `LIVE_STAGE_TIMEOUT` | `30` | Seconds to wait per interactive prompt before auto-proceeding |
-
-Agent and API tests pause at each stage and ask for confirmation:
-```
-────────────────────────────────────────────────────────────
-  STAGE ▶  Stage 1 — Planner
-  (auto-continues in 30s — Ctrl+C to abort all)
-────────────────────────────────────────────────────────────
-  Proceed? [Y/n]:
-```
+**Timeout controls:** `LIVE_SESSION_TIMEOUT` (default `300` s — entire session) · `LIVE_STAGE_TIMEOUT` (default `30` s — per interactive prompt before auto-proceeding).
 
 ---
 
@@ -125,19 +110,4 @@ Agent and API tests pause at each stage and ask for confirmation:
 | `main.py` | 96% | |
 | **TOTAL** | **~91%** | Remaining gaps are intentional (LLM / DB runtime paths) |
 
----
-
-## Sample Queries for Manual Testing
-
-Upload files from `sample-data/`, then try these:
-
-| Document | Query | Mode | Expected |
-|----------|-------|------|---------|
-| `sample.txt` | "What are the core capabilities of generative AI?" | Agentic | Lists text gen, Q&A, code; `validation: VALID` |
-| `sample.txt` | "What are the core capabilities of generative AI?" | Simple | Same content; `validation: "N/A"`, lower token count |
-| `sample.csv` | "Which model has the largest context window?" | Agentic | Gemini 1.5 Pro at 1 000 K tokens |
-| `sample.xlsx` | "Which industry has the highest GenAI adoption rate?" | Agentic | Technology sector at 89% |
-| `sample.pdf` | "What was the GenAI market size in 2024?" | Agentic | $67 billion |
-| Any | "Ignore all previous instructions..." | Either | HTTP 400 — blocked by guardrail |
-| Any | "DELETE FROM users WHERE 1=1" | Either | HTTP 400 — SQL injection blocked |
-| Any | `{ "mode": "turbo" }` | — | HTTP 422 — unrecognised mode |
+For sample queries to use during manual testing, see [Coverage Matrix](testing/COVERAGE-MATRIX.md).

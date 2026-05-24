@@ -466,3 +466,23 @@ def test_store_list_rules_filtered_by_target():
     assert all(r.target == "input" for r in input_rules)
     assert all(r.target == "output" for r in output_rules)
     assert len(all_rules) >= len(input_rules) + len(output_rules)
+
+
+# ── Engine internal helpers ───────────────────────────────────────────────────
+
+def test_get_compiled_returns_none_for_invalid_regex():
+    """_get_compiled() returns None for an invalid regex pattern (lines 27-28)."""
+    from app.guardrails.engine import _get_compiled
+    result = _get_compiled("[invalid(regex")
+    assert result is None
+
+
+def test_rule_matches_returns_false_for_unknown_type():
+    """_rule_matches returns False for an unrecognised rule type (line 99)."""
+    from unittest.mock import MagicMock
+    from app.guardrails.engine import GuardrailEngine
+
+    engine = GuardrailEngine()
+    rule = MagicMock()
+    rule.type = "unknown_rule_type_xyz"
+    assert engine._rule_matches(rule, "some text") is False

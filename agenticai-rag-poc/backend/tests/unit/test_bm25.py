@@ -115,3 +115,25 @@ class TestBM25Search:
         # Normalized: max_score=0 → handled, returns something (may be empty or all 0-score docs)
         # The implementation treats max_score=0 as 1.0 normalization → scores all 0.0
         assert isinstance(results, list)
+
+    def test_bm25_cache_hit_on_same_corpus(self):
+        """Second call with the same corpus reuses the cached index (line 48)."""
+        # Force a fresh module import so we start with a clean _bm25_cache regardless
+        # of what the test_missing_rank_bm25_returns_empty_with_warning test left behind.
+        if "app.rag.bm25" in sys.modules:
+            del sys.modules["app.rag.bm25"]
+        import app.rag.bm25 as bm25_mod
+        from app.rag.bm25 import bm25_search
+
+        assert bm25_mod._bm25_cache is None  # fresh module starts cold
+
+        docs = [_make_doc("cache hit test document alpha"), _make_doc("cache hit test document beta")]
+
+        # First call builds the BM25 index and warms the cache.
+        bm25_search("cache hit test", docs, k=2)
+        assert bm25_mod._bm25_cache is not None
+        first_index = bm25_mod._bm25_cache[1]  # the BM25Okapi object
+
+        # Second call with the same corpus must reuse the cached index.
+        bm25_search("cache hit test", docs, k=2)
+        assert bm25_mod._bm25_cache[1] is first_index  # same object, not rebuilt

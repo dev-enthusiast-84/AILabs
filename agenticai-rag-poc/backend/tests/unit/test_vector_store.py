@@ -680,3 +680,230 @@ class TestMetadataFilter:
         assert admin_doc in result
         assert guest_doc not in result
         set_retrieval_metadata_filter(None)  # cleanup
+
+
+# ── _cosine_similarity zero-norm edge case ────────────────────────────────────
+
+class TestCosineSimilarity:
+    def test_zero_norm_a_returns_zero(self):
+        """Vector of all zeros (norm=0) must return 0.0, not divide-by-zero."""
+        from app.rag.vector_store import _cosine_similarity
+        assert _cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
+
+    def test_zero_norm_b_returns_zero(self):
+        from app.rag.vector_store import _cosine_similarity
+        assert _cosine_similarity([1.0, 0.0], [0.0, 0.0]) == 0.0
+
+    def test_identical_vectors_return_one(self):
+        from app.rag.vector_store import _cosine_similarity
+        assert abs(_cosine_similarity([1.0, 1.0], [1.0, 1.0]) - 1.0) < 1e-9
+
+
+# ── _is_chroma_schema_corruption additional patterns ─────────────────────────
+
+class TestChromaSchemaCorruptionDetection:
+    def test_blob_sql_type_pattern(self):
+        """'blob' + 'sql type' in message is treated as schema corruption."""
+        from app.rag.vector_store import _is_chroma_schema_corruption
+        exc = Exception("metadata BLOB column mismatched SQL type INTEGER")
+        assert _is_chroma_schema_corruption(exc) is True
+
+    def test_segment_reader_pattern(self):
+        """'segment reader' in message is treated as schema corruption."""
+        from app.rag.vector_store import _is_chroma_schema_corruption
+        exc = Exception("segment reader: could not open index")
+        assert _is_chroma_schema_corruption(exc) is True
+
+    def test_mismatched_types_pattern(self):
+        """'mismatched types' in message is treated as schema corruption."""
+        from app.rag.vector_store import _is_chroma_schema_corruption
+        exc = Exception("mismatched types in chroma segment")
+        assert _is_chroma_schema_corruption(exc) is True
+
+    def test_unrelated_error_not_flagged(self):
+        from app.rag.vector_store import _is_chroma_schema_corruption
+        exc = Exception("connection refused")
+        assert _is_chroma_schema_corruption(exc) is False
+
+
+# ── _try_recover_chroma_schema ────────────────────────────────────────────────
+
+class TestTryRecoverChromaSchema:
+    def test_deletes_persist_dir_and_clears_cache(self):
+        """Recovery deletes the persist dir and calls get_vector_store.cache_clear."""
+        import app.rag.vector_store as vs_mod
+        with patch("app.rag.vector_store.settings") as mock_settings, \
+             patch("shutil.rmtree") as mock_rmtree, \
+             patch("app.rag.vector_store.logger"), \
+             patch.object(vs_mod.get_vector_store, "cache_clear", create=True) as mock_cc:
+            mock_settings.chroma_persist_dir = "/tmp/test_chroma"
+            vs_mod._try_recover_chroma_schema()
+        mock_rmtree.assert_called_once_with("/tmp/test_chroma", ignore_errors=True)
+        mock_cc.assert_called_once()
+
+    def test_handles_rmtree_exception(self):
+        """Exception from shutil.rmtree is caught and an error is logged."""
+        import app.rag.vector_store as vs_mod
+        with patch("app.rag.vector_store.settings") as mock_settings, \
+             patch("shutil.rmtree", side_effect=OSError("disk error")), \
+             patch("app.rag.vector_store.logger"), \
+             patch.object(vs_mod.get_vector_store, "cache_clear", create=True):
+            mock_settings.chroma_persist_dir = "/tmp/test_chroma"
+            vs_mod._try_recover_chroma_schema()  # must not raise
+
+    def test_skips_rmtree_when_no_persist_dir(self):
+        """When persist_dir is falsy, shutil.rmtree must not be called."""
+        import app.rag.vector_store as vs_mod
+        with patch("app.rag.vector_store.settings") as mock_settings, \
+             patch("shutil.rmtree") as mock_rmtree, \
+             patch.object(vs_mod.get_vector_store, "cache_clear", create=True):
+            mock_settings.chroma_persist_dir = ""
+            vs_mod._try_recover_chroma_schema()
+        mock_rmtree.assert_not_called()
+
+
+# ── add_documents auto-recovery on ChromaDB schema corruption ─────────────────
+
+class TestAddDocumentsAutoRecovery:
+    def test_auto_recovers_on_chroma_schema_corruption(self):
+        """add_documents retries once after schema-corruption recovery."""
+        import app.rag.vector_store as vs_mod
+        from langchain_core.documents import Document
+
+        doc = Document(page_content="test", metadata={"source": "a.txt"})
+        corrupt_exc = Exception("mismatched types in chroma segment")
+
+        mock_store_bad = MagicMock()
+        mock_store_bad.add_documents.side_effect = corrupt_exc
+
+        mock_store_good = MagicMock()
+        mock_store_good.add_documents.return_value = ["id-1"]
+
+        store_iter = iter([mock_store_bad, mock_store_good])
+
+        with patch("app.rag.vector_store.get_vector_store", side_effect=lambda: next(store_iter)), \
+             patch("app.rag.vector_store._vector_store_type", return_value="chroma"), \
+             patch("app.rag.vector_store._try_recover_chroma_schema") as mock_recover:
+            result = vs_mod.add_documents([doc])
+
+        mock_recover.assert_called_once()
+        assert result == ["id-1"]
+
+    def test_non_corruption_error_is_reraised(self):
+        """add_documents re-raises non-corruption Chroma errors immediately."""
+        import app.rag.vector_store as vs_mod
+        from langchain_core.documents import Document
+
+        doc = Document(page_content="test", metadata={"source": "b.txt"})
+        mock_store = MagicMock()
+        mock_store.add_documents.side_effect = RuntimeError("network timeout")
+
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="chroma"):
+            with pytest.raises(RuntimeError, match="network timeout"):
+                vs_mod.add_documents([doc])
+
+
+# ── has_documents blob/pinecone and memory branches ──────────────────────────
+
+class TestHasDocumentsBlobAndMemory:
+    def test_has_documents_blob_delegates_to_store(self):
+        """has_documents() calls store.has_documents() for blob stores."""
+        mock_store = MagicMock()
+        mock_store.has_documents.return_value = True
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="blob"):
+            from app.rag.vector_store import has_documents
+            assert has_documents() is True
+        mock_store.has_documents.assert_called_once()
+
+    def test_has_documents_pinecone_delegates_to_store(self):
+        mock_store = MagicMock()
+        mock_store.has_documents.return_value = False
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="pinecone"):
+            from app.rag.vector_store import has_documents
+            assert has_documents() is False
+
+    def test_has_documents_memory_checks_store_attribute(self):
+        """has_documents() returns bool(store.store) for InMemoryVectorStore."""
+        mock_store = MagicMock()
+        mock_store.store = {"id-1": {"text": "chunk"}}
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="memory"):
+            from app.rag.vector_store import has_documents
+            assert has_documents() is True
+
+    def test_has_documents_memory_empty_returns_false(self):
+        mock_store = MagicMock()
+        mock_store.store = {}
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="memory"):
+            from app.rag.vector_store import has_documents
+            assert has_documents() is False
+
+
+# ── Module-level blob/pinecone delegate branches ─────────────────────────────
+
+class TestBlobPineconeDelegates:
+    """The blob/pinecone branch of each module-level function just delegates to the store."""
+
+    def test_list_document_sources_blob_delegates(self):
+        mock_store = MagicMock()
+        mock_store.list_document_sources.return_value = ["a.txt", "b.pdf"]
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="blob"):
+            from app.rag.vector_store import list_document_sources
+            assert list_document_sources() == ["a.txt", "b.pdf"]
+        mock_store.list_document_sources.assert_called_once()
+
+    def test_document_exists_pinecone_delegates(self):
+        mock_store = MagicMock()
+        mock_store.document_exists.return_value = True
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="pinecone"):
+            from app.rag.vector_store import document_exists
+            assert document_exists("report.pdf") is True
+        mock_store.document_exists.assert_called_once_with("report.pdf")
+
+    def test_fetch_all_documents_blob_delegates(self):
+        from langchain_core.documents import Document
+        mock_store = MagicMock()
+        mock_store.get_all_documents.return_value = [Document(page_content="x", metadata={})]
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="blob"):
+            from app.rag.vector_store import _fetch_all_documents_from_db
+            docs = _fetch_all_documents_from_db()
+        assert len(docs) == 1
+        mock_store.get_all_documents.assert_called_once()
+
+    def test_get_document_chunks_pinecone_delegates(self):
+        mock_store = MagicMock()
+        mock_store.get_document_chunks.return_value = ["chunk A", "chunk B"]
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="pinecone"):
+            from app.rag.vector_store import get_document_chunks
+            chunks = get_document_chunks("doc.pdf")
+        assert chunks == ["chunk A", "chunk B"]
+        mock_store.get_document_chunks.assert_called_once_with("doc.pdf")
+
+    def test_delete_document_blob_delegates(self):
+        mock_store = MagicMock()
+        mock_store.delete_document.return_value = 3
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="blob"):
+            from app.rag.vector_store import delete_document
+            assert delete_document("old.txt") == 3
+        mock_store.delete_document.assert_called_once_with("old.txt")
+
+    def test_get_document_content_calls_chunks_and_stitch(self):
+        """get_document_content() chains get_document_chunks + _stitch_chunks."""
+        mock_store = MagicMock()
+        mock_store.get_document_chunks.return_value = ["hello world", "world foo"]
+        with patch("app.rag.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.rag.vector_store._vector_store_type", return_value="pinecone"), \
+             patch("app.rag.vector_store.settings") as mock_settings:
+            mock_settings.chunk_overlap = 0
+            from app.rag.vector_store import get_document_content
+            content = get_document_content("doc.pdf")
+        assert "hello world" in content

@@ -1,10 +1,17 @@
-# Backend Testing
+# Testing
 
-> [← Home](README.md) · [Frontend & E2E Tests](testing/TESTING-FRONTEND.md)
+> [← Home](README.md)
 
-Unit and integration test suite for the FastAPI backend. All tests run without real LLM or network calls.
+Unit, integration, frontend, and live test suites. All deterministic tests run without real LLM or network calls.
 
-For the enterprise guardrail/redaction/isolation map, see [Coverage Matrix](testing/COVERAGE-MATRIX.md).
+## Testing Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [Integration Tests](testing/TESTING-INTEGRATION.md) | Isolation patterns, test files, and production hardening coverage |
+| [Frontend & E2E](testing/TESTING-FRONTEND.md) | Playwright, live dependency tests, Ragas evaluation, coverage summary |
+| [Testing Challenges](testing/TESTING-CHALLENGES.md) | Live test prerequisites, ChromaDB reset, determinism constraints |
+| [Coverage Matrix](testing/COVERAGE-MATRIX.md) | Guardrail, redaction, and role/session isolation coverage map |
 
 ---
 
@@ -33,9 +40,6 @@ cd backend && pytest tests/unit/ -v
 cd backend && pytest tests/integration/ -v
 cd backend && pytest tests/unit/test_auth.py::test_authenticate_user_success -v
 
-# Coverage report
-cd backend && pytest --cov=app --cov-report=html
-
 # Frontend unit tests
 cd frontend && npm test
 
@@ -45,15 +49,13 @@ bash scripts/test/run-tests.sh
 # Full suite including E2E (both servers must be running)
 RUN_E2E=true bash scripts/test/run-tests.sh
 
-# Makefile shortcuts
-make test           # backend unit + integration
-make test-frontend  # frontend Vitest
-make test-e2e       # Playwright (requires servers running)
 ```
+
+**Makefile:** `make test` (backend unit+integration) · `make test-frontend` · `make test-e2e` (requires servers running)
 
 ## Quality Gates
 
-The deterministic quality workflow runs on pull requests that touch backend, frontend, or workflow files. It does not require live OpenAI, Pinecone, Blob, LangSmith, Vercel, browser microphone, or local `.env` credentials.
+Runs on PRs touching backend, frontend, or workflow files — no live credentials needed.
 
 ```bash
 # Backend checks used by CI
@@ -91,14 +93,9 @@ Test only pure functions — no I/O, no network, no LLM calls.
 | `test_startup.py` | `_print_startup_banner` shown in `development`, suppressed in `production` and `test` |
 | `test_vector_store_memory.py` | In-memory vector store add, search, delete, list |
 
-**Key patterns:**
+**Key pattern — `_build_users` raises if `ADMIN_PASSWORD` unset:**
 
 ```python
-# Settings override — avoids reading backend/.env in tests
-def _s(**kwargs) -> Settings:
-    return Settings(admin_password="x", **kwargs)
-
-# _build_users raises if ADMIN_PASSWORD unset
 def test_build_users_raises_when_password_unset():
     mock_s = MagicMock()
     mock_s.admin_password = ""
@@ -111,48 +108,12 @@ def test_build_users_raises_when_password_unset():
 
 ## Backend Integration Tests
 
-**Location:** `backend/tests/integration/`
+**Location:** `backend/tests/integration/` — full HTTP stack tests with mocked providers.
 
-Uses FastAPI's `TestClient` to exercise the full HTTP stack — middleware, routing, auth guards, response schemas — without real LLM or embedding calls.
+See [Backend Integration Tests](testing/TESTING-INTEGRATION.md) for isolation patterns, test file descriptions, and production hardening coverage map.
 
-### Isolation
+---
 
-`backend/conftest.py` uses pytest session hooks to patch `get_vector_store` before any app module is imported:
+## Live Dependency Tests
 
-```python
-def pytest_sessionstart(session):
-    if not _LIVE_MODE:
-        _vs_patch.start()   # replaces ChromaDB with MagicMock for the entire session
-```
-
-Agent calls in query tests are additionally patched per test:
-
-```python
-with patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT):
-    resp = client.post("/api/query/", ...)
-```
-
-> **Important:** Fixtures that call `POST /api/auth/login` or `POST /api/auth/guest` must be `scope="session"`. Per-test calls exhaust the 30 req/min rate limit.
-
-### Integration Test Files
-
-| File | What it tests |
-|------|--------------|
-| `test_api_auth.py` | Login success/failure, guest token, JWT expiry, rate limiting |
-| `test_api_documents.py` | Upload (all formats), list, delete, size limits, guest restrictions, content safety, duplicate rejection (409) |
-| `test_api_guardrails.py` | CRUD for rules, guest read-only, admin-only writes, regex validation |
-| `test_api_query.py` | Query success, injection blocking, guest/admin isolation, simple vs agentic mode, multilingual retrieval/generation separation, output flagging |
-| `test_api_settings.py` | Get/set OpenAI/Pinecone/Blob/LangSmith settings, role restrictions, guest one-time lock, Ragas trigger |
-| `test_api_voice_export.py` | Backend-authoritative transcript redaction, audio export redaction, guest-scoped API key use, clear export failures |
-| `test_api_readiness.py` | Safe readiness status for app config, OpenAI, vector store, file store, and export capability |
-| `test_api_ragas.py` | Admin-only Ragas evaluation flow and degraded dependency handling |
-
-### Production Hardening Coverage
-
-| Concern | Tests |
-|---------|-------|
-| Role/session document isolation | `test_guest_list_excludes_admin_documents`, `test_admin_list_excludes_guest_documents`, `test_query_guest_user_cannot_query_admin_documents` |
-| Settings permissions | `test_guest_cannot_update_*`, `test_guest_can_update_pinecone_settings_once`, `test_guest_can_update_blob_token_once` |
-| Backend export redaction | `test_voice_redact_endpoint_returns_authoritative_redacted_transcript`, `test_voice_export_returns_redacted_playable_mp3_payload` |
-| Multilingual retrieval quality | `test_query_accepts_language_without_polluting_agent_retrieval_question`, `test_query_simple_language_instruction_kept_out_of_retrieval_question` |
-| Safe audit/readiness | `test_audit_event_redacts_sensitive_metadata`, `test_global_exception_log_omits_sensitive_exception_message`, `test_readiness_reports_components_without_secrets` |
+**Location:** `backend/tests/live/` — opt-in, not in CI. Full run commands → [Frontend & E2E Tests](testing/TESTING-FRONTEND.md); prerequisites and ChromaDB reset → [Testing Challenges](testing/TESTING-CHALLENGES.md).

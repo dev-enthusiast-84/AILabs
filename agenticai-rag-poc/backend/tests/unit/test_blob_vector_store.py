@@ -241,3 +241,83 @@ class TestBlobPayloadCache:
         assert BlobVectorStore._payload_cache is None, (
             "Payload cache must be cleared after delete_document"
         )
+
+
+# ── Additional BlobVectorStore edge-case coverage ─────────────────────────────
+
+def test_list_blob_paths_pagination(monkeypatch):
+    """_list_blob_paths() follows the cursor when has_more=True (line 194)."""
+    import vercel.blob as blob
+    from types import SimpleNamespace
+    from app.rag.vector_store import BlobVectorStore
+    from unittest.mock import MagicMock
+
+    page1 = SimpleNamespace(
+        blobs=[SimpleNamespace(pathname="test/p1.json")],
+        has_more=True,
+        cursor="cursor-abc",
+    )
+    page2 = SimpleNamespace(
+        blobs=[SimpleNamespace(pathname="test/p2.json")],
+        has_more=False,
+        cursor=None,
+    )
+    call_count = []
+
+    def fake_list_objects(prefix, cursor=None, limit=1000):
+        call_count.append(cursor)
+        return page1 if cursor is None else page2
+
+    monkeypatch.setattr(blob, "list_objects", fake_list_objects)
+
+    store = BlobVectorStore(MagicMock(), prefix="test/")
+    paths = store._list_blob_paths()
+
+    assert paths == ["test/p1.json", "test/p2.json"]
+    assert call_count == [None, "cursor-abc"]
+
+
+def test_load_payload_returns_none_on_failure(monkeypatch):
+    """_load_payload() returns None when blob.get fails (line 202)."""
+    import vercel.blob as blob
+    from types import SimpleNamespace
+    from app.rag.vector_store import BlobVectorStore
+    from unittest.mock import MagicMock
+
+    # status_code != 200 → return None
+    monkeypatch.setattr(blob, "get", lambda path, **kw: SimpleNamespace(status_code=404, content=b""))
+
+    store = BlobVectorStore(MagicMock(), prefix="test/")
+    assert store._load_payload("test/missing.json") is None
+
+
+def test_load_payload_returns_none_when_get_returns_none(monkeypatch):
+    """_load_payload() returns None when blob.get returns None."""
+    import vercel.blob as blob
+    from app.rag.vector_store import BlobVectorStore
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(blob, "get", lambda path, **kw: None)
+
+    store = BlobVectorStore(MagicMock(), prefix="test/")
+    assert store._load_payload("test/gone.json") is None
+
+
+def test_get_all_documents_returns_document_objects(monkeypatch):
+    """BlobVectorStore.get_all_documents() maps payloads to Document objects (line 266)."""
+    from unittest.mock import patch, MagicMock
+    from app.rag.vector_store import BlobVectorStore
+
+    fake_payloads = [
+        {"id": "1", "text": "hello", "metadata": {"source": "a.txt"}, "embedding": [0.1]},
+        {"id": "2", "text": "world", "metadata": {"source": "b.txt"}, "embedding": [0.2]},
+    ]
+
+    store = BlobVectorStore(MagicMock(), prefix="test/")
+    with patch.object(BlobVectorStore, "_load_payloads", return_value=fake_payloads):
+        docs = store.get_all_documents()
+
+    assert len(docs) == 2
+    assert docs[0].page_content == "hello"
+    assert docs[0].metadata["source"] == "a.txt"
+    assert docs[1].page_content == "world"

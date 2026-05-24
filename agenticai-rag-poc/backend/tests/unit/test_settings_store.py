@@ -6,6 +6,7 @@ from app.runtime.settings_store import (
     ALLOWED_MODELS,
     ALLOWED_RERANKER_TYPES,
     ALLOWED_CHUNKER_TYPES,
+    ALLOWED_JUDGE_MODELS,
     validate_api_key,
     validate_model,
     validate_retriever_k,
@@ -23,6 +24,7 @@ from app.runtime.settings_store import (
     validate_pinecone_region,
     validate_blob_read_write_token,
     validate_reranker_type,
+    validate_reranker_judge_model,
     validate_chunker_type,
     validate_chunk_size,
     validate_chunk_overlap,
@@ -56,6 +58,7 @@ from app.runtime.settings_store import (
     get_effective_retriever_hybrid_bm25,
     get_effective_relevance_grader_enabled,
     get_effective_reranker_type,
+    get_effective_reranker_judge_model,
     get_effective_chunker_type,
     get_effective_chunk_size,
     get_effective_chunk_overlap,
@@ -100,6 +103,7 @@ def production_settings(**overrides):
         "retriever_hybrid_bm25": True,
         "relevance_grader_enabled": False,
         "reranker_type": "none",
+        "reranker_judge_model": "gpt-4.1-mini",
         "chunker_type": "recursive",
         "chunk_size": 800,
         "chunk_overlap": 100,
@@ -131,6 +135,7 @@ def reset_runtime_settings(monkeypatch):
         "_runtime_retriever_hybrid_bm25": None,
         "_runtime_relevance_grader_enabled": None,
         "_runtime_reranker_type": None,
+        "_runtime_reranker_judge_model": "",
         "_runtime_chunker_type": None,
         "_runtime_chunk_size": None,
         "_runtime_chunk_overlap": None,
@@ -1346,6 +1351,61 @@ def test_validate_chunk_overlap_exceeds_chunk_size():
 def test_allowed_reranker_types_frozenset():
     assert "none" in ALLOWED_RERANKER_TYPES
     assert "cross-encoder" in ALLOWED_RERANKER_TYPES
+
+
+# ── Judge model validation ─────────────────────────────────────────────────────
+
+def test_validate_reranker_judge_model_valid():
+    assert validate_reranker_judge_model("gpt-4.1-mini") == "gpt-4.1-mini"
+    assert validate_reranker_judge_model("gpt-4.1-nano") == "gpt-4.1-nano"
+    assert validate_reranker_judge_model("gpt-4.1") == "gpt-4.1"
+
+
+def test_validate_reranker_judge_model_strips_whitespace():
+    assert validate_reranker_judge_model("  gpt-4.1-mini  ") == "gpt-4.1-mini"
+
+
+def test_validate_reranker_judge_model_empty_raises():
+    with pytest.raises(ValueError, match="must not be empty"):
+        validate_reranker_judge_model("")
+
+
+def test_validate_reranker_judge_model_invalid_raises():
+    with pytest.raises(ValueError, match="not allowed"):
+        validate_reranker_judge_model("gpt-5-turbo")
+
+
+def test_validate_reranker_judge_model_pipeline_models_rejected():
+    """Pipeline models must not be allowed as judge models — circular reasoning guard."""
+    with pytest.raises(ValueError, match="not allowed"):
+        validate_reranker_judge_model("gpt-4o-mini")
+    with pytest.raises(ValueError, match="not allowed"):
+        validate_reranker_judge_model("gpt-4o")
+
+
+def test_allowed_judge_models_frozenset():
+    assert "gpt-4.1-mini" in ALLOWED_JUDGE_MODELS
+    assert "gpt-4.1-nano" in ALLOWED_JUDGE_MODELS
+    assert "gpt-4.1" in ALLOWED_JUDGE_MODELS
+    # Must not overlap with pipeline-selectable models (circular reasoning guard)
+    assert "gpt-4o-mini" not in ALLOWED_JUDGE_MODELS
+    assert "gpt-4o" not in ALLOWED_JUDGE_MODELS
+
+
+def test_get_effective_reranker_judge_model_falls_back_to_config(monkeypatch):
+    """When no runtime override, returns config default (gpt-4.1-mini)."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_reranker_judge_model", "")
+    assert get_effective_reranker_judge_model() == "gpt-4.1-mini"
+
+
+def test_get_effective_reranker_judge_model_returns_runtime_value(monkeypatch):
+    """After apply_runtime_settings(reranker_judge_model='gpt-4.1-nano'), returns that model."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_reranker_judge_model", "")
+    apply_runtime_settings(reranker_judge_model="gpt-4.1-nano")
+    assert get_effective_reranker_judge_model() == "gpt-4.1-nano"
+    monkeypatch.setattr(store, "_runtime_reranker_judge_model", "")
 
 
 def test_allowed_chunker_types_frozenset():

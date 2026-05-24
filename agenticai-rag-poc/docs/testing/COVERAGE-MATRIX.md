@@ -1,6 +1,6 @@
 # Coverage Matrix
 
-> [Home](README.md) · [Backend Testing](testing/TESTING.md) · [Frontend & E2E Tests](testing/TESTING-FRONTEND.md)
+> [← Home](README.md) · [← Testing](testing/TESTING.md)
 
 Deterministic coverage map for the pending `005-enterprise-production-hardening` slice. These checks use mocked providers or local test doubles; they do not require live OpenAI, Pinecone, Blob, browser microphone permission, or deployment credentials.
 
@@ -40,8 +40,25 @@ Deterministic coverage map for the pending `005-enterprise-production-hardening`
 | FR-021 / SC-009 | Audio export | `frontend/tests/unit/ChatInterface.test.tsx::offers audio export for voice-only chat and sends structured messages for backend redaction`; backend audio synthesis input redaction tests |
 | FR-021 / SC-009 | Degraded dependency path | Backend readiness/export failure tests: `test_voice_export_missing_api_key_returns_clear_error`, `test_voice_export_timeout_returns_safe_retry_message`, `test_upload_indexing_failure_returns_503`, and readiness degraded dependency tests in `test_api_readiness.py` |
 
+## Sample Queries for Manual Testing
+
+Upload files from `sample-data/`, then try these:
+
+| Document | Query | Mode | Expected |
+|----------|-------|------|---------|
+| `sample.txt` | "What are the core capabilities of generative AI?" | Agentic | Lists text gen, Q&A, code; `validation: VALID` |
+| `sample.txt` | "What are the core capabilities of generative AI?" | Simple | Same content; `validation: "N/A"`, lower token count |
+| `sample.csv` | "Which model has the largest context window?" | Agentic | Gemini 1.5 Pro at 1 000 K tokens |
+| `sample.xlsx` | "Which industry has the highest GenAI adoption rate?" | Agentic | Technology sector at 89% |
+| `sample.pdf` | "What was the GenAI market size in 2024?" | Agentic | $67 billion |
+| Any | "Ignore all previous instructions..." | Either | HTTP 400 — blocked by guardrail |
+| Any | "DELETE FROM users WHERE 1=1" | Either | HTTP 400 — SQL injection blocked |
+| Any | `{ "mode": "turbo" }` | — | HTTP 422 — unrecognised mode |
+
+---
+
 ## Notes
 
 - Async export polling, cancellation, owner scoping, retry, timeout, and artifact expiration are covered by backend integration tests. Frontend behavior remains deterministic through mocked unit/E2E flows.
-- Additional no-paid-service production-hardening recommendations and cloud extension points are tracked in `docs/project/SPEC-005-COMPLIANCE.md`.
+- Additional no-paid-service production-hardening recommendations and cloud extension points are tracked in [Future Enhancements](project/POTENTIAL-ENTERPRISE-GRADE-FUTURE-ENHANCEMENTS.md).
 - Live provider coverage remains opt-in under the live test suite and is not required for this matrix.

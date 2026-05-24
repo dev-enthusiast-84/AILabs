@@ -41,6 +41,7 @@ def production_settings(**overrides):
         "relevance_grader_enabled": False,
         "ragas_evaluation_enabled": False,
         "reranker_type": "none",
+        "reranker_judge_model": "gpt-4.1-mini",
         "chunker_type": "recursive",
         "chunk_size": 800,
         "chunk_overlap": 100,
@@ -83,6 +84,7 @@ def reset_runtime_settings(monkeypatch):
         "_runtime_relevance_grader_enabled": None,
         "_runtime_ragas_evaluation_enabled": None,
         "_runtime_reranker_type": None,
+        "_runtime_reranker_judge_model": "",
         "_runtime_chunker_type": None,
         "_runtime_chunk_size": None,
         "_runtime_chunk_overlap": None,
@@ -695,6 +697,7 @@ def test_update_langchain_tracing_without_key_logs_warning(client, auth_headers)
         mock_settings.return_value.retriever_hybrid_bm25 = True
         mock_settings.return_value.relevance_grader_enabled = False
         mock_settings.return_value.reranker_type = "none"
+        mock_settings.return_value.reranker_judge_model = "gpt-4.1-mini"
         mock_settings.return_value.chunker_type = "recursive"
         mock_settings.return_value.chunk_size = 800
         mock_settings.return_value.chunk_overlap = 100
@@ -1143,6 +1146,64 @@ def test_update_reranker_type_invalid(client, auth_headers):
     )
     assert resp.status_code == 422
     assert "reranker_type" in str(resp.json())
+
+
+def test_update_reranker_judge_model_valid(client, auth_headers, monkeypatch):
+    """POST reranker_judge_model='gpt-4.1-nano' should succeed and be reflected in response."""
+    import app.runtime.settings_store as store
+    monkeypatch.setattr(store, "_runtime_reranker_judge_model", "")
+
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"reranker_judge_model": "gpt-4.1-nano"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["reranker_judge_model"] == "gpt-4.1-nano"
+    assert "gpt-4.1-mini" in resp.json()["allowed_judge_models"]
+    assert "gpt-4.1-nano" in resp.json()["allowed_judge_models"]
+    assert "gpt-4.1" in resp.json()["allowed_judge_models"]
+
+    monkeypatch.setattr(store, "_runtime_reranker_judge_model", "")
+
+
+def test_update_reranker_judge_model_invalid_raises(client, auth_headers):
+    """POST reranker_judge_model with a pipeline model (gpt-4o-mini) should return 422."""
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"reranker_judge_model": "gpt-4o-mini"}
+    )
+    assert resp.status_code == 422
+    assert "reranker_judge_model" in str(resp.json())
+
+
+def test_update_reranker_judge_model_unknown_model_raises(client, auth_headers):
+    """POST reranker_judge_model with an unknown model should return 422."""
+    resp = client.post(
+        "/api/settings/", headers=auth_headers, json={"reranker_judge_model": "gpt-99"}
+    )
+    assert resp.status_code == 422
+    assert "reranker_judge_model" in str(resp.json())
+
+
+def test_settings_response_includes_judge_model_fields(client, auth_headers):
+    """GET /api/settings/ response includes reranker_judge_model and allowed_judge_models."""
+    resp = client.get("/api/settings/", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "reranker_judge_model" in body
+    assert "allowed_judge_models" in body
+    assert body["reranker_judge_model"] == "gpt-4.1-mini"
+    # Pipeline models must not be in the judge model allowlist
+    assert "gpt-4o-mini" not in body["allowed_judge_models"]
+    assert "gpt-4o" not in body["allowed_judge_models"]
+
+
+def test_guest_cannot_set_reranker_judge_model(client, guest_headers, monkeypatch):
+    """Guests are blocked from setting reranker_judge_model (admin-only pipeline setting)."""
+    resp = client.post(
+        "/api/settings/",
+        headers=guest_headers,
+        json={"reranker_judge_model": "gpt-4.1-nano"},
+    )
+    assert resp.status_code == 403
 
 
 def test_update_chunker_type_valid(client, auth_headers, monkeypatch):

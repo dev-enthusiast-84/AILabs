@@ -1,6 +1,6 @@
 # Guardrails API Reference
 
-> [← Home](README.md) · [Guardrails](security/GUARDRAILS.md) · [API Reference](api/API.md)
+> [← Home](README.md) · [← Security](security/SECURITY.md) · [Guardrails](security/GUARDRAILS.md)
 
 curl examples and rule schema for managing guardrail rules via the REST API.
 

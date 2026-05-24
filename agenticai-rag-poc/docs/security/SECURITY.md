@@ -4,6 +4,12 @@
 
 OWASP Top 10 controls, authentication, input validation, upload safety, and secrets management.
 
+## Security Documentation
+
+- **[Content Guardrails](security/GUARDRAILS.md)** — Rule types (block/redact/flag), built-in rules, creating and managing custom rules
+- **[Guardrails API](security/GUARDRAILS-API.md)** — curl examples and complete rule schema for REST API management
+- **[Production Hardening](security/SECURITY-HARDENING.md)** — Runtime hardening beyond the OWASP baseline: typed error isolation, timing mitigations
+
 ---
 
 ## OWASP Top 10 Coverage
@@ -35,9 +41,7 @@ OWASP Top 10 controls, authentication, input validation, upload safety, and secr
 | Guest expiry | 15 minutes (`GUEST_TOKEN_EXPIRE_MINUTES`) |
 | JTI | UUID4 in every token — enforces guest one-time settings gate |
 
-**Password storage:** bcrypt (`passlib CryptContext`). Plaintext never stored after hashing; hash lives in `_USERS` dict built from `ADMIN_PASSWORD` at process start.
-
-**Guest role enforcement:** Endpoints blocked for guests apply `require_full_access`, which reads `role` from the decoded JWT and returns HTTP 403 with a fixed message — same message regardless of whether the token is missing, expired, or guest-scoped (prevents role enumeration).
+**Password storage:** bcrypt; plaintext never stored. **Guest enforcement:** `require_full_access` returns HTTP 403 with a uniform message regardless of token state (missing, expired, or guest-scoped) — prevents role enumeration.
 
 ---
 
@@ -57,6 +61,7 @@ Filename inputs pass through `validate_filename()`: rejects `..`, `/`, `\`, null
 
 | Check | What it catches |
 |-------|----------------|
+| **Early peek check** | First bytes read *before* any vector-store I/O: empty files → 422; Windows PE (`MZ`) / ELF / shell-script executable headers → 422. Fires even when the vector store is degraded (503), so validation errors are never masked by infrastructure failures. |
 | **Extension allowlist** | Only `pdf`, `txt`, `csv`, `xlsx`, `xls` accepted |
 | **Magic-byte validation** | File content checked against declared MIME type |
 | **ZIP-bomb detection** | Decompressed size capped at 100 MB |
@@ -65,17 +70,11 @@ Filename inputs pass through `validate_filename()`: rejects `..`, `/`, `\`, null
 
 ### Stored Prompt-Injection Protection
 
-All uploaded files are scanned with regex patterns in `rag/scanner.py` before indexing. Content matching known injection patterns (e.g., `ignore previous instructions`, `[INST]`, `###instruction`) is rejected with HTTP 422 before it reaches the vector store. This scan runs on both the raw file bytes and the extracted text after ingestion.
+All uploaded files are scanned with regex patterns in `rag/scanner.py` before indexing. Content matching known injection patterns (e.g., `ignore previous instructions`, `[INST]`, `###instruction`) is rejected with HTTP 422 before it reaches the vector store.
 
 ### ClamAV Integration
 
-If `CLAMAV_HOST` is set, uploaded files are streamed to the ClamAV daemon for malware scanning before indexing. If the daemon is unreachable, scanning is skipped with a logged warning (fail-open for availability). ClamAV is only available in Docker and self-hosted deployments; it cannot run on Vercel serverless functions.
-
----
-
-### Rate Limiting
-
-Rate limiting uses `slowapi` with per-IP counters. On Vercel with multiple serverless instances, rate limit counters are per-instance rather than global across all instances. For high-traffic production deployments, consider replacing the in-process limiter with a Redis-backed rate limiter shared across instances.
+If `CLAMAV_HOST` is set, uploaded files are streamed to the ClamAV daemon for malware scanning before indexing. If the daemon is unreachable, scanning is skipped with a logged warning (fail-open). ClamAV is only available in Docker and self-hosted deployments; it cannot run on Vercel serverless functions.
 
 ---
 
@@ -104,15 +103,11 @@ Set in `vercel.json` (Vercel) and `main.py` middleware (local/Docker):
 | `SECRET_KEY` | `backend/.env` | Generate: `openssl rand -hex 32`; rotate: `redeploy-vercel.sh --secret-key` |
 | `ADMIN_PASSWORD` | `backend/.env` (auto-generated) | Rotate: `redeploy-vercel.sh --admin-password gen` |
 
-- `SECRET_KEY` equal to the insecure default raises `RuntimeError` on startup in non-development.
-- `ADMIN_PASSWORD` unset raises `RuntimeError` at startup.
-- Neither secret is ever written to logs or API responses.
+- `SECRET_KEY` default or `ADMIN_PASSWORD` unset both raise `RuntimeError` at startup (non-development). Neither is ever written to logs or API responses.
 
 ---
 
-## Security Logging
-
-The application uses `structlog` for structured JSON logging. Security-relevant events:
+## Security Logging (structlog)
 
 | Event | Log level | Detail leaked to client |
 |-------|-----------|------------------------|

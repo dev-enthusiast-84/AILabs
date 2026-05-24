@@ -127,3 +127,55 @@ def test_decode_token_rejects_revoked_jti():
         assert exc_info.value.status_code == 401
     finally:
         _utils._revoked_jtis.pop(jti, None)
+
+
+def test_purge_expired_jtis_removes_only_expired():
+    """_purge_expired_jtis() removes entries past their expiry but keeps future ones (line 41)."""
+    import time
+    import app.auth.utils as _utils
+
+    saved = dict(_utils._revoked_jtis)
+    try:
+        _utils._revoked_jtis.clear()
+        past = time.time() - 1
+        future = time.time() + 3600
+        _utils._revoked_jtis["expired-jti"] = past
+        _utils._revoked_jtis["fresh-jti"] = future
+        _utils._purge_expired_jtis()
+        assert "expired-jti" not in _utils._revoked_jtis
+        assert "fresh-jti" in _utils._revoked_jtis
+    finally:
+        _utils._revoked_jtis.clear()
+        _utils._revoked_jtis.update(saved)
+
+
+def test_revoke_token_early_return_for_duplicate():
+    """revoke_token() returns early without re-adding an already-revoked JTI (line 48)."""
+    import time
+    import uuid
+    import app.auth.utils as _utils
+
+    jti = f"dup-{uuid.uuid4()}"
+    future = time.time() + 3600
+    saved = dict(_utils._revoked_jtis)
+    try:
+        _utils._revoked_jtis[jti] = future
+        size_before = len(_utils._revoked_jtis)
+        revoke_token(jti, exp=future)  # second call — must be a no-op
+        assert len(_utils._revoked_jtis) == size_before
+        assert _utils._revoked_jtis[jti] == future  # expiry not modified
+    finally:
+        _utils._revoked_jtis.clear()
+        _utils._revoked_jtis.update(saved)
+
+
+def test_admin_password_fingerprint_empty_when_no_password():
+    """_admin_password_fingerprint returns '' when admin_password is falsy (line 85)."""
+    from unittest.mock import patch, MagicMock
+    import app.auth.utils as _utils
+
+    mock_settings = MagicMock()
+    mock_settings.admin_password = ""
+    with patch.object(_utils, "_current_settings", return_value=mock_settings):
+        result = _utils._admin_password_fingerprint(mock_settings)
+    assert result == ""

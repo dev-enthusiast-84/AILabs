@@ -266,7 +266,8 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
   const [hybridBm25, setHybridBm25] = useState(true)
   const [relevanceGrader, setRelevanceGrader] = useState(false)
   const [ragasAutoEval, setRagasAutoEval] = useState(false)
-  const [rerankerType, setRerankerType] = useState('none')
+  const [rerankerType, setRerankerType] = useState('llm-judge')
+  const [rerankerJudgeModel, setRerankerJudgeModel] = useState('gpt-4.1-mini')
   const [chunkerType, setChunkerType] = useState('recursive')
   const [chunkSize, setChunkSize] = useState(800)
   const [chunkOverlap, setChunkOverlap] = useState(100)
@@ -384,7 +385,8 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
         setHybridBm25(data.retriever_hybrid_bm25 ?? true)
         setRelevanceGrader(data.relevance_grader_enabled ?? false)
         setRagasAutoEval(data.ragas_evaluation_enabled ?? false)
-        setRerankerType(data.reranker_type ?? 'none')
+        setRerankerType(data.reranker_type ?? 'llm-judge')
+        setRerankerJudgeModel(data.reranker_judge_model ?? 'gpt-4.1-mini')
         setChunkerType(data.chunker_type ?? 'recursive')
         setChunkSize(data.chunk_size ?? 800)
         setChunkOverlap(data.chunk_overlap ?? 100)
@@ -478,8 +480,10 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
         payload.relevance_grader_enabled = relevanceGrader
       if (ragasAutoEval !== (current?.ragas_evaluation_enabled ?? false))
         payload.ragas_evaluation_enabled = ragasAutoEval
-      if (rerankerType !== (current?.reranker_type ?? 'none'))
+      if (rerankerType !== (current?.reranker_type ?? 'llm-judge'))
         payload.reranker_type = rerankerType
+      if (rerankerJudgeModel !== (current?.reranker_judge_model ?? 'gpt-4.1-mini'))
+        payload.reranker_judge_model = rerankerJudgeModel
       if (chunkerType !== (current?.chunker_type ?? 'recursive'))
         payload.chunker_type = chunkerType
       if (chunkSize !== (current?.chunk_size ?? 800))
@@ -1181,12 +1185,40 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                         data-testid="reranker-type-select"
                       >
                         <option value="none">none (disabled)</option>
-                        <option value="cross-encoder">cross-encoder (requires sentence-transformers)</option>
+                        <option value="llm-judge">llm-judge (default — OpenAI batch scoring, no extra deps)</option>
+                        <option value="cross-encoder">cross-encoder (requires sentence-transformers, not on Vercel)</option>
                       </select>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        Cross-encoder reranker improves precision but adds ~80 MB model download.
+                        llm-judge uses an OpenAI model to score chunks; cross-encoder adds ~80 MB model download (local/Docker only).
                       </p>
                     </div>
+
+                    {/* LLM Judge model — visible when llm-judge is selected */}
+                    {rerankerType === 'llm-judge' && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">
+                          Judge model
+                        </label>
+                        <select
+                          value={rerankerJudgeModel}
+                          onChange={(e) => setRerankerJudgeModel(e.target.value)}
+                          className="input text-sm"
+                          data-testid="reranker-judge-model-select"
+                        >
+                          {(current?.allowed_judge_models ?? ['gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4.1']).map((m) => (
+                            <option key={m} value={m}>{m} {m === 'gpt-4.1-mini' ? '(default)' : ''}</option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Uses a different model family from the pipeline (gpt-4o-mini) to ensure independent evaluation. gpt-4.1-mini is recommended.
+                        </p>
+                        {current?.is_vercel && (
+                          <p className="text-xs text-amber-600 mt-1 bg-amber-50 rounded px-2 py-1">
+                            On Vercel, this change applies to the current instance only. To make it permanent, set <code className="font-mono">RERANKER_JUDGE_MODEL</code> in your Vercel environment variables and redeploy.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Read-only pipeline config info */}
                     {current?.reranker_top_k != null && (
