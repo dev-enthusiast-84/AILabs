@@ -7,30 +7,7 @@
  * structural / UI-only assertions pass in isolation.
  */
 import { test, expect } from '@playwright/test'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-async function injectAdmin(page: import('@playwright/test').Page) {
-  await page.goto('/login')
-  await page.evaluate(() => {
-    sessionStorage.setItem('auth-store', JSON.stringify({
-      state: { token: 'mock-token', username: 'admin', isGuest: false, guestUploadedDocs: [], guestSettingsUsed: false },
-      version: 0,
-    }))
-  })
-  await page.goto('/')
-}
-
-async function injectGuest(page: import('@playwright/test').Page) {
-  await page.goto('/login')
-  await page.evaluate(() => {
-    sessionStorage.setItem('auth-store', JSON.stringify({
-      state: { token: 'mock-guest-token', username: 'guest', isGuest: true, guestUploadedDocs: [], guestSettingsUsed: false },
-      version: 0,
-    }))
-  })
-  await page.goto('/')
-}
+import { injectAdmin, injectGuest } from './helpers'
 
 // ── Admin: guardrails modal structure ─────────────────────────────────────────
 

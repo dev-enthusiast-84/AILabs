@@ -1,6 +1,12 @@
-# Env files — NEVER commit secrets
+# Env files — NEVER commit secrets.
+# backend/.env holds ADMIN_PASSWORD and SECRET_KEY generated at runtime;
+# it is intentionally excluded from version control.
 .env
+**/.env
 backend/.env
+backend/.env.*
+**/.env.local
+**/.env.*.local
 
 # Python
 __pycache__/
@@ -56,3 +62,9 @@ test-results/
 
 PENDING_TASKS.md
 artifacts/
+
+# Generated — produced by CI (deploy-docs.yml) and `make docs-readme`; do not commit
+docs/README.md
+
+# Submission zip — regenerate with: bash scripts/package-submission.sh
+agentic-rag-poc-submission.zip

@@ -11,7 +11,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "shared" / "chat_languages.json"
-BACKEND_TARGET = ROOT / "backend" / "app" / "chat_languages.py"
+BACKEND_TARGET = ROOT / "backend" / "app" / "core" / "chat_languages.py"
 FRONTEND_TARGET = ROOT / "frontend" / "src" / "lib" / "chatLanguages.ts"
 
 

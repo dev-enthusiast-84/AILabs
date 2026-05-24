@@ -11,16 +11,18 @@
 #     agent     — agentic pipeline (planner/retriever/generator/validator) + simple RAG (6 stages total)
 #     api       — end-to-end HTTP tests (requires a running backend)
 #     ragas     — Ragas quality metrics (faithfulness, answer relevancy, context precision, recall)
-#     all       — all suites in order (ragas skipped unless SKIP_RAGAS_EVAL=false)
+#     all       — all suites in order (set RUN_RAGAS_EVAL=false to skip Ragas)
 #
 # KEY ENVIRONMENT VARIABLES
 #   OPENAI_API_KEY          (required) your real OpenAI key
 #   LIVE_SESSION_TIMEOUT    seconds before the whole session is killed (default 300)
 #   LIVE_STAGE_TIMEOUT      seconds to wait for each interactive prompt  (default 30)
+#   LIVE_TEST_TIMEOUT       pytest per-test timeout in seconds (default 90; must exceed LIVE_STAGE_TIMEOUT)
 #   LIVE_QUESTION           pre-set question so stage prompts are skipped (applies to both agentic and simple RAG stages)
 #   LIVE_BACKEND_URL        URL of a running backend (default http://localhost:8000)
-#   LIVE_AUTO_START_BACKEND set to 'false' to avoid auto-starting localhost backend (default true)
-#   SKIP_API_TESTS          set to 'true' to skip tests that need a live server
+#   LIVE_AUTO_START_BACKEND set to 'false' to skip auto-starting localhost backend (default true)
+#   RUN_API_TESTS           set to 'false' to skip API tests (default true — requires running backend)
+#   RUN_RAGAS_EVAL          set to 'false' to skip Ragas evaluation (default true — consumes OpenAI tokens)
 #
 # EXAMPLES
 #   export OPENAI_API_KEY=<your-openai-api-key>
@@ -28,7 +30,7 @@
 #
 #   LIVE_QUESTION="What is Retrieval-Augmented Generation and how does it work?" bash run-live-tests.sh agent
 #
-#   LIVE_SESSION_TIMEOUT=600 SKIP_API_TESTS=true bash run-live-tests.sh
+#   LIVE_SESSION_TIMEOUT=600 RUN_API_TESTS=false bash run-live-tests.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -125,7 +127,7 @@ _PWD_INJECTED=false
 
 if [[ ! -f "$_ENV_FILE" && -f "$ROOT/backend/.env.example" ]]; then
   cp "$ROOT/backend/.env.example" "$_ENV_FILE"
-  yellow "⚡ Created backend/.env from backend/.env.example"
+  yellow "! Created backend/.env from backend/.env.example"
 fi
 
 _clear_admin_password() {
@@ -150,28 +152,59 @@ if [[ -z "${ADMIN_PASSWORD:-}" ]]; then
   export ADMIN_PASSWORD
   replace_or_append_env "$_ENV_FILE" "ADMIN_PASSWORD" "$ADMIN_PASSWORD"
   _PWD_INJECTED=true
-  yellow "⚡ Auto-generated ADMIN_PASSWORD written to backend/.env"
-  yellow "   (Re)start the backend server before running API live tests."
+  yellow "! Auto-generated ADMIN_PASSWORD written to backend/.env"
   yellow "   Password will be cleared from backend/.env when this script exits."
+fi
+
+# 2b. SECRET_KEY: load from env/.env or generate once (persisted, never cleared —
+#     rotating would invalidate JWTs but tests generate fresh ones each run).
+if [[ -z "${SECRET_KEY:-}" ]] && [[ -f "$_ENV_FILE" ]]; then
+  _existing_sk="$(grep -m1 '^SECRET_KEY=' "$_ENV_FILE" | cut -d= -f2- || true)"
+  if [[ -n "$_existing_sk" ]]; then
+    export SECRET_KEY="$_existing_sk"
+    green "✓ SECRET_KEY loaded from backend/.env"
+  fi
+fi
+if [[ -z "${SECRET_KEY:-}" ]]; then
+  SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+  export SECRET_KEY
+  replace_or_append_env "$_ENV_FILE" "SECRET_KEY" "$SECRET_KEY"
+  yellow "! Auto-generated SECRET_KEY written to backend/.env (persisted for future runs)"
 fi
 
 # 3. Python venv
 cd "$ROOT/backend"
+_VENV_FRESH=false
 if [[ ! -d ".venv" ]]; then
   cyan "Creating Python virtual environment..."
   python3 -m venv .venv
+  _VENV_FRESH=true
 fi
 
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
-# 4. Dependencies (including pytest-timeout added for live tests)
-cyan "Installing/verifying backend dependencies..."
-pip install -q -r requirements-dev.txt
+# 4. Dependencies — skip install when requirements are unchanged (avoids hanging
+#    on repeated runs when everything is already installed).
+_HASH_FILE=".venv/.requirements-dev.hash"
+_CUR_HASH=$(md5 -q requirements-dev.txt 2>/dev/null \
+  || md5sum requirements-dev.txt 2>/dev/null | cut -d' ' -f1 \
+  || echo "unknown")
+_OLD_HASH=$(cat "$_HASH_FILE" 2>/dev/null || echo "")
 
-# 5. Backend server check (only needed for 'api' or 'all' suites)
+if [[ "$_VENV_FRESH" == "true" || "$_CUR_HASH" != "$_OLD_HASH" || "${REINSTALL_DEPS:-false}" == "true" ]]; then
+  cyan "Installing backend dependencies..."
+  pip install -q -r requirements-dev.txt
+  echo "$_CUR_HASH" > "$_HASH_FILE"
+  green "✓ Backend dependencies installed"
+else
+  green "✓ Backend dependencies up to date (requirements unchanged)"
+fi
+
+# 5. Backend server check (needed for 'api' suite or when RUN_API_TESTS=true)
+#    API tests run by default; set RUN_API_TESTS=false to skip them.
 BACKEND_URL="${LIVE_BACKEND_URL:-http://localhost:8000}"
-SKIP_API="${SKIP_API_TESTS:-false}"
+RUN_API="${RUN_API_TESTS:-true}"
 AUTO_START_BACKEND="${LIVE_AUTO_START_BACKEND:-true}"
 
 _backend_url_host() {
@@ -192,7 +225,8 @@ PYEOF
 }
 
 _backend_reachable() {
-  curl -sf "$BACKEND_URL/api/health" > /dev/null 2>&1
+  # Hard timeouts prevent hanging when a stale process holds the port half-open.
+  curl -sf --connect-timeout 3 --max-time 5 "$BACKEND_URL/api/health" > /dev/null 2>&1
 }
 
 _start_local_backend() {
@@ -208,7 +242,8 @@ _start_local_backend() {
   esac
 
   log_file="$REPORTS/live-backend.log"
-  cyan "Auto-starting backend for API live tests at $BACKEND_URL ..."
+  mkdir -p "$REPORTS"
+  cyan "Auto-starting backend at $BACKEND_URL (log: $log_file) ..."
   (
     cd "$ROOT/backend"
     # shellcheck disable=SC1091
@@ -220,36 +255,65 @@ _start_local_backend() {
 
   max_wait=30
   elapsed=0
+  printf "  Waiting for backend"
   while [[ $elapsed -lt $max_wait ]]; do
     if _backend_reachable; then
-      green "✓ Auto-started backend reachable at $BACKEND_URL"
+      printf "\n"
+      green "✓ Backend reachable at $BACKEND_URL"
       return 0
     fi
     if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-      red "✗ Auto-started backend exited early. Log: $log_file"
+      printf "\n"
+      red "✗ Backend exited early — check $log_file"
       BACKEND_PID=""
       return 1
     fi
+    printf "."
     sleep 1
     ((elapsed++))
   done
 
-  red "✗ Backend did not become reachable within ${max_wait}s. Log: $log_file"
+  printf "\n"
+  red "✗ Backend not reachable after ${max_wait}s — check $log_file"
   cleanup_backend
   return 1
 }
 
-if [[ "$SUITE" == "api" || "$SUITE" == "all" ]] && [[ "$SKIP_API" != "true" ]]; then
+_kill_port_process() {
+  # Kill whatever process is bound to the backend port so we can restart clean.
+  local port
+  port="$(_backend_url_port)"
+  local pids
+  pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    yellow "  Stopping existing process(es) on port $port (pid(s): $pids)..."
+    echo "$pids" | xargs kill -TERM 2>/dev/null || true
+    sleep 2
+    # Force-kill anything still lingering
+    pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
+    [[ -n "$pids" ]] && echo "$pids" | xargs kill -9 2>/dev/null || true
+  fi
+  BACKEND_PID=""
+}
+
+if [[ "$SUITE" == "api" || "$SUITE" == "all" ]] && [[ "$RUN_API" == "true" ]]; then
   if _backend_reachable; then
-    green "✓ Backend reachable at $BACKEND_URL"
+    if [[ "$AUTO_START_BACKEND" == "true" ]]; then
+      # Always restart when we manage the backend — ensures ADMIN_PASSWORD,
+      # SECRET_KEY, and other .env values the script just wrote are picked up.
+      yellow "  Restarting backend to synchronise with current .env (ADMIN_PASSWORD, SECRET_KEY)..."
+      _kill_port_process
+      _start_local_backend || true
+    else
+      green "✓ Backend reachable at $BACKEND_URL"
+    fi
   elif [[ "$AUTO_START_BACKEND" == "true" ]] && _start_local_backend; then
     :
   else
-    yellow "⚠  Backend not reachable at $BACKEND_URL"
-    yellow "   API tests will be auto-skipped."
+    yellow "⚠  Backend not reachable at $BACKEND_URL and auto-start failed."
+    yellow "   API tests will be auto-skipped by the test fixture."
     yellow "   Start it manually with: cd backend && source .venv/bin/activate && uvicorn app.main:app --port 8000"
-    yellow "   Or set LIVE_AUTO_START_BACKEND=true for localhost URLs."
-    yellow "   Set SKIP_API_TESTS=true to suppress this warning and skip the API suite."
+    yellow "   Set RUN_API_TESTS=false to suppress this warning and skip the API suite."
   fi
 fi
 
@@ -274,7 +338,10 @@ run_suite() {
        -o addopts= \
        --no-header \
        --tb=short \
-       --timeout="${LIVE_STAGE_TIMEOUT:-30}" \
+       --timeout="${LIVE_TEST_TIMEOUT:-90}" \
+       -W "ignore::PendingDeprecationWarning" \
+       -W "ignore::DeprecationWarning" \
+       -W "ignore:.*allowed_objects.*" \
        --html="$REPORTS/${report_stem}.html" \
        --self-contained-html \
        -p no:cacheprovider \
@@ -288,15 +355,28 @@ run_suite() {
 }
 
 # ── Export env for child pytest processes ─────────────────────────────────────
+# Suppress deprecation noise before Python starts (PYTHONWARNINGS is processed by
+# the C runtime, before any conftest or -W flag, so it catches warnings that fire
+# during the very first module imports — including langgraph's allowed_objects
+# PendingDeprecationWarning which consistently slips through later filters).
+export PYTHONWARNINGS="ignore::DeprecationWarning,ignore::PendingDeprecationWarning"
 export LIVE_TESTS=1
+# ChromaDB product telemetry — enabled by default so live tests run under real-world
+# conditions (same as production). Set ANONYMIZED_TELEMETRY=false to opt out.
+export ANONYMIZED_TELEMETRY="${ANONYMIZED_TELEMETRY:-true}"
 export LIVE_SESSION_TIMEOUT="${LIVE_SESSION_TIMEOUT:-300}"
 export LIVE_STAGE_TIMEOUT="${LIVE_STAGE_TIMEOUT:-30}"
+export LIVE_TEST_TIMEOUT="${LIVE_TEST_TIMEOUT:-90}"
 export LIVE_BACKEND_URL="$BACKEND_URL"
+# Disable Ragas telemetry to t.explodinggradients.com — intermittent DNS
+# failures against that domain caused spurious test failures.
+export RAGAS_DO_NOT_TRACK=true
 # LIVE_QUESTION is passed through if already set
 
 sep
 bold "Session timeout : ${LIVE_SESSION_TIMEOUT}s"
 bold "Stage timeout   : ${LIVE_STAGE_TIMEOUT}s  (per interactive prompt)"
+bold "Test timeout    : ${LIVE_TEST_TIMEOUT}s  (per test, incl. stage gate)"
 [[ -n "${LIVE_QUESTION:-}" ]] && bold "Question preset : $LIVE_QUESTION"
 sep
 echo ""
@@ -313,8 +393,8 @@ case "$SUITE" in
     run_suite "Agent Pipeline"      "tests/live/test_live_agent.py"   "live-agent"
     ;;
   api)
-    if [[ "$SKIP_API" == "true" ]]; then
-      yellow "⚡ API suite skipped (SKIP_API_TESTS=true)"
+    if [[ "$RUN_API" != "true" ]]; then
+      yellow "! API suite skipped (set RUN_API_TESTS=true to enable)"
     else
       run_suite "End-to-End API"    "tests/live/test_live_api.py"     "live-api"
     fi
@@ -326,17 +406,16 @@ case "$SUITE" in
     run_suite "OpenAI Connectivity" "tests/live/test_live_openai.py"  "live-openai"
     run_suite "ChromaDB Live"       "tests/live/test_live_chromadb.py" "live-chromadb"
     run_suite "Agent Pipeline"      "tests/live/test_live_agent.py"   "live-agent"
-    if [[ "$SKIP_API" == "true" ]]; then
-      yellow "⚡ API suite skipped (SKIP_API_TESTS=true)"
+    if [[ "$RUN_API" != "true" ]]; then
+      yellow "! API suite skipped (set RUN_API_TESTS=true to enable)"
     else
       run_suite "End-to-End API"    "tests/live/test_live_api.py"     "live-api"
     fi
-    # Ragas evaluation is opt-in in the 'all' path because it consumes OpenAI
-    # tokens (100–500 per run). Set SKIP_RAGAS_EVAL=false to include it.
-    if [[ "${SKIP_RAGAS_EVAL:-true}" != "true" ]]; then
+    # Ragas consumes OpenAI tokens (100-500 per run); set RUN_RAGAS_EVAL=false to skip.
+    if [[ "${RUN_RAGAS_EVAL:-true}" == "true" ]]; then
       run_suite "Ragas Evaluation" "tests/live/test_live_ragas.py" "live-ragas"
     else
-      yellow "⚡ Ragas evaluation skipped (set SKIP_RAGAS_EVAL=false to enable)"
+      yellow "! Ragas evaluation skipped (set RUN_RAGAS_EVAL=true to enable)"
     fi
     ;;
   *)

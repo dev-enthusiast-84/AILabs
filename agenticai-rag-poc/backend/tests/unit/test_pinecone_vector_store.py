@@ -81,7 +81,7 @@ class FakeIndex:
 
 def _make_fake_store() -> tuple[_PineconeStore, FakeIndex]:
     """Build a _PineconeStore with a pre-injected FakeIndex, bypassing all SDK calls."""
-    from app.settings_store import get_effective_pinecone_api_key, get_effective_pinecone_index_name
+    from app.runtime.settings_store import get_effective_pinecone_api_key, get_effective_pinecone_index_name
     fake_index = FakeIndex()
     store = _PineconeStore(FakeEmbeddings())
     store._pc_index = fake_index
@@ -282,3 +282,52 @@ def test_pinecone_store_index_auto_created(monkeypatch):
     assert len(create_calls) == 1
     assert create_calls[0]["name"] == "agenticai-rag-poc-documents"
     assert index is not None
+
+
+def test_pinecone_store_index_creation_timeout(monkeypatch):
+    """_get_index raises RuntimeError when the index is not ready within 60 s.
+
+    time.time() is patched to float("inf") so that:
+      - _deadline = inf + 60 = inf
+      - first loop check: inf >= inf → True → raises immediately (no real wait)
+    time.sleep is patched to a no-op as a defensive guard against real sleeps.
+    """
+    import time
+    import app.rag.pinecone_store as ps
+    import pinecone
+
+    class FakePcNeverReady:
+        def list_indexes(self):
+            return []
+
+        def create_index(self, **kwargs):
+            pass
+
+        def describe_index(self, name):
+            return SimpleNamespace(status={"ready": False})
+
+        def Index(self, name):
+            return FakeIndex()
+
+    monkeypatch.setattr(ps, "settings", SimpleNamespace(
+        pinecone_api_key="pc-fake-key",
+        pinecone_index_name="agenticai-rag-poc-documents",
+        pinecone_namespace="",
+        pinecone_cloud="aws",
+        pinecone_region="us-east-1",
+        embedding_model="text-embedding-3-small",
+    ))
+    monkeypatch.setattr(pinecone, "Pinecone", lambda api_key: FakePcNeverReady())
+    monkeypatch.setattr(
+        pinecone, "ServerlessSpec",
+        lambda cloud, region: SimpleNamespace(cloud=cloud, region=region),
+    )
+    # inf >= inf is True, so the first iteration raises without any real wait.
+    monkeypatch.setattr(time, "time", lambda: float("inf"))
+    # Defensive: prevent any real sleep if the loop order ever changes.
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    store = _PineconeStore(FakeEmbeddings())
+    import pytest
+    with pytest.raises(RuntimeError, match="not ready after 60 s"):
+        store._get_index()

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Header from '@/components/Header'
@@ -25,7 +25,12 @@ vi.mock('@/components/GuardrailsModal', () => ({
     open ? <div data-testid="guardrails-modal"><button onClick={onClose}>close-guardrails</button></div> : null,
 }))
 
+vi.mock('@/services/api', () => ({
+  authApi: { logout: vi.fn().mockResolvedValue(undefined) },
+}))
+
 import { useAuthStore, getTokenExpiry } from '@/store/authStore'
+import { authApi } from '@/services/api'
 
 interface AuthState {
   username: string | null
@@ -83,12 +88,23 @@ describe('Header', () => {
     expect(screen.getByLabelText('Sign in for full access')).toBeTruthy()
   })
 
-  it('clicking Sign out calls clearAuth and navigates to /login', () => {
+  it('clicking Sign out calls server logout, then clearAuth and navigates to /login', async () => {
     const clearAuth = vi.fn()
     setAuth({ clearAuth })
     renderHeader()
     fireEvent.click(screen.getByLabelText('Sign out'))
-    expect(clearAuth).toHaveBeenCalled()
+    await waitFor(() => expect(clearAuth).toHaveBeenCalled())
+    expect(authApi.logout).toHaveBeenCalled()
+    expect(mockNavigate).toHaveBeenCalledWith('/login')
+  })
+
+  it('clicking Sign out still clears auth when server logout fails', async () => {
+    vi.mocked(authApi.logout).mockRejectedValueOnce(new Error('network'))
+    const clearAuth = vi.fn()
+    setAuth({ clearAuth })
+    renderHeader()
+    fireEvent.click(screen.getByLabelText('Sign out'))
+    await waitFor(() => expect(clearAuth).toHaveBeenCalled())
     expect(mockNavigate).toHaveBeenCalledWith('/login')
   })
 

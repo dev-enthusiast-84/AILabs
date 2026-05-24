@@ -9,6 +9,7 @@ import {
   ShieldCheckIcon,
 } from '@heroicons/react/24/outline'
 import { useAuthStore, getTokenExpiry } from '@/store/authStore'
+import { authApi } from '@/services/api'
 import SettingsModal from '@/components/SettingsModal'
 import GuardrailsModal from '@/components/GuardrailsModal'
 
@@ -62,8 +63,12 @@ export default function Header({
   const isExpiringSoon = sessionLabel.includes('expired') || /[1-5] min/.test(sessionLabel)
 
   const handleLogout = () => {
-    clearAuth()
-    navigate('/login')
+    authApi.logout().catch(() => {
+      // Ignore server errors — clear local auth and redirect regardless (OWASP A07)
+    }).finally(() => {
+      clearAuth()
+      navigate('/login')
+    })
   }
 
   return (

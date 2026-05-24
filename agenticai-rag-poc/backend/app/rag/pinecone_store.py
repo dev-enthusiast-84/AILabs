@@ -11,7 +11,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
 from app.config import get_settings
-from app.settings_store import (
+from app.runtime.settings_store import (
     get_effective_embedding_model,
     get_effective_pinecone_api_key,
     get_effective_pinecone_cloud,
@@ -84,7 +84,11 @@ class _PineconeStore:
                     region=get_effective_pinecone_region(),
                 ),
             )
+            _deadline = time.time() + 60
             while not pc.describe_index(name).status["ready"]:
+                # >= so that monkeypatching time.time→inf still fires (inf >= inf is True)
+                if time.time() >= _deadline:
+                    raise RuntimeError(f"Pinecone index '{name}' not ready after 60 s")
                 time.sleep(1)
             logger.info("pinecone.index_ready name=%s", name)
         else:

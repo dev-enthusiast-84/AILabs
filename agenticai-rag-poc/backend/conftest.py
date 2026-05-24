@@ -1,6 +1,21 @@
 import os
+import secrets
+import warnings
 from unittest.mock import MagicMock, patch
 import pytest
+
+# Suppress third-party deprecation warnings that are not actionable.
+# These must be registered here — in the root conftest — before any test
+# module or langgraph/langchain_core module is imported.
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+# LangChain/LangGraph allowed_objects change: not actionable until langgraph
+# releases a version that sets the default explicitly.
+warnings.filterwarnings(
+    "ignore",
+    message=r".*allowed_objects.*",
+    category=Warning,
+)
 from fastapi.testclient import TestClient
 
 # ── Live-test guard ────────────────────────────────────────────────────────────
@@ -13,7 +28,9 @@ if not _LIVE_MODE:
     os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only-32ch")
     os.environ.setdefault("APP_ENV", "test")
     os.environ.setdefault("VECTOR_STORE_TYPE", "memory")
-    os.environ.setdefault("ADMIN_PASSWORD", "TestPass@99!")  # test-only credential
+    # Generate a fresh admin password each test session — never hardcoded in source.
+    # 'TestPass' prefix keeps the pre-commit scanner's safe_pattern satisfied.
+    os.environ.setdefault("ADMIN_PASSWORD", f"TestPass_{secrets.token_hex(8)}")
 
 # ── Vector-store mock (unit/integration tests only) ────────────────────────────
 _mock_store = MagicMock()
@@ -26,7 +43,10 @@ _vs_patch = patch("app.rag.vector_store.get_vector_store", return_value=_mock_st
 
 def pytest_sessionstart(session):
     if not _LIVE_MODE:
-        _vs_patch.start()
+        mock_gvs = _vs_patch.start()
+        # Explicitly attach cache_clear so that test-level patches of this attribute
+        # can restore it correctly (patch with create=True deletes it on stop otherwise).
+        mock_gvs.cache_clear = MagicMock()
 
 
 def pytest_sessionfinish(session, exitstatus):

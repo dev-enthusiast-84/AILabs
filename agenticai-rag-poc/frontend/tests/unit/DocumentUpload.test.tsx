@@ -63,19 +63,57 @@ describe('DocumentUpload', () => {
 
   it('shows PDF/CSV/XLSX hint for admin users', () => {
     render(<DocumentUpload onUploaded={vi.fn()} />)
-    expect(screen.getByText(/PDF, TXT, CSV, XLSX/)).toBeTruthy()
+    // Both the dropzone formatNote and the upload-size-hint paragraph mention PDF/TXT/CSV/XLSX
+    const elements = screen.getAllByText(/PDF, TXT, CSV, XLSX/)
+    expect(elements.length).toBeGreaterThanOrEqual(1)
+    // The dedicated upload-size-hint should also be present
+    expect(screen.getByTestId('upload-size-hint')).toBeTruthy()
   })
 
   it('shows TXT-only guest restriction hint', () => {
     setAuth({ isGuest: true })
     render(<DocumentUpload onUploaded={vi.fn()} />)
-    expect(screen.getByText(/TXT only.*guest limit/)).toBeTruthy()
+    // The upload-size-hint shows TXT only for guests
+    const hint = screen.getByTestId('upload-size-hint')
+    expect(hint.textContent).toMatch(/TXT only/)
+  })
+
+  it('shows compact guest upload limit for guest users', () => {
+    setAuth({ isGuest: true })
+    render(<DocumentUpload onUploaded={vi.fn()} />)
+    expect(screen.getByTestId('upload-size-hint').textContent).toMatch(/Max.*MB/)
   })
 
   it('shows guest notice banner for guest users', () => {
     setAuth({ isGuest: true })
     render(<DocumentUpload onUploaded={vi.fn()} />)
-    expect(screen.getByText(/You can upload 1 TXT file/)).toBeTruthy()
+    expect(screen.getByTestId('guest-upload-note')).toBeTruthy()
+    expect(screen.getByTestId('guest-upload-note').textContent).toMatch(/You can upload 1 TXT file/)
+  })
+
+  it('shows dynamic retention hours in guest note when settings provide it', async () => {
+    setAuth({ isGuest: true })
+    vi.mocked(settingsApi.get).mockResolvedValueOnce({
+      api_key_source: 'runtime',
+      vector_store_type: 'chroma',
+      pinecone_api_key_source: 'not_configured',
+      guest_doc_retention_hours: 2,
+      guest_max_upload_size_mb: 3,
+      max_upload_size_mb: 20,
+    } as never)
+    render(<DocumentUpload onUploaded={vi.fn()} />)
+    await waitFor(() => {
+      const note = screen.getByTestId('guest-upload-note')
+      expect(note.textContent).toMatch(/removed after 2 hours/)
+      expect(note.textContent).toMatch(/up to 3 MB/)
+    })
+  })
+
+  it('does not show retention message when settings do not provide guest_doc_retention_hours', () => {
+    setAuth({ isGuest: true })
+    render(<DocumentUpload onUploaded={vi.fn()} />)
+    const note = screen.getByTestId('guest-upload-note')
+    expect(note.textContent).not.toMatch(/removed after/)
   })
 
   it('shows uploading state during upload', async () => {

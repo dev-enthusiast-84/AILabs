@@ -5,6 +5,7 @@ on:
     paths:
       - "backend/**"
       - "frontend/**"
+      - "scripts/**"
       - ".github/workflows/quality.yml"
       - "api/**"
       - "Makefile"
@@ -14,6 +15,7 @@ on:
     paths:
       - "backend/**"
       - "frontend/**"
+      - "scripts/**"
       - ".github/workflows/quality.yml"
       - "api/**"
       - "Makefile"
@@ -82,3 +84,26 @@ jobs:
 
       - name: Run frontend unit coverage gates
         run: npm run test:coverage
+
+  secrets-scan:
+    name: Secrets audit (pre-commit scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Fetch enough history so git diff --cached can be simulated via git diff HEAD
+          fetch-depth: 2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run secrets scanner on all tracked files
+        # In CI there is no index / staged set, so we scan every tracked file directly.
+        # The scanner is invoked in "full-tree" mode via the --ci flag.
+        run: python3 scripts/pre-commit --ci
+
+      - name: Verify pre-commit hook script is valid Python
+        run: python3 -m py_compile scripts/pre-commit

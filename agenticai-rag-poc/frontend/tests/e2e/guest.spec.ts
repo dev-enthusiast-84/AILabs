@@ -11,27 +11,10 @@
  * These tests do NOT require the backend running for structural assertions.
  */
 import { test, expect } from '@playwright/test'
+import { injectGuest } from './helpers'
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-async function injectGuestAuth(page: import('@playwright/test').Page, {
-  guestSettingsUsed = false,
-} = {}) {
-  await page.goto('/login')
-  await page.evaluate((used) => {
-    sessionStorage.setItem('auth-store', JSON.stringify({
-      state: {
-        token: 'mock-guest-token',
-        username: 'guest',
-        isGuest: true,
-        guestUploadedDocs: [],
-        guestSettingsUsed: used,
-      },
-      version: 0,
-    }))
-  }, guestSettingsUsed)
-  await page.goto('/')
-}
+// Alias to match the call-sites below that use guestSettingsUsed option.
+const injectGuestAuth = injectGuest
 
 // ── Login page: guest entry point ─────────────────────────────────────────────
 

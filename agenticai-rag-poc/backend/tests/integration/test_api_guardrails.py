@@ -360,3 +360,54 @@ def test_check_endpoint_sql_injection_blocked(client, auth_headers):
     body = resp.json()
     assert body["allowed"] is False
     assert any(v["rule_id"] == "sql-injection" for v in body["violations"])
+
+
+def test_add_rule_duplicate_raises_409(client, auth_headers, monkeypatch):
+    """When the store raises ValueError on add_rule the endpoint returns 409 (lines 157-158)."""
+    from unittest.mock import MagicMock
+    import app.api.guardrails as guardrails_mod
+
+    mock_store = MagicMock()
+    mock_store.add_rule.side_effect = ValueError("Rule with ID 'x' already exists.")
+    monkeypatch.setattr(guardrails_mod, "get_guardrail_store", lambda: mock_store)
+
+    new_rule = {
+        "name": "conflict-rule",
+        "type": "regex",
+        "target": "input",
+        "action": "block",
+        "severity": "high",
+        "enabled": True,
+        "pattern": r"\bconflict\b",
+    }
+    resp = client.post("/api/guardrails/", headers=auth_headers, json=new_rule)
+    assert resp.status_code == 409
+
+
+def test_update_rule_invalid_regex_returns_422(client, auth_headers):
+    """PATCH with an invalid regex pattern returns 422 (lines 172-175)."""
+    # First create a custom rule to patch
+    new_rule = {
+        "name": "test-regex-rule",
+        "type": "regex",
+        "target": "input",
+        "action": "block",
+        "severity": "low",
+        "enabled": True,
+        "pattern": r"\bsimple\b",
+    }
+    resp = client.post("/api/guardrails/", headers=auth_headers, json=new_rule)
+    assert resp.status_code == 201
+    rule_id = resp.json()["id"]
+
+    # Attempt to patch with an invalid regex
+    patch_resp = client.patch(
+        f"/api/guardrails/{rule_id}",
+        headers=auth_headers,
+        json={"pattern": "[invalid-regex("},
+    )
+    assert patch_resp.status_code == 422
+    assert "Invalid regex pattern" in patch_resp.json()["detail"]
+
+    # Clean up
+    client.delete(f"/api/guardrails/{rule_id}", headers=auth_headers)

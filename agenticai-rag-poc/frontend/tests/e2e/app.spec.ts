@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { injectAdmin } from './helpers'
 
 async function mockDashboardApis(
   page: import('@playwright/test').Page,
@@ -106,23 +107,14 @@ test.describe('Authentication flow', () => {
     await page.getByTestId('username-input').fill('admin')
     await page.getByTestId('password-input').fill('wrongpassword')
     await page.getByTestId('login-button').click()
-    // Toast or error message should appear (requires backend running for full E2E)
-    // In isolation, the API call will fail — a toast with error text appears
-    await page.waitForTimeout(1000)
+    // Wait for network idle (request settles) rather than a fixed 1 s sleep.
+    await page.waitForLoadState('networkidle')
   })
 })
 
 test.describe('Header navigation', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/login')
-    await page.evaluate(() => {
-      sessionStorage.setItem('auth-store', JSON.stringify({
-        state: { token: 'mock-token', username: 'admin', isGuest: false },
-        version: 0,
-      }))
-    })
-    // Navigate to the dashboard (not /login) so the Header with the logo renders
-    await page.goto('/')
+    await injectAdmin(page)
   })
 
   test('logo click navigates to home', async ({ page }) => {
@@ -134,15 +126,7 @@ test.describe('Header navigation', () => {
 test.describe('Dashboard (requires auth)', () => {
   test.beforeEach(async ({ page }) => {
     await mockDashboardApis(page)
-    // Inject auth token directly to skip login UI
-    await page.goto('/login')
-    await page.evaluate(() => {
-      sessionStorage.setItem('auth-store', JSON.stringify({
-        state: { token: 'mock-token', username: 'admin' },
-        version: 0,
-      }))
-    })
-    await page.goto('/')
+    await injectAdmin(page)
   })
 
   test('shows document upload area', async ({ page }) => {

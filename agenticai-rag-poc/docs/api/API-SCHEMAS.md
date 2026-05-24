@@ -1,0 +1,127 @@
+# API Schemas & Examples
+
+> [← Home](README.md) · [API Reference](api/API.md)
+
+Request/response schemas, AgentTrace field reference, token budget, and rate limits.
+
+---
+
+## Query Request & Response
+
+**Request:**
+```json
+{ "question": "What are the core capabilities of generative AI?" }
+{ "question": "What are the core capabilities of generative AI?", "mode": "simple" }
+```
+
+**Agentic response:**
+```json
+{
+  "answer": "Generative AI can produce text, code, images, and structured data ...",
+  "sources": ["sample.txt"],
+  "validation": "VALID",
+  "tokens_used": 847,
+  "mode": "agentic",
+  "retry_count": 0,
+  "latency_ms": 4231,
+  "output_flagged": false,
+  "trace": { ... }
+}
+```
+
+**Simple response:**
+```json
+{
+  "answer": "Generative AI can produce text, code, images, and structured data ...",
+  "sources": ["sample.txt"],
+  "validation": "N/A",
+  "tokens_used": 312,
+  "mode": "simple",
+  "retry_count": 0,
+  "latency_ms": 1840,
+  "output_flagged": false,
+  "trace": null
+}
+```
+
+**Invalid `mode` value → 422:**
+```json
+{ "question": "...", "mode": "turbo" }
+// → HTTP 422 Unprocessable Entity
+```
+
+---
+
+## AgentTrace Field Reference
+
+Returned as `trace` in agentic-mode responses. `null` in simple mode. Full field list → [AgentTrace Reference](api/API-SCHEMAS-TRACE.md).
+
+Key fields: `original_question`, `refined_query`, `hypothetical_answer` (HyDE passage), `query_variants` (two Planner rephrases), `chunks_found`, `validation_reason`, token/latency counters per node.
+
+---
+
+## Settings Request & Response
+
+```json
+// POST /api/settings/
+{ "model": "gpt-4o", "api_key": "<your-openai-api-key>" }
+
+// Response — key is always masked
+{
+  "model": "gpt-4o",
+  "api_key_masked": "sk-****...abcd",
+  "api_key_source": "runtime",
+  "allowed_models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo", "o1-preview", "o1-mini"]
+}
+```
+
+### SettingsResponse — pipeline flags
+
+The response includes the following pipeline feature flags (all admin-settable via `POST /api/settings/`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `retriever_hybrid_bm25` | boolean | Whether BM25 + dense hybrid search is enabled |
+| `relevance_grader_enabled` | boolean | Whether the self-RAG grader node filters low-relevance chunks |
+| `ragas_evaluation_enabled` | boolean | Whether automatic Ragas evaluation is triggered after every 50 queries |
+| `reranker_type` | string | Active reranker (`"none"` or `"cross-encoder"`) |
+| `chunker_type` | string | Active chunking strategy (`"recursive"` or `"semantic"`) |
+
+---
+
+## Token Budget
+
+Controlled via `backend/.env`:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MAX_COMPLETION_TOKENS` | `1024` | Hard cap on GPT-4o-mini output tokens per response |
+| `TOKEN_BUDGET_WARNING_THRESHOLD` | `800` | Logs a warning when cumulative tokens exceed this |
+| `MAX_CONTEXT_CHUNKS` | `4` | Max document chunks sent to the LLM |
+| `MAX_INDEXED_DOCUMENTS` | `10` | Admin corpus cap for file/vector storage |
+| `GUEST_MAX_INDEXED_DOCUMENTS` | `3` | Per-guest-session document cap |
+| `RETRIEVER_K` | `4` | Number of top-k chunks returned by vector similarity search |
+
+`tokens_used` in every query response:
+- **Agentic mode** — sum across planner + generator + validator (+ grader if enabled)
+- **Simple mode** — single generator call only
+
+For document metadata schemas (`DocumentMetadataItem`, `DocumentMetadataResponse`) → [API Schemas: Documents](api/API-SCHEMAS-DOCUMENTS.md).  
+For voice export job error schema → [Voice Export API Schemas](api/API-SCHEMAS-VOICE.md).
+
+---
+
+## Rate Limiting
+
+| Endpoint | Limit | Applies to | Rationale |
+|----------|-------|------------|-----------|
+| `POST /api/auth/login` | 10 req/min per IP | All | Brute-force protection (OWASP A07) |
+| `POST /api/query/` | 10 req/min per IP | All | Costly LLM calls — cost and abuse prevention |
+| `POST /api/documents/upload` | 5 req/min per IP | Guests only | Prevents guest upload flooding |
+| `POST /api/settings/` | 20 req/min per IP | All | Prevents settings-update flooding |
+| `POST /api/settings/ragas-trigger` | 1 per 5 min per IP | Admin | Ragas evaluation is compute-intensive; prevents repeated triggering |
+| All other endpoints | 30 req/min per IP | All | General API protection |
+
+Exceeding a limit returns `HTTP 429 Too Many Requests`.
+
+> **Vercel note:** `slowapi` counters are per function instance, not global across all Vercel instances.

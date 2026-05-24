@@ -41,7 +41,7 @@ vi.mock('@/services/api', () => ({
     getContent: vi.fn(),
   },
   queryApi: { ask: vi.fn() },
-  voiceApi: { exportAudio: vi.fn(), redactTranscript: vi.fn() },
+  voiceApi: { exportAudio: vi.fn(), redactTranscript: vi.fn(), cancelExportJob: vi.fn() },
   settingsApi: { get: vi.fn() },
   extractErrorMessage: (e: unknown) => String(e),
 }))
@@ -887,7 +887,7 @@ describe('ChatInterface — voice chat', () => {
       mode: 'agentic',
       tokens_used: 100,
     })
-    vi.mocked(voiceApi.exportAudio).mockResolvedValue(new Blob(['mp3'], { type: 'audio/mpeg' }))
+    vi.mocked(voiceApi.exportAudio).mockResolvedValue({ blob: new Blob(['mp3'], { type: 'audio/mpeg' }), redacted: false })
     MockSpeechRecognition.transcript = 'My email is jane@example.com and my key is sk-proj-' + 'b'.repeat(30)
 
     await renderChat()
@@ -1101,5 +1101,478 @@ describe('ChatInterface — HyDE trace rows', () => {
     )
     expect(screen.queryByText('HyDE')).toBeNull()
     expect(screen.queryByText('Variants')).toBeNull()
+  })
+})
+
+// ── Grader and Reranker trace rows ────────────────────────────────────────────
+
+describe('ChatInterface — Grader and Reranker trace rows', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('shows Grader row when grader was active (grader_latency_ms > 0)', async () => {
+    const { queryApi } = await import('@/services/api')
+    const trace = makeTrace({
+      chunks_found: 5,
+      chunks_after_grading: 3,
+      grader_tokens: 120,
+      grader_latency_ms: 280,
+    })
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Graded answer',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 300,
+      trace,
+    })
+
+    await renderChat()
+    await submitQuery('Tell me something')
+
+    const toggleBtn = await waitFor(() => screen.getByText('Agent trace'))
+    fireEvent.click(toggleBtn)
+
+    await waitFor(() =>
+      expect(screen.getByText('3 of 5 chunks passed')).toBeInTheDocument()
+    )
+    expect(screen.getByText('120 tok · 280ms')).toBeInTheDocument()
+  })
+
+  it('hides Grader row when grader was disabled (grader_latency_ms === 0)', async () => {
+    const { queryApi } = await import('@/services/api')
+    const trace = makeTrace({
+      grader_latency_ms: 0,
+      grader_tokens: 0,
+    })
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Ungraded answer',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 200,
+      trace,
+    })
+
+    await renderChat()
+    await submitQuery('Tell me something')
+
+    const toggleBtn = await waitFor(() => screen.getByText('Agent trace'))
+    fireEvent.click(toggleBtn)
+
+    await waitFor(() =>
+      expect(screen.getByText('refined test query')).toBeInTheDocument()
+    )
+    expect(screen.queryByText('Grader')).toBeNull()
+  })
+
+  it('shows Reranker row when reranker was active (reranker_latency_ms > 0)', async () => {
+    const { queryApi } = await import('@/services/api')
+    const trace = makeTrace({
+      chunks_after_rerank: 2,
+      reranker_latency_ms: 150,
+    })
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Reranked answer',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 300,
+      trace,
+    })
+
+    await renderChat()
+    await submitQuery('Tell me something')
+
+    const toggleBtn = await waitFor(() => screen.getByText('Agent trace'))
+    fireEvent.click(toggleBtn)
+
+    await waitFor(() =>
+      expect(screen.getByText('2 chunks kept')).toBeInTheDocument()
+    )
+    expect(screen.getByText('150ms')).toBeInTheDocument()
+  })
+
+  it('hides Reranker row when reranker was disabled (reranker_latency_ms === 0)', async () => {
+    const { queryApi } = await import('@/services/api')
+    const trace = makeTrace({ reranker_latency_ms: 0 })
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'No reranker answer',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 200,
+      trace,
+    })
+
+    await renderChat()
+    await submitQuery('Tell me something')
+
+    const toggleBtn = await waitFor(() => screen.getByText('Agent trace'))
+    fireEvent.click(toggleBtn)
+
+    await waitFor(() =>
+      expect(screen.getByText('refined test query')).toBeInTheDocument()
+    )
+    expect(screen.queryByText('Reranker')).toBeNull()
+  })
+
+  it('shows HyDE sub-label with token and latency counts', async () => {
+    const { queryApi } = await import('@/services/api')
+    const trace = makeTrace({
+      hypothetical_answer: 'A hypothesis about the topic.',
+      hyde_tokens: 75,
+      hyde_latency_ms: 320,
+    })
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'HyDE answer',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 300,
+      trace,
+    })
+
+    await renderChat()
+    await submitQuery('Tell me something')
+
+    const toggleBtn = await waitFor(() => screen.getByText('Agent trace'))
+    fireEvent.click(toggleBtn)
+
+    await waitFor(() =>
+      expect(screen.getByText('A hypothesis about the topic.')).toBeInTheDocument()
+    )
+    expect(screen.getByText('75 tok · 320ms')).toBeInTheDocument()
+  })
+})
+
+// ── Fix G: original_question in trace panel ───────────────────────────────────
+
+describe('ChatInterface — original_question in trace panel (Fix G)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('shows original_question when it differs from refined_query', async () => {
+    const { queryApi } = await import('@/services/api')
+    const trace = makeTrace({
+      original_question: 'what is the revenue?',
+      refined_query: 'What was the total annual revenue for the fiscal year?',
+    })
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Revenue was $5M.',
+      sources: ['report.pdf'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 200,
+      trace,
+    })
+
+    await renderChat()
+    await submitQuery('what is the revenue?')
+
+    const toggleBtn = await waitFor(() => screen.getByText('Agent trace'))
+    fireEvent.click(toggleBtn)
+
+    await waitFor(() =>
+      expect(screen.getByText('What was the total annual revenue for the fiscal year?')).toBeInTheDocument()
+    )
+    // The original question should appear as a secondary line with the ← prefix
+    expect(screen.getByTitle('what is the revenue?')).toBeInTheDocument()
+  })
+
+  it('does not show original_question line when it equals refined_query', async () => {
+    const { queryApi } = await import('@/services/api')
+    const trace = makeTrace({
+      original_question: 'What is the unique revenue figure for Q4?',
+      refined_query: 'What is the unique revenue figure for Q4?',
+    })
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Revenue is $5M.',
+      sources: ['report.pdf'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 200,
+      trace,
+    })
+
+    await renderChat()
+    await submitQuery('What is the unique revenue figure for Q4?')
+
+    const toggleBtn = await waitFor(() => screen.getByText('Agent trace'))
+    fireEvent.click(toggleBtn)
+
+    // Refined query appears in trace panel (could also be in the question bubble)
+    await waitFor(() =>
+      expect(screen.queryAllByText('What is the unique revenue figure for Q4?').length).toBeGreaterThanOrEqual(1)
+    )
+    // No title element because original_question === refined_query → the secondary line is not rendered
+    expect(screen.queryByTitle('What is the unique revenue figure for Q4?')).toBeNull()
+  })
+})
+
+// ── Fix A5: language badge in message footer ──────────────────────────────────
+
+describe('ChatInterface — language badge in message footer (Fix A5)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('shows language badge when response language is non-English', async () => {
+    const { queryApi } = await import('@/services/api')
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Réponse en français.',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 100,
+      language: 'fr',
+    })
+
+    await renderChat()
+    await submitQuery('Quelle est la politique?')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('language-badge')).toBeInTheDocument()
+    )
+    expect(screen.getByTestId('language-badge').textContent).toBe('fr')
+  })
+
+  it('does not show language badge when response language is English', async () => {
+    const { queryApi } = await import('@/services/api')
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'An English answer.',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 100,
+      language: 'en',
+    })
+
+    await renderChat()
+    await submitQuery('What is this?')
+
+    await waitFor(() => expect(screen.getByText('Verified')).toBeInTheDocument())
+    expect(screen.queryByTestId('language-badge')).toBeNull()
+  })
+
+  it('does not show language badge when language is undefined', async () => {
+    const { queryApi } = await import('@/services/api')
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Answer without language.',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 100,
+    })
+
+    await renderChat()
+    await submitQuery('What is this?')
+
+    await waitFor(() => expect(screen.getByText('Verified')).toBeInTheDocument())
+    expect(screen.queryByTestId('language-badge')).toBeNull()
+  })
+})
+
+// ── F1: Export job status labels ──────────────────────────────────────────────
+
+describe('ChatInterface — F1: Export job status labels', () => {
+  class MockSpeechRecognitionForExport {
+    static instances: MockSpeechRecognitionForExport[] = []
+    continuous = false
+    interimResults = false
+    lang = ''
+    onstart: (() => void) | null = null
+    onresult: ((event: { results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null = null
+    onerror: ((event: { error: string }) => void) | null = null
+    onend: (() => void) | null = null
+    constructor() {
+      MockSpeechRecognitionForExport.instances.push(this)
+    }
+    start = vi.fn(() => {
+      this.onstart?.()
+      this.onresult?.({ results: [{ isFinal: true, 0: { transcript: 'voice question' } }] })
+      this.onend?.()
+    })
+    stop = vi.fn(() => this.onend?.())
+    abort = vi.fn()
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    MockSpeechRecognitionForExport.instances = []
+    Object.defineProperty(window, 'SpeechRecognition', {
+      value: MockSpeechRecognitionForExport,
+      configurable: true,
+    })
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: { speak: vi.fn(), cancel: vi.fn() },
+      configurable: true,
+    })
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+      value: vi.fn(function SpeechSynthesisUtterance(this: { text: string }, text: string) { this.text = text }),
+      configurable: true,
+    })
+  })
+
+  it('shows "Queued…" status label when export job status is "queued"', async () => {
+    const { queryApi, voiceApi } = await import('@/services/api')
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Voice answer.',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 100,
+    })
+
+    // Simulate an async export that fires onStatusChange callback with 'queued'
+    vi.mocked(voiceApi.exportAudio).mockImplementation(
+      async (_data, onStatusChange) => {
+        onStatusChange?.('queued')
+        // Hang until the test finishes checking the UI
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        return { blob: new Blob(['mp3'], { type: 'audio/mpeg' }), redacted: false }
+      },
+    )
+
+    await renderChat(['doc.txt'])
+    await waitFor(() => expect(screen.getByRole('button', { name: /start voice input/i })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: /start voice input/i }))
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('query-input').closest('form')!)
+      await new Promise(r => setTimeout(r, 0))
+    })
+
+    const exportAudioBtn = await screen.findByTestId('export-audio-btn')
+    fireEvent.click(exportAudioBtn)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('export-job-status')).toHaveTextContent('Queued…'),
+    )
+  })
+
+  it('shows "Processing…" status label when export job status is "running"', async () => {
+    const { queryApi, voiceApi } = await import('@/services/api')
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Voice answer.',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 100,
+    })
+
+    vi.mocked(voiceApi.exportAudio).mockImplementation(
+      async (_data, onStatusChange) => {
+        onStatusChange?.('running')
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        return { blob: new Blob(['mp3'], { type: 'audio/mpeg' }), redacted: false }
+      },
+    )
+
+    await renderChat(['doc.txt'])
+    await waitFor(() => expect(screen.getByRole('button', { name: /start voice input/i })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: /start voice input/i }))
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('query-input').closest('form')!)
+      await new Promise(r => setTimeout(r, 0))
+    })
+
+    const exportAudioBtn = await screen.findByTestId('export-audio-btn')
+    fireEvent.click(exportAudioBtn)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('export-job-status')).toHaveTextContent('Processing…'),
+    )
+  })
+})
+
+// ── F2: Cancel export button ──────────────────────────────────────────────────
+
+describe('ChatInterface — F2: Cancel export button', () => {
+  class MockSpeechRecognitionForCancel {
+    static instances: MockSpeechRecognitionForCancel[] = []
+    continuous = false
+    interimResults = false
+    lang = ''
+    onstart: (() => void) | null = null
+    onresult: ((event: { results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null = null
+    onerror: ((event: { error: string }) => void) | null = null
+    onend: (() => void) | null = null
+    constructor() {
+      MockSpeechRecognitionForCancel.instances.push(this)
+    }
+    start = vi.fn(() => {
+      this.onstart?.()
+      this.onresult?.({ results: [{ isFinal: true, 0: { transcript: 'cancel test' } }] })
+      this.onend?.()
+    })
+    stop = vi.fn(() => this.onend?.())
+    abort = vi.fn()
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    MockSpeechRecognitionForCancel.instances = []
+    Object.defineProperty(window, 'SpeechRecognition', {
+      value: MockSpeechRecognitionForCancel,
+      configurable: true,
+    })
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: { speak: vi.fn(), cancel: vi.fn() },
+      configurable: true,
+    })
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+      value: vi.fn(function SpeechSynthesisUtterance(this: { text: string }, text: string) { this.text = text }),
+      configurable: true,
+    })
+  })
+
+  it('shows Cancel button while export is in progress and calls cancelExportJob', async () => {
+    const { queryApi, voiceApi } = await import('@/services/api')
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'Voice answer.',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      mode: 'agentic',
+      tokens_used: 100,
+    })
+
+    const cancelJobId = 'test-job-id-123'
+    let resolveExport!: () => void
+    vi.mocked(voiceApi.exportAudio).mockImplementation(
+      async (_data, _onStatusChange, onJobId) => {
+        onJobId?.(cancelJobId)
+        // Simulate a long-running export
+        await new Promise<void>((resolve) => { resolveExport = resolve })
+        return { blob: new Blob(['mp3'], { type: 'audio/mpeg' }), redacted: false }
+      },
+    )
+    vi.mocked(voiceApi.cancelExportJob).mockResolvedValue({
+      job_id: cancelJobId,
+      status: 'canceled',
+      policy: { retry_after_seconds: 1 },
+    } as never)
+
+    await renderChat(['doc.txt'])
+    await waitFor(() => expect(screen.getByRole('button', { name: /start voice input/i })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: /start voice input/i }))
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('query-input').closest('form')!)
+      await new Promise(r => setTimeout(r, 0))
+    })
+
+    const exportAudioBtn = await screen.findByTestId('export-audio-btn')
+    fireEvent.click(exportAudioBtn)
+
+    // Cancel button should appear once the job ID is known
+    const cancelBtn = await screen.findByTestId('cancel-export-btn')
+    expect(cancelBtn).toBeInTheDocument()
+
+    fireEvent.click(cancelBtn)
+
+    await waitFor(() =>
+      expect(voiceApi.cancelExportJob).toHaveBeenCalledWith(cancelJobId),
+    )
+
+    // Resolve the export inside act() so that setExportingAudio(false) and
+    // setExportJobStatus(null) from the finally block don't leak outside act().
+    await act(async () => {
+      resolveExport()
+    })
   })
 })

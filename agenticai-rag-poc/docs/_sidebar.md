@@ -1,29 +1,37 @@
 <!-- _sidebar.md -->
 
+<!-- _sidebar.md -->
+
 - **Getting Started**
   - [Home](README.md)
-  - [Setup Guide](SETUP.md)
-  - [Capstone Audit](CAPSTONE-AUDIT.md)
+  - [**→ Capability Showcase**](pitch.html)
+  - [▶ Walkthrough Videos](walkthrough/index.html)
+  - [Setup Guide](deployment/SETUP.md)
 
 - **Architecture**
-  - [System Design](ARCHITECTURE.md)
-  - [Agent Pipeline](AGENT-PIPELINE.md)
+  - [System Design](architecture/ARCHITECTURE.md)
+  - [Agent Pipeline](architecture/AGENT-PIPELINE.md)
 
 - **Deployment**
-  - [Local & Docker](DEPLOY-LOCAL.md)
-  - [Vercel](DEPLOY-VERCEL.md)
+  - [Local & Docker](deployment/DEPLOY-LOCAL.md)
+  - [Vercel](deployment/DEPLOY-VERCEL.md)
+  - [Environment Variables](deployment/DEPLOY-LOCAL-ENV.md)
+  - [Operational Limits](deployment/DEPLOY-LIMITS.md)
 
 - **API Reference**
-  - [Endpoints & Access Modes](API.md)
-  - [Schemas & Examples](API-SCHEMAS.md)
+  - [Endpoints & Access Modes](api/API.md)
+  - [Schemas & Examples](api/API-SCHEMAS.md)
 
 - **Testing**
-  - [Backend Tests](TESTING.md)
-  - [Frontend & E2E](TESTING-FRONTEND.md)
+  - [Backend Tests](testing/TESTING.md)
+  - [Frontend & E2E](testing/TESTING-FRONTEND.md)
+  - [Coverage Matrix](testing/COVERAGE-MATRIX.md)
 
 - **Security**
-  - [OWASP & Controls](SECURITY.md)
-  - [Content Guardrails](GUARDRAILS.md)
+  - [OWASP & Controls](security/SECURITY.md)
+  - [Content Guardrails](security/GUARDRAILS.md)
 
-- **Developer Process**
-  - [SDD Workflow](SDD.md)
+- **Project**
+  - [Capstone Audit](project/CAPSTONE-AUDIT.md)
+  - [Limitations & Challenges](project/CHALLENGES.md)
+  - [SDD Workflow](project/SDD.md)

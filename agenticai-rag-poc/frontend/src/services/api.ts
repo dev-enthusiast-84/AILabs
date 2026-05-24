@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import { useAuthStore } from '@/store/authStore'
-import type { LoginRequest, TokenResponse, DocumentListResponse, DocumentChunksResponse, DocumentContentResponse, UploadResponse, QueryRequest, QueryResponse, SettingsResponse, SettingsUpdateRequest, GuardrailRule, GuardrailRuleCreate, GuardrailRuleUpdate, GuardrailCheckRequest, GuardrailCheckResponse, RagasScores, ChatVoiceExportRequest, ChatVoiceExportResponse, ChatVoiceExportAcceptedResponse, ChatVoiceExportJobResponse, TranscriptRedactionRequest, TranscriptRedactionResponse } from '@/types'
+import type { LoginRequest, TokenResponse, DocumentListResponse, DocumentMetadataResponse, DocumentChunksResponse, DocumentContentResponse, UploadResponse, QueryRequest, QueryResponse, SettingsResponse, SettingsUpdateRequest, GuardrailRule, GuardrailRuleCreate, GuardrailRuleUpdate, GuardrailCheckRequest, GuardrailCheckResponse, RagasScores, ChatVoiceExportRequest, ChatVoiceExportResponse, ChatVoiceExportAcceptedResponse, ChatVoiceExportJobResponse, TranscriptRedactionRequest, TranscriptRedactionResponse } from '@/types'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 const SESSION_COMPAT_HEADER = 'x-app-session-compatibility'
@@ -51,6 +51,12 @@ http.interceptors.response.use(
     const requestUrl = error.config?.url ?? ''
     const isLoginRequest = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/guest')
     refreshSessionIfDeploymentChanged(error.response?.headers?.[SESSION_COMPAT_HEADER])
+    if (error.response?.status === 429) {
+      // Do NOT clear auth or redirect. Just let the error propagate with a clear message.
+      const retryAfter = error.response.headers?.['retry-after']
+      const waitMsg = retryAfter ? ` Please wait ${retryAfter} seconds.` : ' Please wait a moment.'
+      return Promise.reject(new Error(`Rate limit reached.${waitMsg}`))
+    }
     if (error.response?.status === 401 && !isLoginRequest) {
       useAuthStore.getState().clearAuth()
       sessionStorage.setItem('auth_error', 'Your session is no longer valid. Please sign in again.')
@@ -72,6 +78,9 @@ export const authApi = {
   me: async (): Promise<{ username: string; role: string }> => {
     const res = await http.get<{ username: string; role: string }>('/auth/me')
     return res.data
+  },
+  logout: async (): Promise<void> => {
+    await http.post('/auth/logout')
   },
 }
 
@@ -106,6 +115,10 @@ export const documentsApi = {
     })
     return res.data
   },
+  getMetadata: async (): Promise<DocumentMetadataResponse> => {
+    const res = await http.get<DocumentMetadataResponse>('/documents/metadata')
+    return res.data
+  },
 }
 
 export const queryApi = {
@@ -135,17 +148,24 @@ export const voiceApi = {
     const res = await http.post<TranscriptRedactionResponse>('/chat/voice/redact', data)
     return res.data
   },
-  exportAudio: async (data: ChatVoiceExportRequest): Promise<Blob> => {
+  exportAudio: async (
+    data: ChatVoiceExportRequest,
+    onStatusChange?: (status: string) => void,
+    onJobId?: (jobId: string) => void,
+  ): Promise<{ blob: Blob; redacted: boolean }> => {
     const res = await http.post<ChatVoiceExportResponse | ChatVoiceExportAcceptedResponse>('/chat/voice/export', data)
-    if (!isAcceptedExport(res.data)) return audioResponseToBlob(res.data)
+    if (!isAcceptedExport(res.data)) return { blob: audioResponseToBlob(res.data), redacted: res.data.redacted ?? false }
 
+    onJobId?.(res.data.job_id)
+    onStatusChange?.('queued')
     const deadline = Date.now() + 120_000
     let retryAfterMs = Math.max(250, res.data.retry_after_seconds * 1000)
     while (Date.now() < deadline) {
       await wait(retryAfterMs)
       const status = await voiceApi.getExportJob(res.data.job_id)
       retryAfterMs = Math.max(250, status.policy.retry_after_seconds * 1000)
-      if (status.status === 'succeeded' && status.artifact) return audioResponseToBlob(status.artifact)
+      onStatusChange?.(status.status)
+      if (status.status === 'succeeded' && status.artifact) return { blob: audioResponseToBlob(status.artifact), redacted: status.redacted ?? false }
       if (status.status === 'failed') throw new Error(status.error?.message ?? 'Audio export failed.')
       if (status.status === 'canceled') throw new Error('Audio export was canceled.')
       if (status.status === 'expired') throw new Error('Audio export expired. Please export again.')
@@ -162,13 +182,26 @@ export const voiceApi = {
   },
 }
 
+interface _SettingsCacheEntry { data: SettingsResponse; ts: number }
+let _settingsCache: _SettingsCacheEntry | null = null
+const _SETTINGS_TTL_MS = 30_000
+
+export function clearSettingsCache(): void {
+  _settingsCache = null
+}
+
 export const settingsApi = {
   get: async (): Promise<SettingsResponse> => {
+    if (_settingsCache && Date.now() - _settingsCache.ts < _SETTINGS_TTL_MS) {
+      return _settingsCache.data
+    }
     const res = await http.get<SettingsResponse>('/settings/')
+    _settingsCache = { data: res.data, ts: Date.now() }
     return res.data
   },
   update: async (data: SettingsUpdateRequest): Promise<SettingsResponse> => {
     const res = await http.post<SettingsResponse>('/settings/', data)
+    _settingsCache = { data: res.data, ts: Date.now() }
     return res.data
   },
   getRagasScores: async (): Promise<RagasScores | null> => {

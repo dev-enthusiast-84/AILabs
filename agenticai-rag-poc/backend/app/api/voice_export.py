@@ -10,12 +10,12 @@ from fastapi.responses import JSONResponse
 from openai import APITimeoutError, OpenAI
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.audit import audit_event
+from app.core.audit import audit_event
 from app.auth.models import UserInDB
 from app.auth.utils import get_current_user
-from app.chat_languages import ChatLanguageCode
+from app.core.chat_languages import ChatLanguageCode
 from app.config import get_settings
-from app.settings_store import get_effective_api_key, set_runtime_scope
+from app.runtime.settings_store import get_effective_api_key, set_runtime_scope
 from app.voice.export_jobs import VoiceExportJob, VoiceExportJobStatus, VoiceExportJobStore
 from app.voice.redaction import build_redacted_transcript, redact_sensitive_text
 

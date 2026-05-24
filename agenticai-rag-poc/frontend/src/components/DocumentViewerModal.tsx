@@ -21,6 +21,7 @@ function fileType(filename: string): 'pdf' | 'csv' | 'excel' | 'text' {
 export default function DocumentViewerModal({ filename, onClose, onUnavailable }: Props) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [textContent, setTextContent] = useState<string | null>(null)
+  const [apiWordCount, setApiWordCount] = useState<number | null>(null)
   const [unavailable, setUnavailable] = useState(false)
   const [contentError, setContentError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -39,6 +40,7 @@ export default function DocumentViewerModal({ filename, onClose, onUnavailable }
     if (!filename) return
     setBlobUrl(null)
     setTextContent(null)
+    setApiWordCount(null)
     setUnavailable(false)
     setContentError(null)
     setLoading(true)
@@ -62,6 +64,7 @@ export default function DocumentViewerModal({ filename, onClose, onUnavailable }
           try {
             const data = await documentsApi.getContent(filename)
             setTextContent(data.content)
+            setApiWordCount(data.word_count)
           } catch {
             setUnavailable(true)
             onUnavailable?.(filename)
@@ -81,8 +84,8 @@ export default function DocumentViewerModal({ filename, onClose, onUnavailable }
   }, [filename, onClose])
 
   const wordCount = useMemo(
-    () => (textContent?.trim() ? textContent.trim().split(/\s+/).length : 0),
-    [textContent],
+    () => apiWordCount ?? (textContent?.trim() ? textContent.trim().split(/\s+/).filter(Boolean).length : 0),
+    [apiWordCount, textContent],
   )
 
   const loadChunks = async () => {

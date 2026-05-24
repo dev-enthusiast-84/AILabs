@@ -1,22 +1,24 @@
 import asyncio
+import random
 import re
 import time
 from typing import Literal
 
 import bleach
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 import structlog
 
-from app.audit import audit_event
+from app.core.audit import audit_event
 from app.agents.rag_agent import run_agent, AgentTrace
 from app.auth.utils import get_current_user
 from app.auth.models import UserInDB
-from app.chat_languages import SUPPORTED_LANGUAGES, ChatLanguageCode
+from app.core.chat_languages import SUPPORTED_LANGUAGES, ChatLanguageCode
 from app.config import get_settings
-from app.errors import SafeAppError, safe_app_error_from_exception
+from app.core.errors import SafeAppError, safe_app_error_from_exception
+from app.runtime.settings_store import get_effective_ragas_evaluation_enabled, is_runtime_key_set
 from app.guardrails.engine import GuardrailEngine
 from app.guardrails.store import get_guardrail_store
 from app.guardrails.safety import sanitize_query
@@ -30,6 +32,9 @@ router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 _guardrail_engine = GuardrailEngine()
+
+_RAGAS_AUTO_TRIGGER_INTERVAL: int = 50
+
 
 def _retrieval_filter_for_user(user: UserInDB) -> dict:
     if user.role == "guest":
@@ -138,7 +143,7 @@ def _contextual_retrieval_question(question: str, history: list[QueryHistoryMess
 
 @router.post("/", response_model=QueryResponse)
 @limiter.limit(f"{settings.query_rate_limit_per_minute}/minute")
-async def query_documents(request: Request, body: QueryRequest, user: UserInDB = Depends(get_current_user)):
+async def query_documents(request: Request, body: QueryRequest, background_tasks: BackgroundTasks, user: UserInDB = Depends(get_current_user)):
     """
     Run a RAG query against indexed documents.
 
@@ -249,5 +254,17 @@ async def query_documents(request: Request, body: QueryRequest, user: UserInDB =
         output_flagged=output_flagged,
         latency_ms=latency_ms,
     )
+
+    # Auto-trigger Ragas evaluation probabilistically (p = 1/N per request).
+    # Stateless — no shared counter — so trigger rate is correct across multiple
+    # workers or serverless instances without any coordination overhead.
+    if (
+        random.random() < 1.0 / _RAGAS_AUTO_TRIGGER_INTERVAL
+        and get_effective_ragas_evaluation_enabled()
+        and is_runtime_key_set()
+    ):
+        from app.api.settings import _run_ragas_eval_background  # local import avoids circular dep
+        background_tasks.add_task(_run_ragas_eval_background)
+        log.info("ragas_auto_trigger.queued")
 
     return QueryResponse(**result, latency_ms=latency_ms, output_flagged=output_flagged, language=body.language)

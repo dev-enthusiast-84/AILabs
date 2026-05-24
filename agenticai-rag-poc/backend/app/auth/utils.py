@@ -1,4 +1,5 @@
 import threading
+import time
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
@@ -25,20 +26,31 @@ _admin_cache: dict[str, str | UserInDB] = {}
 # bounded LRU cache: when full, the OLDEST entry is evicted (not all entries),
 # preserving recently-revoked tokens. Clears all entries would allow an attacker
 # to flood the endpoint with throwaway tokens and reactivate logged-out sessions.
-_revoked_jtis: OrderedDict[str, bool] = OrderedDict()
+# Values store the token's expiry epoch so naturally-expired tokens can be purged
+# before the LRU capacity limit is reached.
+_revoked_jtis: OrderedDict[str, float] = OrderedDict()
 _revoked_lock = threading.Lock()
 _MAX_REVOKED = 10_000
 
 
-def revoke_token(jti: str) -> None:
-    """Add a JTI to the revocation blocklist (LRU eviction when full)."""
+def _purge_expired_jtis() -> None:
+    """Remove JTIs whose tokens have already naturally expired (call inside _revoked_lock)."""
+    now = time.time()
+    expired = [j for j, exp in _revoked_jtis.items() if exp < now]
+    for j in expired:
+        del _revoked_jtis[j]
+
+
+def revoke_token(jti: str, exp: float | None = None) -> None:
+    """Add a JTI to the revocation blocklist; evicts expired entries first, then LRU when full."""
     with _revoked_lock:
         if jti in _revoked_jtis:
             return
+        _purge_expired_jtis()
         if len(_revoked_jtis) >= _MAX_REVOKED:
             _revoked_jtis.popitem(last=False)  # evict oldest, not all
             log.warning("jti_blocklist_evicted_oldest", reason="capacity_limit")
-        _revoked_jtis[jti] = True
+        _revoked_jtis[jti] = exp if exp is not None else time.time() + 86400
 
 
 def is_token_revoked(jti: str) -> bool:
@@ -194,10 +206,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
         raise credentials_exception
     if user.role == "guest":
         session_id = payload.get("jti")
-        from app.settings_store import set_runtime_scope
+        from app.runtime.settings_store import set_runtime_scope
         set_runtime_scope(user.role, session_id)
         return user.model_copy(update={"session_id": session_id})
-    from app.settings_store import set_runtime_scope
+    from app.runtime.settings_store import set_runtime_scope
     set_runtime_scope(user.role, None)
     return user
 

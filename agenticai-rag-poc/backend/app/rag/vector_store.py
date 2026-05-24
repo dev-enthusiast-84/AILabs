@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
 from app.config import get_settings
-from app.settings_store import (
+from app.runtime.settings_store import (
     get_effective_blob_read_write_token,
     get_effective_embedding_model,
     get_effective_pinecone_api_key,
@@ -115,7 +115,7 @@ class _DynamicOpenAIEmbeddings(Embeddings):
 
     def _get_client(self):
         from langchain_openai import OpenAIEmbeddings
-        from app.settings_store import get_effective_api_key
+        from app.runtime.settings_store import get_effective_api_key
         key = get_effective_api_key() or ""
         model = get_effective_embedding_model()
         cache_key = (key, model)
@@ -150,11 +150,32 @@ class BlobVectorStore:
     Each chunk is stored as a JSON blob containing text, metadata, and its
     embedding. This keeps Vercel deployments consistent across cold starts and
     function instances without requiring a local writable filesystem.
+
+    Payload cache (P1 performance):
+        _load_payloads() fetches every blob object on each call.  With many
+        chunks this becomes O(n) network round-trips per query.  The class-level
+        cache stores the full payload list with a TTL so that multiple reads
+        within the same window reuse the already-fetched result.  The cache is
+        invalidated whenever add_documents or delete_document mutates the store.
     """
+
+    # ── class-level payload cache ─────────────────────────────────────────────
+    # All instances share the same Blob namespace so the cache is class-level.
+    _payload_cache: list | None = None
+    _payload_cache_ts: float = 0.0
+    _payload_cache_lock: threading.Lock = threading.Lock()
+    _PAYLOAD_CACHE_TTL: float = 30.0  # seconds
 
     def __init__(self, embedding: Embeddings, prefix: str = _BLOB_CHUNK_PREFIX):
         self.embedding = embedding
         self.prefix = prefix
+
+    @classmethod
+    def _invalidate_payload_cache(cls) -> None:
+        """Force the next _load_payloads() call to fetch fresh data from Blob."""
+        with cls._payload_cache_lock:
+            cls._payload_cache = None
+            cls._payload_cache_ts = 0.0
 
     def _chunk_path(self, chunk_id: str) -> str:
         return f"{self.prefix}{chunk_id}.json"
@@ -182,11 +203,24 @@ class BlobVectorStore:
         return json.loads(result.content.decode("utf-8"))
 
     def _load_payloads(self) -> list[dict]:
+        """Return all blob payloads, using the class-level TTL cache when fresh."""
+        with BlobVectorStore._payload_cache_lock:
+            now = _time.time()
+            if (
+                BlobVectorStore._payload_cache is not None
+                and (now - BlobVectorStore._payload_cache_ts) < BlobVectorStore._PAYLOAD_CACHE_TTL
+            ):
+                return BlobVectorStore._payload_cache
+
         payloads: list[dict] = []
         for path in self._list_blob_paths():
             payload = self._load_payload(path)
             if payload:
                 payloads.append(payload)
+
+        with BlobVectorStore._payload_cache_lock:
+            BlobVectorStore._payload_cache = payloads
+            BlobVectorStore._payload_cache_ts = _time.time()
         return payloads
 
     def add_documents(self, docs: list[Document]) -> list[str]:
@@ -209,6 +243,8 @@ class BlobVectorStore:
                 content_type="application/json",
                 overwrite=True,
             )
+        BlobVectorStore._invalidate_payload_cache()
+        invalidate_doc_cache()
         return ids
 
     def has_documents(self) -> bool:
@@ -256,6 +292,8 @@ class BlobVectorStore:
                 paths.append(path)
         if paths:
             delete(paths)
+        BlobVectorStore._invalidate_payload_cache()
+        invalidate_doc_cache()
         return len(paths)
 
     def similarity_search_with_relevance_scores(self, query: str, k: int = 4) -> list[tuple[Document, float]]:
@@ -300,9 +338,56 @@ def get_vector_store():
     return InMemoryVectorStore(embedding=embeddings)
 
 
+def _is_chroma_schema_corruption(exc: Exception) -> bool:
+    """Return True when *exc* is a ChromaDB metadata-segment schema mismatch.
+
+    This happens after a ChromaDB major-version upgrade changes the SQLite
+    column type from BLOB to INTEGER (or vice-versa).  The symptom is an
+    InternalError with the text "mismatched types" / "BLOB" in the message.
+    """
+    msg = str(exc).lower()
+    return (
+        "mismatched types" in msg
+        or ("blob" in msg and "sql type" in msg)
+        or "segment reader" in msg
+    )
+
+
+def _try_recover_chroma_schema() -> None:
+    """Delete the ChromaDB persist directory to recover from schema corruption.
+
+    This is destructive — all previously indexed documents are removed.
+    A WARNING is emitted so operators can re-upload after recovery.
+    """
+    import shutil
+    persist_dir = settings.chroma_persist_dir
+    if persist_dir:
+        try:
+            shutil.rmtree(persist_dir, ignore_errors=True)
+            logger.warning(
+                "chroma_schema_corruption_auto_reset",
+                persist_dir=persist_dir,
+                detail="ChromaDB persist directory cleared after schema mismatch. "
+                       "All previously indexed documents have been removed — please re-upload.",
+            )
+        except Exception as e:
+            logger.error("chroma_schema_corruption_reset_failed", error=str(e))
+    get_vector_store.cache_clear()
+
+
 def add_documents(docs: list[Document]) -> list[str]:
     store = get_vector_store()
-    return store.add_documents(docs)
+    try:
+        return store.add_documents(docs)
+    except Exception as exc:
+        # Auto-recover from ChromaDB metadata-segment schema corruption that
+        # occurs after a ChromaDB major-version upgrade.  The corrupt persist
+        # directory is deleted and the operation is retried with a fresh store.
+        if _vector_store_type() == "chroma" and _is_chroma_schema_corruption(exc):
+            _try_recover_chroma_schema()
+            store = get_vector_store()
+            return store.add_documents(docs)
+        raise
 
 
 def has_documents() -> bool:

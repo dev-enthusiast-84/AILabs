@@ -1,0 +1,13 @@
+chromadb==0.6.3
+langchain==0.3.18
+langchain-chroma==0.2.2
+langchain-community==0.3.17
+langchain-core==0.3.86
+langchain-experimental==0.3.4
+langchain-openai==0.3.6
+langchain-protocol==0.0.15
+langchain-text-splitters==0.3.11
+langgraph==0.2.73
+langgraph-checkpoint==2.1.2
+langgraph-sdk==0.1.74
+openai==1.61.1

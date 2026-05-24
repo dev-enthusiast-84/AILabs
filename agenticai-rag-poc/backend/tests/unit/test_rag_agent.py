@@ -162,13 +162,13 @@ class TestGeneratorRetryHint:
         mock_chain.invoke = fake_invoke
 
         with patch("app.agents.rag_agent._llm") as mock_llm, \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser") as mock_parser, \
              patch("app.agents.rag_agent.settings") as mock_settings:
             mock_settings.generator_model = ""
             mock_settings.token_budget_warning_threshold = 800
-            mock_cb.return_value.__enter__ = MagicMock(return_value=MagicMock(total_tokens=10))
+            mock_cb.return_value.__enter__ = MagicMock(return_value=MagicMock(usage_metadata={"m": {"total_tokens": 10, "input_tokens": 0, "output_tokens": 0}}))
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(return_value=MagicMock(__or__=MagicMock(return_value=mock_chain)))
 
@@ -192,14 +192,14 @@ class TestGeneratorRetryHint:
         mock_chain.invoke = fake_chain_invoke
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser"), \
              patch("app.agents.rag_agent.settings") as mock_settings:
             mock_settings.generator_model = ""
             mock_settings.token_budget_warning_threshold = 800
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 10
+            cb_mock.usage_metadata = {"m": {"total_tokens": 10, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(
@@ -440,13 +440,13 @@ class TestHydeNode:
         mock_chain.invoke = fake_chain_invoke
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._HYDE_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser"), \
              patch("app.agents.rag_agent.settings") as mock_settings:
             mock_settings.planner_model = ""
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 15
+            cb_mock.usage_metadata = {"m": {"total_tokens": 15, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(
@@ -469,13 +469,13 @@ class TestHydeNode:
         state["tokens_used"] = 50
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._HYDE_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser"), \
              patch("app.agents.rag_agent.settings") as mock_settings:
             mock_settings.planner_model = ""
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 20
+            cb_mock.usage_metadata = {"m": {"total_tokens": 20, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(
@@ -718,11 +718,11 @@ class TestGraderNode:
 
         with patch("app.agents.rag_agent.get_effective_relevance_grader_enabled", return_value=True), \
              patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GRADER_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.format_context", return_value="filtered ctx"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 25
+            cb_mock.usage_metadata = {"m": {"total_tokens": 25, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             # Grader chain is `_GRADER_PROMPT | structured_llm` — one pipe, one __or__ level.
@@ -745,11 +745,11 @@ class TestGraderNode:
 
         with patch("app.agents.rag_agent.get_effective_relevance_grader_enabled", return_value=True), \
              patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GRADER_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.format_context", return_value="ctx"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 10
+            cb_mock.usage_metadata = {"m": {"total_tokens": 10, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             # Grader chain is `_GRADER_PROMPT | structured_llm` — one pipe, one __or__ level.
@@ -913,11 +913,11 @@ class TestPlannerNode:
         mock_chain.invoke.return_value = planned
 
         with patch("app.agents.rag_agent._llm") as mock_llm, \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._PLANNER_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.get_effective_planner_model", return_value="gpt-4o-mini"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 12
+            cb_mock.usage_metadata = {"m": {"total_tokens": 12, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_llm.return_value.with_structured_output.return_value = MagicMock()
@@ -941,11 +941,11 @@ class TestPlannerNode:
         state["tokens_used"] = 100
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._PLANNER_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.get_effective_planner_model", return_value="gpt-4o-mini"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 20
+            cb_mock.usage_metadata = {"m": {"total_tokens": 20, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
@@ -964,11 +964,11 @@ class TestPlannerNode:
         mock_chain.invoke.return_value = planned
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._PLANNER_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.get_effective_planner_model", return_value="gpt-4o-mini"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 5
+            cb_mock.usage_metadata = {"m": {"total_tokens": 5, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
@@ -987,11 +987,11 @@ class TestPlannerNode:
         mock_chain.invoke.return_value = planned
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._PLANNER_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.get_effective_planner_model", return_value="gpt-4o-mini"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 8
+            cb_mock.usage_metadata = {"m": {"total_tokens": 8, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
@@ -1022,13 +1022,13 @@ class TestGeneratorNodeFullBody:
         mock_chain.invoke.return_value = "answer text"
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser"), \
              patch("app.agents.rag_agent.get_effective_generator_model", return_value="gpt-4o-mini"), \
              patch("app.agents.rag_agent.get_effective_token_budget_warning_threshold", return_value=8000):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 30
+            cb_mock.usage_metadata = {"m": {"total_tokens": 30, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(
@@ -1049,14 +1049,14 @@ class TestGeneratorNodeFullBody:
         mock_chain.invoke.return_value = "answer"
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser"), \
              patch("app.agents.rag_agent.get_effective_generator_model", return_value="gpt-4o-mini"), \
              patch("app.agents.rag_agent.get_effective_token_budget_warning_threshold", return_value=50), \
              patch("app.agents.rag_agent.log") as mock_log:
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 100
+            cb_mock.usage_metadata = {"m": {"total_tokens": 100, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(
@@ -1078,13 +1078,13 @@ class TestGeneratorNodeFullBody:
         mock_chain.invoke.return_value = "answer"
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser"), \
              patch("app.agents.rag_agent.get_effective_generator_model", return_value="gpt-4o-mini"), \
              patch("app.agents.rag_agent.get_effective_token_budget_warning_threshold", return_value=8000):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 5
+            cb_mock.usage_metadata = {"m": {"total_tokens": 5, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(
@@ -1105,13 +1105,13 @@ class TestGeneratorNodeFullBody:
         mock_chain.invoke.return_value = "answer"
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser"), \
              patch("app.agents.rag_agent.get_effective_generator_model", return_value="gpt-4o-mini"), \
              patch("app.agents.rag_agent.get_effective_token_budget_warning_threshold", return_value=8000):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 5
+            cb_mock.usage_metadata = {"m": {"total_tokens": 5, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(
@@ -1137,13 +1137,13 @@ class TestGeneratorNodeFullBody:
         mock_chain.invoke.return_value = "La réponse doit rester en français."
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser"), \
              patch("app.agents.rag_agent.get_effective_generator_model", return_value="gpt-4o-mini"), \
              patch("app.agents.rag_agent.get_effective_token_budget_warning_threshold", return_value=8000):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 12
+            cb_mock.usage_metadata = {"m": {"total_tokens": 12, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(
@@ -1170,13 +1170,13 @@ class TestGeneratorNodeFullBody:
         mock_chain.invoke.return_value = "Generation is the grounded answer stage."
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._GENERATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.StrOutputParser"), \
              patch("app.agents.rag_agent.get_effective_generator_model", return_value="gpt-4o-mini"), \
              patch("app.agents.rag_agent.get_effective_token_budget_warning_threshold", return_value=8000):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 12
+            cb_mock.usage_metadata = {"m": {"total_tokens": 12, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(
@@ -1211,11 +1211,11 @@ class TestValidatorNodeFullBody:
         mock_chain.invoke.return_value = mock_result
 
         with patch("app.agents.rag_agent._llm") as mock_llm, \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._VALIDATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.get_effective_validator_model", return_value="gpt-4o-mini"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 10
+            cb_mock.usage_metadata = {"m": {"total_tokens": 10, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_llm.return_value.with_structured_output.return_value = MagicMock()
@@ -1238,11 +1238,11 @@ class TestValidatorNodeFullBody:
         state["retry_count"] = 2
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._VALIDATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.get_effective_validator_model", return_value="gpt-4o-mini"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 8
+            cb_mock.usage_metadata = {"m": {"total_tokens": 8, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
@@ -1263,11 +1263,11 @@ class TestValidatorNodeFullBody:
         del state["retry_count"]
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._VALIDATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.get_effective_validator_model", return_value="gpt-4o-mini"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 8
+            cb_mock.usage_metadata = {"m": {"total_tokens": 8, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
@@ -1289,11 +1289,11 @@ class TestValidatorNodeFullBody:
         state["tokens_used"] = 50
 
         with patch("app.agents.rag_agent._llm"), \
-             patch("app.agents.rag_agent.get_openai_callback") as mock_cb, \
+             patch("app.agents.rag_agent.get_usage_metadata_callback") as mock_cb, \
              patch("app.agents.rag_agent._VALIDATOR_PROMPT") as mock_prompt, \
              patch("app.agents.rag_agent.get_effective_validator_model", return_value="gpt-4o-mini"):
             cb_mock = MagicMock()
-            cb_mock.total_tokens = 10
+            cb_mock.usage_metadata = {"m": {"total_tokens": 10, "input_tokens": 0, "output_tokens": 0}}
             mock_cb.return_value.__enter__ = MagicMock(return_value=cb_mock)
             mock_cb.return_value.__exit__ = MagicMock(return_value=False)
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
@@ -1433,6 +1433,41 @@ class TestRetrieverBM25Hybrid:
                 result = retriever_node(state)
 
         assert result["chunks_found"] >= 0
+
+
+
+# ── retriever_node fanout timeout ─────────────────────────────────────────────
+
+class TestRetrieverFanoutTimeout:
+    """retriever_node logs a warning and returns partial results on ThreadPool timeout."""
+
+    def test_retriever_rrf_fanout_timeout_logs_warning(self, capsys):
+        """When as_completed raises TimeoutError, a warning is logged and no exception propagates."""
+        import concurrent.futures
+        from app.agents.rag_agent import retriever_node
+
+        with patch("app.agents.rag_agent.similarity_search", return_value=[]), \
+             patch("app.agents.rag_agent.format_context", return_value="ctx"), \
+             patch("app.agents.rag_agent.settings") as mock_s, \
+             patch(
+                 "app.agents.rag_agent.as_completed",
+                 side_effect=concurrent.futures.TimeoutError,
+             ):
+            mock_s.retriever_fusion_mode = "rrf"
+            mock_s.retriever_rrf_k = 60
+            mock_s.retriever_hybrid_bm25 = False
+
+            state = _base_agent_state()
+            state["question"] = "what is X?"
+            state["query_variants"] = ["alt phrasing"]
+            state["hypothetical_answer"] = ""
+
+            # Must not raise
+            result = retriever_node(state)
+
+        assert result["chunks_found"] == 0
+        # structlog writes to stdout; verify timeout warning was emitted
+        assert "fanout_timeout" in capsys.readouterr().out
 
 
 # ── _initial_state helper ────────────────────────────────────────────────────

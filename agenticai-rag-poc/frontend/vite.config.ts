@@ -64,6 +64,18 @@ export default defineConfig({
     setupFiles: './tests/setup.ts',
     include: ['tests/unit/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['tests/e2e/**', 'node_modules/**'],
+    // vmThreads shares the process with worker threads — faster than the default
+    // forks pool for jsdom tests because there's no per-file process spawn cost.
+    pool: 'vmThreads',
+    poolOptions: {
+      vmThreads: {
+        // Cap at 8 to avoid memory pressure; CI runners typically have 4 vCPUs.
+        maxThreads: 8,
+        minThreads: 2,
+      },
+    },
+    // Only flag tests that genuinely block the suite (> 2 s), not fast ones.
+    slowTestThreshold: 2000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

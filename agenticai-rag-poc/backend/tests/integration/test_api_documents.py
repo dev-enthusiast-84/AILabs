@@ -118,6 +118,18 @@ def test_upload_unsupported_type(client, auth_headers):
     assert resp.status_code == 422
 
 
+def test_upload_admin_exe_with_mz_header_rejected(client, auth_headers):
+    """Admin uploading a file with a Windows PE (MZ) header must be rejected via the
+    early peek check — before any vector-store I/O."""
+    resp = client.post(
+        "/api/documents/upload",
+        headers=auth_headers,
+        files={"file": ("malware.exe", b"\x4d\x5a" + b"\x00" * 10, "application/octet-stream")},
+    )
+    assert resp.status_code == 422
+    assert "executable" in resp.json()["detail"].lower()
+
+
 def test_upload_requires_auth(client, sample_txt_file):
     name, content, mime = sample_txt_file
     resp = client.post("/api/documents/upload", files={"file": (name, content, mime)})
@@ -1014,6 +1026,245 @@ def test_guest_upload_rate_limit_triggers_429(client, guest_headers):
     _upload_limiter._storage.reset()
 
 
+# ── New coverage: endpoint exception paths ────────────────────────────────────
+
+
+def test_upload_candidate_duplicate_check_safe_app_error_propagates(client, auth_headers):
+    """Lines 255, 376-384: SafeAppError from _candidate_is_upload_duplicate is re-raised as 503."""
+    from app.core.errors import SafeAppError
+    from fastapi import status as http_status
+
+    def _raise_safe(*args, **kwargs):
+        raise SafeAppError(
+            category="retrieval_error",
+            public_message="Document storage is temporarily unavailable.",
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    with patch("app.api.documents._candidate_is_upload_duplicate", side_effect=_raise_safe):
+        resp = client.post(
+            "/api/documents/upload",
+            headers=auth_headers,
+            files={"file": ("test.txt", b"some content", "text/plain")},
+        )
+
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["error_category"] == "retrieval_error"
+    assert "unavailable" in body["detail"].lower()
+
+
+def test_upload_visible_document_count_error_returns_safe_error(client, auth_headers):
+    """Lines 302, 405-415: _visible_document_count raising Exception → typed safe error."""
+
+    def _raise_count(*args, **kwargs):
+        raise RuntimeError("count failed")
+
+    with patch("app.api.documents.document_exists", return_value=False), \
+         patch("app.api.documents._candidate_is_upload_duplicate", return_value=False), \
+         patch("app.api.documents._visible_document_count", side_effect=_raise_count):
+        resp = client.post(
+            "/api/documents/upload",
+            headers=auth_headers,
+            files={"file": ("test.txt", b"some content here", "text/plain")},
+        )
+
+    assert resp.status_code in (500, 503)
+    body = resp.json()
+    assert "error_category" in body
+
+
+def test_list_documents_exception_returns_safe_error(client, auth_headers):
+    """Lines 526-529: _list_visible_document_names raising Exception → typed safe error."""
+
+    def _raise_list(user):
+        raise RuntimeError("list exploded")
+
+    with patch("app.api.documents._list_visible_document_names", side_effect=_raise_list):
+        resp = client.get("/api/documents/", headers=auth_headers)
+
+    assert resp.status_code in (500, 503)
+    body = resp.json()
+    assert "error_category" in body
+
+
+def test_get_documents_metadata_returns_items_with_correct_shape(client, auth_headers):
+    """Lines 540-557: get_documents_metadata iterates docs with availability and chunk_count."""
+    from langchain_core.documents import Document
+
+    docs = [
+        Document(
+            page_content="chunk text",
+            metadata={
+                "source": "report.txt",
+                "filename": "report.txt",
+                "owner_role": "admin",
+                "owner_username": "admin",
+                "uploaded_at": "1700000000",
+            },
+        ),
+    ]
+
+    with patch("app.api.documents.get_all_documents", return_value=docs), \
+         patch("app.api.documents._document_availability", return_value="usable"), \
+         patch("app.api.documents.get_document_chunks", return_value=["chunk1", "chunk2"]):
+        resp = client.get("/api/documents/metadata", headers=auth_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    item = body["documents"][0]
+    assert item["filename"] == "report.txt"
+    assert item["availability"] == "usable"
+    assert item["chunk_count"] == 2
+    assert item["owner_username"] == "admin"
+    assert item["uploaded_at"] == "1700000000"
+
+
+def test_get_documents_metadata_skips_guest_docs(client, auth_headers):
+    """get_documents_metadata must not include guest-owned documents."""
+    from langchain_core.documents import Document
+
+    docs = [
+        Document(
+            page_content="guest content",
+            metadata={
+                "source": "guest-sess-guest.txt",
+                "filename": "guest.txt",
+                "owner_role": "guest",
+                "owner_session": "sess",
+                "owner_username": "guest",
+                "uploaded_at": "1700000001",
+            },
+        ),
+        Document(
+            page_content="admin content",
+            metadata={
+                "source": "admin.txt",
+                "filename": "admin.txt",
+                "owner_role": "admin",
+                "owner_username": "admin",
+                "uploaded_at": "1700000002",
+            },
+        ),
+    ]
+
+    with patch("app.api.documents.get_all_documents", return_value=docs), \
+         patch("app.api.documents._document_availability", return_value="usable"), \
+         patch("app.api.documents.get_document_chunks", return_value=[]):
+        resp = client.get("/api/documents/metadata", headers=auth_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    assert body["documents"][0]["filename"] == "admin.txt"
+
+
+def test_get_documents_metadata_chunk_count_zero_on_get_chunks_error(client, auth_headers):
+    """Lines 554-555: get_document_chunks raising in metadata endpoint → chunk_count=0."""
+    from langchain_core.documents import Document
+
+    docs = [
+        Document(
+            page_content="text",
+            metadata={
+                "source": "broken.txt",
+                "filename": "broken.txt",
+                "owner_role": "admin",
+                "owner_username": "admin",
+                "uploaded_at": "1700000003",
+            },
+        ),
+    ]
+
+    def _raise_chunks(*args, **kwargs):
+        raise RuntimeError("vector unavailable")
+
+    with patch("app.api.documents.get_all_documents", return_value=docs), \
+         patch("app.api.documents._document_availability", return_value="usable"), \
+         patch("app.api.documents.get_document_chunks", side_effect=_raise_chunks):
+        resp = client.get("/api/documents/metadata", headers=auth_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    assert body["documents"][0]["chunk_count"] == 0
+
+
+def test_delete_document_vector_error_returns_safe_error(client, auth_headers):
+    """delete_document raising Exception → typed safe error (503/500).
+
+    The file-store checks are also patched to simulate a document that is
+    present in storage so the VS error propagates rather than resolving to 404.
+    """
+
+    def _raise_delete(*args, **kwargs):
+        raise RuntimeError("vector store is down")
+
+    with patch("app.api.documents.delete_document", side_effect=_raise_delete), \
+         patch("app.api.documents.read_file", return_value=b"existing content"), \
+         patch("app.api.documents.read_chunk_manifest", return_value=["chunk"]):
+        resp = client.delete("/api/documents/test.txt", headers=auth_headers)
+
+    assert resp.status_code in (500, 503)
+    body = resp.json()
+    assert "error_category" in body
+    assert "vector store is down" not in str(body)
+
+
+def test_delete_document_file_store_error_returns_safe_error(client, auth_headers):
+    """Lines 665-675: delete_file raising after successful vector delete → typed safe error."""
+
+    def _raise_file(*args, **kwargs):
+        raise OSError("file store permission denied")
+
+    with patch("app.api.documents.delete_document", return_value=2), \
+         patch("app.api.documents.delete_file", side_effect=_raise_file):
+        resp = client.delete("/api/documents/test.txt", headers=auth_headers)
+
+    assert resp.status_code in (500, 503)
+    body = resp.json()
+    assert "error_category" in body
+    assert "permission denied" not in str(body)
+
+
+def test_get_documents_metadata_deduplicates_same_source(client, auth_headers):
+    """Metadata endpoint returns only one entry per unique source key."""
+    from langchain_core.documents import Document
+
+    docs = [
+        Document(
+            page_content="chunk A",
+            metadata={
+                "source": "dedup.txt",
+                "filename": "dedup.txt",
+                "owner_role": "admin",
+                "owner_username": "admin",
+                "uploaded_at": "1700000010",
+            },
+        ),
+        Document(
+            page_content="chunk B",
+            metadata={
+                "source": "dedup.txt",
+                "filename": "dedup.txt",
+                "owner_role": "admin",
+                "owner_username": "admin",
+                "uploaded_at": "1700000010",
+            },
+        ),
+    ]
+
+    with patch("app.api.documents.get_all_documents", return_value=docs), \
+         patch("app.api.documents._document_availability", return_value="usable"), \
+         patch("app.api.documents.get_document_chunks", return_value=["c1"]):
+        resp = client.get("/api/documents/metadata", headers=auth_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+
+
 def test_admin_upload_not_rate_limited(client, auth_headers):
     """Admin uploads beyond the guest rate limit are never blocked."""
     with patch("app.api.documents._visible_document_count", return_value=0), \
@@ -1032,3 +1283,18 @@ def test_admin_upload_not_rate_limited(client, auth_headers):
             )
             assert resp.status_code != 429, \
                 f"Admin upload #{i + 1} must not be rate-limited, got {resp.status_code}"
+
+
+# ── GET /api/documents/metadata ───────────────────────────────────────────────
+
+def test_get_metadata_admin_returns_200(client, auth_headers):
+    resp = client.get("/api/documents/metadata", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "documents" in data
+    assert "count" in data
+
+
+def test_get_metadata_guest_returns_403(client, guest_headers):
+    resp = client.get("/api/documents/metadata", headers=guest_headers)
+    assert resp.status_code == 403

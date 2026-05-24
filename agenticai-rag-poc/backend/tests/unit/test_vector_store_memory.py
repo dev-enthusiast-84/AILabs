@@ -31,14 +31,14 @@ class TestDynamicOpenAIEmbeddings:
 
         emb = _DynamicOpenAIEmbeddings()
 
-        with patch("app.settings_store._runtime_api_key", key1):
+        with patch("app.runtime.settings_store._runtime_api_key", key1):
             with patch("langchain_openai.OpenAIEmbeddings.embed_documents", fake_embed_docs):
                 emb.embed_documents(["hello"])
         raw1 = captured.get("key")
         actual1 = raw1.get_secret_value() if hasattr(raw1, "get_secret_value") else raw1
         assert actual1 == key1
 
-        with patch("app.settings_store._runtime_api_key", key2):
+        with patch("app.runtime.settings_store._runtime_api_key", key2):
             with patch("langchain_openai.OpenAIEmbeddings.embed_documents", fake_embed_docs):
                 emb.embed_documents(["world"])
         raw2 = captured.get("key")
@@ -58,7 +58,7 @@ class TestDynamicOpenAIEmbeddings:
         key = "sk-" + "c" * 48
         emb = _DynamicOpenAIEmbeddings()
 
-        with patch("app.settings_store._runtime_api_key", key):
+        with patch("app.runtime.settings_store._runtime_api_key", key):
             with patch("langchain_openai.OpenAIEmbeddings.embed_query", fake_embed_query):
                 emb.embed_query("test query")
 

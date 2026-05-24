@@ -1,10 +1,11 @@
 .PHONY: setup dev dev-backend dev-frontend deploy-local test test-e2e test-deploy docker docker-backend docker-down \
         deploy deploy-fullstack deploy-frontend vercel-redeploy vercel-undeploy sample-data docker-sample-data \
-        spec-check spec-validate spec-install spec-new help
+        spec-check spec-validate spec-install spec-new docs-readme help
 
 # ── One-command setup ──────────────────────────────────────────────────────────
 setup:
 	bash scripts/local/setup.sh
+	$(MAKE) docs-readme
 
 # ── Development servers ────────────────────────────────────────────────────────
 dev:
@@ -104,6 +105,14 @@ docker-sample-data:
 	@echo "  or via Swagger at http://localhost:8000/api/docs → POST /api/documents/"
 	@echo ""
 
+# ── Docs ──────────────────────────────────────────────────────────────────────
+# Generates docs/README.md (Docsify homepage) from the root README by stripping
+# the docs/ prefix from link hrefs so paths resolve correctly under docs/.
+# CI runs this automatically before deploying to GitHub Pages.
+# Run locally once after cloning, and after any edits to root README.md.
+docs-readme:
+	sed 's|](docs/|](|g' README.md > docs/README.md
+
 # ── Spec-Kit (SDD) ──────────────────────────────────────────────────────────
 spec-check:
 	bash .specify/scripts/bash/spec-check.sh
@@ -154,6 +163,10 @@ help:
 	@echo "  make vercel-redeploy    Redeploy Vercel project; add SAMPLE_DATA=1 or TOPIC=\"GenAI\""
 	@echo "  make vercel-undeploy    Remove the Vercel project (all deployments + env vars)"
 	@echo "  make test-deploy        Smoke-test deploy/undeploy scripts (no network calls)"
+	@echo ""
+	@echo "  ── Docs ─────────────────────────────────────────────────────────────────────"
+	@echo "  make docs-readme        Generate docs/README.md from root README (Docsify homepage)"
+	@echo "                          Run once after clone; re-run after editing README.md"
 	@echo ""
 	@echo "  ── Spec-Kit (SDD) ───────────────────────────────────────────────────────────"
 	@echo "  make spec-install           Install specify-cli (one-time setup)"

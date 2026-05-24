@@ -1,16 +1,35 @@
 #!/usr/bin/env bash
 # setup.sh — One-command local development setup for Agentic RAG.
-# Usage:  bash setup.sh
+#
+# Usage:
+#   bash setup.sh            # interactive (prompts for admin password)
+#   bash setup.sh --yes      # non-interactive (auto-generate all secrets)
+#
+# Environment variables (skip interactive prompts in CI):
+#   ADMIN_PASSWORD   Admin login password (auto-generated if omitted)
+#   SECRET_KEY       JWT signing key (auto-generated if omitted)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
-bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
-cyan()  { printf '\033[0;36m%s\033[0m\n' "$*"; }
-green() { printf '\033[0;32m%s\033[0m\n' "$*"; }
-yellow(){ printf '\033[0;33m%s\033[0m\n' "$*"; }
-red()   { printf '\033[0;31m%s\033[0m\n' "$*"; }
+bold()    { printf '\033[1m%s\033[0m\n' "$*"; }
+cyan()    { printf '\033[0;36m%s\033[0m\n' "$*"; }
+green()   { printf '\033[0;32m%s\033[0m\n' "$*"; }
+yellow()  { printf '\033[0;33m%s\033[0m\n' "$*"; }
+red()     { printf '\033[0;31m%s\033[0m\n' "$*"; }
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+AUTO_YES=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --yes|-y)   AUTO_YES=true; shift ;;
+        --help|-h)
+            sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; exit 0 ;;
+        *)
+            red "Unknown option: $1 (use --yes for non-interactive mode)"; exit 1 ;;
+    esac
+done
 
 bold "============================================================"
 bold " Agentic RAG — Local Setup"
@@ -83,18 +102,18 @@ green "  Backend dependencies installed"
 
 # ── 3. Backend .env ───────────────────────────────────────────────────────────
 
-# Writes $ADMIN_PASS into the ADMIN_PASSWORD line of .env (portable, no sed escaping issues)
-_write_admin_password() {
-    local pwd="$1"
-    ADMIN_PASS="$pwd" "$PYTHON" - <<'PYEOF'
+# Write a single key=value into .env (preserves all other lines)
+_write_env_key() {
+    local key="$1" value="$2"
+    KEY="$key" VALUE="$value" "$PYTHON" - <<'PYEOF'
 import os, re, pathlib
-pwd = os.environ['ADMIN_PASS']
+key, value = os.environ['KEY'], os.environ['VALUE']
 p = pathlib.Path('.env')
 content = p.read_text()
-if re.search(r'^ADMIN_PASSWORD=', content, re.MULTILINE):
-    content = re.sub(r'^ADMIN_PASSWORD=.*$', f'ADMIN_PASSWORD={pwd}', content, flags=re.MULTILINE)
+if re.search(rf'^{re.escape(key)}=', content, re.MULTILINE):
+    content = re.sub(rf'^{re.escape(key)}=.*$', f'{key}={value}', content, flags=re.MULTILINE)
 else:
-    content = content.rstrip('\n') + f'\nADMIN_PASSWORD={pwd}\n'
+    content = content.rstrip('\n') + f'\n{key}={value}\n'
 p.write_text(content)
 PYEOF
 }
@@ -108,29 +127,118 @@ print(''.join(secrets.choice(chars) for _ in range(16)))
 "
 }
 
-ADMIN_PASS=""
+# Generate a 64-hex-char secret key (equivalent to openssl rand -hex 32)
+_gen_secret_key() {
+    if command -v openssl &>/dev/null; then
+        openssl rand -hex 32
+    else
+        "$PYTHON" -c "import secrets; print(secrets.token_hex(32))"
+    fi
+}
+
+# ── Interactive credential collection (mirrors deploy-vercel.sh) ──────────────
+echo ""
+bold "------------------------------------------------------------"
+bold " Credentials"
+bold "------------------------------------------------------------"
+echo ""
+
+ADMIN_PASS="${ADMIN_PASSWORD:-}"
+ADMIN_PASS_GENERATED=false
+SECRET_KEY_VAL="${SECRET_KEY:-}"
+NEW_ENV=false
 
 if [ ! -f ".env" ]; then
     cp .env.example .env
-    ADMIN_PASS=$(_gen_password)
-    _write_admin_password "$ADMIN_PASS"
-    green "  Created backend/.env with a generated admin password"
-    echo ""
-    yellow "  ⚠  ACTION REQUIRED: open backend/.env and set your OPENAI_API_KEY"
-    echo ""
-else
-    yellow "  backend/.env already exists — skipping"
-    # Backfill ADMIN_PASSWORD if missing or empty (e.g. .env was created before this update)
-    if ! grep -qE "^ADMIN_PASSWORD=.+" .env 2>/dev/null; then
-        ADMIN_PASS=$(_gen_password)
-        _write_admin_password "$ADMIN_PASS"
-        yellow "  Generated missing ADMIN_PASSWORD in backend/.env"
-    else
-        ADMIN_PASS=$(grep "^ADMIN_PASSWORD=" .env | cut -d'=' -f2-)
+    NEW_ENV=true
+fi
+
+# --- ADMIN_PASSWORD ---
+if [ -z "$ADMIN_PASS" ]; then
+    # Check if already set in an existing .env
+    EXISTING_PW=$(grep -E "^ADMIN_PASSWORD=.+" .env 2>/dev/null | cut -d'=' -f2- || true)
+    if [ -n "$EXISTING_PW" ]; then
+        ADMIN_PASS="$EXISTING_PW"
+        yellow "  ADMIN_PASSWORD already set in backend/.env — keeping existing value."
+    elif [ "$AUTO_YES" == false ]; then
+        echo "  Choose a password for the admin account (username: admin)."
+        echo "  Press Enter to auto-generate a secure password."
+        echo ""
+        read -rsp "  ADMIN_PASSWORD (hidden, min 8 chars, Enter to generate): " ADMIN_PASS; echo ""; echo ""
     fi
 fi
 
-# ── 4. Frontend dependencies ──────────────────────────────────────────────────
+if [ -z "$ADMIN_PASS" ]; then
+    ADMIN_PASS=$(_gen_password)
+    ADMIN_PASS_GENERATED=true
+    green "  Auto-generated ADMIN_PASSWORD"
+elif [ ${#ADMIN_PASS} -lt 8 ]; then
+    red "  ERROR: ADMIN_PASSWORD must be at least 8 characters."; exit 1
+fi
+_write_env_key "ADMIN_PASSWORD" "$ADMIN_PASS"
+
+# --- SECRET_KEY ---
+# Check if a real key already exists (not the placeholder and not empty)
+EXISTING_SK=$(grep -E "^SECRET_KEY=" .env 2>/dev/null | cut -d'=' -f2- || true)
+PLACEHOLDER="<generate with: openssl rand -hex 32>"
+if [ -z "$SECRET_KEY_VAL" ]; then
+    if [ -n "$EXISTING_SK" ] && [ "$EXISTING_SK" != "$PLACEHOLDER" ] && [ ${#EXISTING_SK} -ge 32 ]; then
+        SECRET_KEY_VAL="$EXISTING_SK"
+        yellow "  SECRET_KEY already configured in backend/.env — keeping existing value."
+    fi
+fi
+if [ -z "$SECRET_KEY_VAL" ] || [ "$SECRET_KEY_VAL" == "$PLACEHOLDER" ] || [ ${#SECRET_KEY_VAL} -lt 32 ]; then
+    SECRET_KEY_VAL=$(_gen_secret_key)
+    _write_env_key "SECRET_KEY" "$SECRET_KEY_VAL"
+    green "  Generated SECRET_KEY (stored in backend/.env)"
+fi
+
+if [ "$NEW_ENV" == true ]; then
+    green "  Created backend/.env"
+    echo ""
+    yellow "  ⚠  ACTION REQUIRED: open backend/.env and set your OPENAI_API_KEY"
+fi
+
+# ── 4. Git pre-commit hook — strict secrets audit ────────────────────────────
+# Install the comprehensive pre-commit scanner from scripts/pre-commit.
+# The hook blocks .env files, real API keys, hardcoded secret keys, and other
+# sensitive data patterns from being committed (OWASP A02 — secret management).
+_install_git_hook() {
+    local git_dir; git_dir=$(git -C "$ROOT" rev-parse --git-dir 2>/dev/null) || return 0
+    local hook="$git_dir/hooks/pre-commit"
+    local hook_script="$ROOT/scripts/pre-commit"
+
+    if [ ! -f "$hook_script" ]; then
+        yellow "  scripts/pre-commit not found — skipping hook installation."
+        return 0
+    fi
+
+    # Write a thin wrapper that delegates to the versioned script in the repo.
+    # This way updates to scripts/pre-commit are picked up without reinstalling.
+    # Overwrite if the wrapper is ours or if no hook exists yet.
+    if [ ! -f "$hook" ] || grep -q "AGENTIC_RAG_SECRETS_HOOK" "$hook" 2>/dev/null; then
+        cat > "$hook" <<HOOK
+#!/usr/bin/env bash
+# AGENTIC_RAG_SECRETS_HOOK — auto-installed by setup.sh
+# Delegates to the versioned scanner in the repository.
+exec python3 "\$(git rev-parse --show-toplevel)/scripts/pre-commit"
+HOOK
+        chmod +x "$hook"
+        green "  Installed pre-commit secrets hook → $hook"
+    else
+        yellow "  A custom pre-commit hook already exists — not overwriting."
+        yellow "  To enable secrets scanning, add to it:"
+        yellow "    python3 \"\$(git rev-parse --show-toplevel)/scripts/pre-commit\""
+    fi
+}
+
+if [ -d "$ROOT/.git" ]; then
+    _install_git_hook
+else
+    yellow "  Not a git repo — skipping pre-commit hook installation."
+fi
+
+# ── 5. Frontend dependencies ──────────────────────────────────────────────────
 cd "$ROOT/frontend"
 cyan "Installing frontend dependencies (npm ci)..."
 
@@ -168,44 +276,46 @@ fi
 green "  Frontend dependencies installed"
 
 # ── 5. Sample data (optional, prompted) ──────────────────────────────────────
-echo ""
-bold "------------------------------------------------------------"
-bold " Sample Data"
-bold "------------------------------------------------------------"
-echo ""
-echo "  The app supports PDF, TXT, CSV, and Excel uploads."
-echo "  You can either:"
-echo "    [1] Generate provided sample files (HR policy, employee data,"
-echo "        financial data, technology report) — recommended for first run"
-echo "    [2] Skip and upload your own files through the UI"
-echo ""
+if [ "$AUTO_YES" == false ]; then
+    echo ""
+    bold "------------------------------------------------------------"
+    bold " Sample Data"
+    bold "------------------------------------------------------------"
+    echo ""
+    echo "  The app supports PDF, TXT, CSV, and Excel uploads."
+    echo "  You can either:"
+    echo "    [1] Generate provided sample files (HR policy, employee data,"
+    echo "        financial data, technology report) — recommended for first run"
+    echo "    [2] Skip and upload your own files through the UI"
+    echo ""
 
-while true; do
-    read -rp "  Generate sample data? [1/2]: " choice
-    case "$choice" in
-        1)
-            cyan "  Installing sample-data dependencies..."
-            pip install -q reportlab openpyxl 2>/dev/null || true
-            cd "$ROOT"
-            "$PYTHON" sample-data/generate_samples.py
-            green "  Sample files created in sample-data/"
-            echo ""
-            cyan "  Upload these files via the UI after logging in:"
-            echo "    sample-data/sample.txt   — HR & Employee Handbook"
-            echo "    sample-data/sample.csv   — Employee roster & salaries"
-            echo "    sample-data/sample.xlsx  — Financial & headcount data"
-            echo "    sample-data/sample.pdf   — Annual Technology Report"
-            break
-            ;;
-        2)
-            yellow "  Skipped. Upload your own PDF/TXT/CSV/XLSX files through the UI."
-            break
-            ;;
-        *)
-            echo "  Please enter 1 or 2."
-            ;;
-    esac
-done
+    while true; do
+        read -rp "  Generate sample data? [1/2]: " choice
+        case "$choice" in
+            1)
+                cyan "  Installing sample-data dependencies..."
+                pip install -q reportlab openpyxl 2>/dev/null || true
+                cd "$ROOT"
+                "$PYTHON" sample-data/generate_samples.py
+                green "  Sample files created in sample-data/"
+                echo ""
+                cyan "  Upload these files via the UI after logging in:"
+                echo "    sample-data/sample.txt   — HR & Employee Handbook"
+                echo "    sample-data/sample.csv   — Employee roster & salaries"
+                echo "    sample-data/sample.xlsx  — Financial & headcount data"
+                echo "    sample-data/sample.pdf   — Annual Technology Report"
+                break
+                ;;
+            2)
+                yellow "  Skipped. Upload your own PDF/TXT/CSV/XLSX files through the UI."
+                break
+                ;;
+            *)
+                echo "  Please enter 1 or 2."
+                ;;
+        esac
+    done
+fi
 
 # ── 6. Summary ────────────────────────────────────────────────────────────────
 echo ""
@@ -227,7 +337,11 @@ echo "       cd frontend && npm run dev"
 echo ""
 echo "  4. Open: http://localhost:5173"
 echo "     Username: admin"
-echo "     Password: $ADMIN_PASS"
+if [ "$ADMIN_PASS_GENERATED" == true ]; then
+echo "     Password: $ADMIN_PASS   ← SAVE THIS NOW"
+else
+echo "     Password: (the password you entered)"
+fi
 echo "     (also saved in backend/.env as ADMIN_PASSWORD — keep that file private)"
 echo ""
 echo "  5. Run tests:"

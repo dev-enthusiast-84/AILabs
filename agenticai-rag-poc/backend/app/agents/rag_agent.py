@@ -48,6 +48,7 @@ LangChain picks the env vars up automatically — no code changes needed here.
 """
 import logging
 import operator
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
@@ -55,7 +56,7 @@ from functools import lru_cache
 from typing import Annotated, Literal, TypedDict
 
 import structlog
-from langchain_community.callbacks import get_openai_callback
+from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -67,7 +68,7 @@ from pydantic import BaseModel as PydanticBaseModel
 from app.config import get_settings
 from app.rag.pipeline import format_context
 from app.rag.vector_store import similarity_search
-from app.settings_store import (
+from app.runtime.settings_store import (
     account_env_fallback_allowed,
     get_effective_api_key,
     get_effective_generator_model,
@@ -80,6 +81,11 @@ from app.settings_store import (
     get_effective_relevance_grader_enabled,
     get_effective_reranker_type,
 )
+
+def _cb_tokens(cb) -> int:
+    """Sum total_tokens from UsageMetadataCallbackHandler across all models."""
+    return sum(v.get("total_tokens", 0) for v in cb.usage_metadata.values())
+
 
 settings = get_settings()
 log = structlog.get_logger()
@@ -233,21 +239,21 @@ _PLANNER_PROMPT = ChatPromptTemplate.from_messages([
 
 
 def planner_node(state: AgentState) -> AgentState:
-    with get_openai_callback() as cb:
+    with get_usage_metadata_callback() as cb:
         structured_llm = _llm(get_effective_planner_model()).with_structured_output(_PlannerOutput)
         chain = _PLANNER_PROMPT | structured_llm
         t0 = time.perf_counter()
         output: _PlannerOutput = chain.invoke({"question": state["question"]})
         latency = int((time.perf_counter() - t0) * 1000)
     log.info("planner", primary=output.primary_query, alternatives=output.alternatives,
-             tokens=cb.total_tokens, latency_ms=latency)
+             tokens=_cb_tokens(cb), latency_ms=latency)
     return {
         **state,
         "question": output.primary_query,
         "refined_query": output.primary_query,
         "query_variants": output.alternatives,
-        "tokens_used": state["tokens_used"] + cb.total_tokens,
-        "planner_tokens": cb.total_tokens,
+        "tokens_used": state["tokens_used"] + _cb_tokens(cb),
+        "planner_tokens": _cb_tokens(cb),
         "planner_latency_ms": latency,
         "messages": [HumanMessage(
             content=f"[Planner] primary: {output.primary_query} | variants: {output.alternatives}"
@@ -276,17 +282,17 @@ def hyde_node(state: AgentState) -> AgentState:
     document text) instead of the bare question significantly improves recall
     for abstract or paraphrased queries.
     """
-    with get_openai_callback() as cb:
+    with get_usage_metadata_callback() as cb:
         chain = _HYDE_PROMPT | _llm(get_effective_planner_model()) | StrOutputParser()
         t0 = time.perf_counter()
         passage = chain.invoke({"question": state["question"]})
         latency = int((time.perf_counter() - t0) * 1000)
-    log.info("hyde", chars=len(passage), tokens=cb.total_tokens, latency_ms=latency)
+    log.info("hyde", chars=len(passage), tokens=_cb_tokens(cb), latency_ms=latency)
     return {
         **state,
         "hypothetical_answer": passage,
-        "tokens_used": state["tokens_used"] + cb.total_tokens,
-        "hyde_tokens": cb.total_tokens,
+        "tokens_used": state["tokens_used"] + _cb_tokens(cb),
+        "hyde_tokens": _cb_tokens(cb),
         "hyde_latency_ms": latency,
         "messages": [AIMessage(content=f"[HyDE] {len(passage)}-char hypothetical passage")],
     }
@@ -321,8 +327,11 @@ def retriever_node(state: AgentState) -> AgentState:
                 pool.submit(lambda q=q, ctx=copy_context(): ctx.run(lambda: list(similarity_search(q))))
                 for q in queries
             ]
-            for fut in as_completed(futures):
-                ranked_lists.append(fut.result())
+            try:
+                for fut in as_completed(futures, timeout=30):
+                    ranked_lists.append(fut.result())
+            except TimeoutError:
+                log.warning("retriever.fanout_timeout", timeout_s=30)
 
         # Feature 7: add BM25 results as an additional ranked list
         if get_effective_retriever_hybrid_bm25():
@@ -415,7 +424,7 @@ def grader_node(state: AgentState) -> AgentState:
         for i, doc in enumerate(docs)
     )
 
-    with get_openai_callback() as cb:
+    with get_usage_metadata_callback() as cb:
         structured_llm = _llm(get_effective_planner_model()).with_structured_output(_RelevanceGrade)
         chain = _GRADER_PROMPT | structured_llm
         t0 = time.perf_counter()
@@ -437,16 +446,16 @@ def grader_node(state: AgentState) -> AgentState:
     sources = list({doc.metadata.get("source", "unknown") for doc in filtered_docs})
 
     log.info("grader", total=len(docs), kept=len(filtered_docs),
-             reason=grade.reason, tokens=cb.total_tokens, latency_ms=latency)
+             reason=grade.reason, tokens=_cb_tokens(cb), latency_ms=latency)
     return {
         **state,
         "retrieved_docs": filtered_docs,
         "retrieved_context": context,
         "sources": sources,
         "chunks_after_grading": len(filtered_docs),
-        "grader_tokens": cb.total_tokens,
+        "grader_tokens": _cb_tokens(cb),
         "grader_latency_ms": latency,
-        "tokens_used": state["tokens_used"] + cb.total_tokens,
+        "tokens_used": state["tokens_used"] + _cb_tokens(cb),
         "messages": [AIMessage(
             content=f"[Grader] {len(docs)} → {len(filtered_docs)} chunks kept"
         )],
@@ -454,6 +463,27 @@ def grader_node(state: AgentState) -> AgentState:
 
 
 # ── Node: Reranker ────────────────────────────────────────────────────────────
+
+# Module-level cache: CrossEncoder is expensive to load (downloads weights on first use).
+# Keyed by model name so a settings change picks up a fresh instance.
+_cross_encoder_cache: dict = {}
+
+
+def _get_cross_encoder(model_name: str):
+    """Return a cached CrossEncoder, creating it on first call for each model.
+
+    Passes token=HF_TOKEN (if set) or token=False (explicit opt-out) so
+    huggingface_hub never emits the "unauthenticated requests" warning — the
+    model is public and works fine without a token; authentication is only
+    needed for higher rate limits.  Set HF_TOKEN in the environment to
+    enable it.
+    """
+    if model_name not in _cross_encoder_cache:
+        from sentence_transformers import CrossEncoder
+        hf_token = os.environ.get("HF_TOKEN") or False
+        _cross_encoder_cache[model_name] = CrossEncoder(model_name, token=hf_token)
+    return _cross_encoder_cache[model_name]
+
 
 def reranker_node(state: AgentState) -> AgentState:
     """Cross-encoder reranking — sorts chunks by predicted relevance to the question.
@@ -475,7 +505,7 @@ def reranker_node(state: AgentState) -> AgentState:
 
     if reranker_type == "cross-encoder":
         try:
-            from sentence_transformers import CrossEncoder
+            cross_encoder = _get_cross_encoder(settings.reranker_model)
         except ImportError:
             _logger.warning(
                 "sentence_transformers not installed — reranker disabled. "
@@ -484,7 +514,6 @@ def reranker_node(state: AgentState) -> AgentState:
             return {**state, "reranker_latency_ms": 0}
 
         t0 = time.perf_counter()
-        cross_encoder = CrossEncoder(settings.reranker_model)
         pairs = [
             (state["question"], doc.metadata.get("raw_chunk", doc.page_content))
             for doc in docs
@@ -551,7 +580,7 @@ def generator_node(state: AgentState) -> AgentState:
             + question
         )
     warning_threshold = get_effective_token_budget_warning_threshold()
-    with get_openai_callback() as cb:
+    with get_usage_metadata_callback() as cb:
         chain = _GENERATOR_PROMPT | _llm(get_effective_generator_model()) | StrOutputParser()
         t0 = time.perf_counter()
         answer = chain.invoke({
@@ -560,18 +589,18 @@ def generator_node(state: AgentState) -> AgentState:
             "answer_instruction": state.get("answer_instruction", ""),
         })
         latency = int((time.perf_counter() - t0) * 1000)
-    tokens_total = state["tokens_used"] + cb.total_tokens
+    tokens_total = state["tokens_used"] + _cb_tokens(cb)
     if tokens_total > warning_threshold:
         log.warning("token_budget_warning", total_tokens=tokens_total,
                     threshold=warning_threshold)
-    log.info("generator", answer_chars=len(answer), tokens=cb.total_tokens,
+    log.info("generator", answer_chars=len(answer), tokens=_cb_tokens(cb),
              retry=retry_count, latency_ms=latency)
     return {
         **state,
         "retry_count": retry_count,
         "answer": answer,
         "tokens_used": tokens_total,
-        "generator_tokens": state["generator_tokens"] + cb.total_tokens,
+        "generator_tokens": state["generator_tokens"] + _cb_tokens(cb),
         "generator_latency_ms": state["generator_latency_ms"] + latency,
         "messages": [AIMessage(content=f"[Generator] produced {len(answer)}-char answer")],
     }
@@ -596,7 +625,7 @@ _VALIDATOR_PROMPT = ChatPromptTemplate.from_messages([
 
 def validator_node(state: AgentState) -> AgentState:
     retry_count = state.get("retry_count", 0)
-    with get_openai_callback() as cb:
+    with get_usage_metadata_callback() as cb:
         structured_llm = _llm(get_effective_validator_model()).with_structured_output(_ValidationResult)
         chain = _VALIDATOR_PROMPT | structured_llm
         t0 = time.perf_counter()
@@ -606,15 +635,15 @@ def validator_node(state: AgentState) -> AgentState:
         })
         latency = int((time.perf_counter() - t0) * 1000)
     validation = result.status
-    log.info("validator", status=validation, reason=result.reason, tokens=cb.total_tokens,
+    log.info("validator", status=validation, reason=result.reason, tokens=_cb_tokens(cb),
              retry_count=retry_count, latency_ms=latency)
     return {
         **state,
         "validation": validation,
         "validation_reason": result.reason,
         "retry_count": retry_count + 1,
-        "tokens_used": state["tokens_used"] + cb.total_tokens,
-        "validator_tokens": state["validator_tokens"] + cb.total_tokens,
+        "tokens_used": state["tokens_used"] + _cb_tokens(cb),
+        "validator_tokens": state["validator_tokens"] + _cb_tokens(cb),
         "validator_latency_ms": state["validator_latency_ms"] + latency,
         "messages": [AIMessage(content=f"[Validator] {validation}: {result.reason}")],
     }

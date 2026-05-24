@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { documentsApi, extractErrorMessage } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import DocumentViewerModal from '@/components/DocumentViewerModal'
+import type { DocumentMetadataItem } from '@/types'
 
 interface Props {
   refreshKey: number
@@ -30,6 +31,7 @@ export default function DocumentList({ refreshKey, onDocumentsChange }: Props) {
   const [viewing, setViewing] = useState<string | null>(null)
   const [chunkCounts, setChunkCounts] = useState<Record<string, number>>({})
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [metadata, setMetadata] = useState<Record<string, DocumentMetadataItem>>({})
   const isGuest = useAuthStore((s) => s.isGuest)
 
   const removeDocumentFromState = (filename: string) => {
@@ -54,6 +56,20 @@ export default function DocumentList({ refreshKey, onDocumentsChange }: Props) {
           )
         )
         setChunkCounts(counts)
+
+        // Enrich with metadata for admin users only
+        if (!isGuest) {
+          try {
+            const meta = await documentsApi.getMetadata()
+            const metaMap: Record<string, DocumentMetadataItem> = {}
+            for (const item of meta.documents) {
+              metaMap[item.filename] = item
+            }
+            setMetadata(metaMap)
+          } catch {
+            // Fall back gracefully — metadata enrichment is optional
+          }
+        }
       } catch (err) {
         toast.error(extractErrorMessage(err))
       } finally {
@@ -61,7 +77,7 @@ export default function DocumentList({ refreshKey, onDocumentsChange }: Props) {
       }
     }
     load()
-  }, [refreshKey, onDocumentsChange])
+  }, [refreshKey, onDocumentsChange, isGuest])
 
   const handleDelete = async (filename: string) => {
     setDeleting(filename)
@@ -135,12 +151,35 @@ export default function DocumentList({ refreshKey, onDocumentsChange }: Props) {
                   <div className="flex items-center gap-2.5 min-w-0">
                     <DocumentTextIcon className={`h-4 w-4 shrink-0 ${getFileAccentClass(doc)}`} />
                     <div className="min-w-0">
-                      <span className="text-sm text-slate-600 truncate group-hover:text-slate-900 transition-colors">{doc}</span>
-                      {chunkCounts[doc] !== undefined && (
-                        <span className="text-xs text-slate-400 block" data-testid={`chunk-count-${doc}`}>
-                          {chunkCounts[doc]} chunk{chunkCounts[doc] !== 1 ? 's' : ''}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm text-slate-600 truncate group-hover:text-slate-900 transition-colors">{doc}</span>
+                        {!isGuest && metadata[doc]?.availability === 'stale' && (
+                          <span
+                            className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
+                            title="No chunks found in the vector index. Re-upload to restore."
+                            data-testid={`stale-badge-${doc}`}
+                          >
+                            Stale
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {chunkCounts[doc] !== undefined && (
+                          <span className="text-xs text-slate-400" data-testid={`chunk-count-${doc}`}>
+                            {chunkCounts[doc]} chunk{chunkCounts[doc] !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {!isGuest && metadata[doc]?.uploaded_at && (
+                          <span className="text-xs text-slate-500" data-testid={`upload-date-${doc}`}>
+                            {new Date(parseInt(metadata[doc].uploaded_at!, 10) * 1000).toLocaleDateString()}
+                          </span>
+                        )}
+                        {!isGuest && metadata[doc]?.owner_username && (
+                          <span className="text-xs text-slate-400" data-testid={`owner-${doc}`}>
+                            {metadata[doc].owner_username}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 ml-3 shrink-0">

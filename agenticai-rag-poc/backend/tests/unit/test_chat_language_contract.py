@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.chat_languages import CHAT_LANGUAGES, SUPPORTED_LANGUAGES
+from app.core.chat_languages import CHAT_LANGUAGES, SUPPORTED_LANGUAGES
 
 
 ROOT = Path(__file__).resolve().parents[3]

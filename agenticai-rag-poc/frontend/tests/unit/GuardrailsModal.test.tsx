@@ -290,3 +290,97 @@ describe('GuardrailsModal — Guest mode', () => {
     expect(screen.queryByTestId(`delete-${ruleB.id}`)).toBeNull()
   })
 })
+
+// ── C2: Inline edit form ────────────────────────────────────────────────���─────
+
+describe('GuardrailsModal — C2: Inline edit form', () => {
+  it('edit button is absent for builtin rules', async () => {
+    renderModal()
+    await waitFor(() => screen.getByText('Block profanity'))
+    // ruleA is builtin — no edit button
+    expect(screen.queryByTestId(`edit-${ruleA.id}`)).toBeNull()
+  })
+
+  it('edit button is present for non-builtin rules', async () => {
+    renderModal()
+    await waitFor(() => screen.getByText('Flag sensitive topics'))
+    expect(screen.getByTestId(`edit-${ruleB.id}`)).toBeInTheDocument()
+  })
+
+  it('clicking edit button opens the inline edit form pre-filled', async () => {
+    renderModal()
+    await waitFor(() => screen.getByTestId(`edit-${ruleB.id}`))
+    fireEvent.click(screen.getByTestId(`edit-${ruleB.id}`))
+    await waitFor(() => {
+      expect(screen.getByTestId(`edit-rule-form-${ruleB.id}`)).toBeInTheDocument()
+    })
+    // name field should be pre-filled with current name
+    expect(screen.getByTestId(`edit-rule-name-${ruleB.id}`)).toHaveValue(ruleB.name)
+  })
+
+  it('cancel closes the edit form without calling update', async () => {
+    renderModal()
+    await waitFor(() => screen.getByTestId(`edit-${ruleB.id}`))
+    fireEvent.click(screen.getByTestId(`edit-${ruleB.id}`))
+    await waitFor(() => screen.getByTestId(`edit-rule-form-${ruleB.id}`))
+    // Click cancel
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+    await waitFor(() =>
+      expect(screen.queryByTestId(`edit-rule-form-${ruleB.id}`)).toBeNull(),
+    )
+    expect(mockGuardrailsApi.update).not.toHaveBeenCalled()
+  })
+
+  it('saving edit form calls guardrailsApi.update with correct fields and updates the list', async () => {
+    const updatedRule: GuardrailRule = {
+      ...ruleB,
+      name: 'Updated Rule',
+      severity: 'high',
+      action: 'block',
+    }
+    mockGuardrailsApi.update.mockResolvedValue(updatedRule)
+
+    renderModal()
+    await waitFor(() => screen.getByTestId(`edit-${ruleB.id}`))
+    fireEvent.click(screen.getByTestId(`edit-${ruleB.id}`))
+    await waitFor(() => screen.getByTestId(`edit-rule-form-${ruleB.id}`))
+
+    // Change name
+    fireEvent.change(screen.getByTestId(`edit-rule-name-${ruleB.id}`), {
+      target: { value: 'Updated Rule' },
+    })
+    // Change severity
+    fireEvent.change(screen.getByTestId(`edit-rule-severity-${ruleB.id}`), {
+      target: { value: 'high' },
+    })
+    // Change action
+    fireEvent.change(screen.getByTestId(`edit-rule-action-${ruleB.id}`), {
+      target: { value: 'block' },
+    })
+
+    fireEvent.click(screen.getByTestId(`edit-rule-save-${ruleB.id}`))
+
+    await waitFor(() =>
+      expect(mockGuardrailsApi.update).toHaveBeenCalledWith(
+        ruleB.id,
+        expect.objectContaining({
+          name: 'Updated Rule',
+          severity: 'high',
+          action: 'block',
+        }),
+      ),
+    )
+
+    // Form should close and updated name should appear in the list
+    await waitFor(() =>
+      expect(screen.queryByTestId(`edit-rule-form-${ruleB.id}`)).toBeNull(),
+    )
+    expect(screen.getByText('Updated Rule')).toBeInTheDocument()
+  })
+
+  it('edit button is hidden for non-builtin rules in guest mode', async () => {
+    renderModal({ isGuest: true })
+    await waitFor(() => screen.getByText('Flag sensitive topics'))
+    expect(screen.queryByTestId(`edit-${ruleB.id}`)).toBeNull()
+  })
+})

@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import axios from 'axios'
+import toast from 'react-hot-toast'
 import { useDropzone } from 'react-dropzone'
 import { CloudArrowUpIcon, XCircleIcon, ArrowUpTrayIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 import { documentsApi, settingsApi, extractErrorMessage } from '@/services/api'
@@ -37,7 +38,20 @@ type UploadResult = {
 export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
   const [uploading, setUploading] = useState(false)
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([])
+  const [settingsMaxUploadMb, setSettingsMaxUploadMb] = useState<number | undefined>(undefined)
+  const [settingsGuestMaxUploadMb, setSettingsGuestMaxUploadMb] = useState<number | undefined>(undefined)
+  const [guestDocRetentionHours, setGuestDocRetentionHours] = useState<number | undefined>(undefined)
   const { isGuest, addGuestUploadedDoc } = useAuthStore()
+
+  useEffect(() => {
+    settingsApi.get().then((s) => {
+      setSettingsMaxUploadMb(s.max_upload_size_mb)
+      setSettingsGuestMaxUploadMb(s.guest_max_upload_size_mb)
+      setGuestDocRetentionHours(s.guest_doc_retention_hours)
+    }).catch(() => {
+      // Silently keep defaults if settings fetch fails
+    })
+  }, [])
 
   const accept  = isGuest ? ACCEPTED_GUEST : ACCEPTED_ADMIN
   const maxSize = isGuest ? MAX_SIZE_GUEST  : MAX_SIZE_ADMIN
@@ -96,6 +110,13 @@ export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
               : item
           )))
           if (isGuest) addGuestUploadedDoc(result.filename)
+          // One-time session suggestion to run Ragas evaluation
+          if (!sessionStorage.getItem('ragas_suggest_shown')) {
+            sessionStorage.setItem('ragas_suggest_shown', '1')
+            window.setTimeout(() => {
+              toast('Tip: run Ragas evaluation to benchmark retrieval quality.', { icon: '📊' })
+            }, 1500)
+          }
         } catch (err) {
           let message: string
           if (axios.isAxiosError(err) && err.response?.status === 429) {
@@ -134,8 +155,12 @@ export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
     <div className="card p-5">
       <h2 className="text-base font-semibold text-slate-900 mb-4">Upload Documents</h2>
       {isGuest && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-          You can upload 1 TXT file (up to 2 MB). Sign in to upload PDF, CSV, and XLSX files up to 20 MB.
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3" data-testid="guest-upload-note">
+          You can upload 1 TXT file (up to {settingsGuestMaxUploadMb ?? 2} MB).
+          {guestDocRetentionHours != null && (
+            <> Uploaded documents are automatically removed after {guestDocRetentionHours === 1 ? '1 hour' : `${guestDocRetentionHours} hours`}.</>
+          )}
+          {' '}Sign in to upload PDF, CSV, and XLSX files up to {settingsMaxUploadMb ?? 20} MB.
         </p>
       )}
       <div
@@ -174,6 +199,10 @@ export default function DocumentUpload({ onUploaded, onOpenSettings }: Props) {
           </>
         )}
       </div>
+      <p className="text-xs text-slate-400 mt-1" data-testid="upload-size-hint">
+        Max {isGuest ? (settingsGuestMaxUploadMb ?? 2) : (settingsMaxUploadMb ?? (__IS_VERCEL__ ? 4 : 20))} MB
+        {isGuest ? ' · TXT only' : ' · PDF, TXT, CSV, XLSX'}
+      </p>
       {fileRejections.length > 0 && (
         <ul className="mt-2 space-y-1">
           {fileRejections.map(({ file, errors }) => (

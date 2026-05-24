@@ -7,6 +7,7 @@ vi.mock('@/services/api', () => ({
     list: vi.fn(),
     remove: vi.fn(),
     getChunks: vi.fn(),
+    getMetadata: vi.fn(),
   },
   extractErrorMessage: vi.fn((e) => String(e)),
 }))
@@ -59,6 +60,7 @@ describe('DocumentList', () => {
     setGuest(false)
     vi.mocked(documentsApi.list).mockResolvedValue(documentListResponse([]))
     vi.mocked(documentsApi.getChunks).mockResolvedValue({ filename: 'doc.txt', chunks: [], total_chunks: 0 })
+    vi.mocked(documentsApi.getMetadata).mockRejectedValue(new Error('not implemented'))
   })
 
   it('shows empty state when no documents are indexed', async () => {
@@ -264,5 +266,51 @@ describe('DocumentList', () => {
     await waitFor(() => screen.getByTestId('delete-confirm-btn'))
     expect(screen.getAllByTestId('delete-confirm-btn')).toHaveLength(1)
     expect(screen.getAllByTestId('delete-cancel-btn')).toHaveLength(1)
+  })
+
+  // ── Fix E5: stale badge ──────────────────────────────────────────────────────
+
+  it('shows stale badge for a document when metadata reports availability=stale (admin)', async () => {
+    vi.mocked(documentsApi.list).mockResolvedValue(documentListResponse(['old.pdf']))
+    vi.mocked(documentsApi.getMetadata).mockResolvedValue({
+      documents: [{
+        filename: 'old.pdf',
+        chunk_count: 0,
+        uploaded_at: '1700000000',
+        owner_username: 'admin',
+        availability: 'stale',
+      }],
+      count: 1,
+    })
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => expect(screen.getByTestId('stale-badge-old.pdf')).toBeInTheDocument())
+    expect(screen.getByText('Stale')).toBeInTheDocument()
+  })
+
+  it('does not show stale badge when availability is usable', async () => {
+    vi.mocked(documentsApi.list).mockResolvedValue(documentListResponse(['good.pdf']))
+    vi.mocked(documentsApi.getMetadata).mockResolvedValue({
+      documents: [{
+        filename: 'good.pdf',
+        chunk_count: 5,
+        uploaded_at: '1700000000',
+        owner_username: 'admin',
+        availability: 'usable',
+      }],
+      count: 1,
+    })
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => screen.getByText('good.pdf'))
+    expect(screen.queryByTestId('stale-badge-good.pdf')).toBeNull()
+    expect(screen.queryByText('Stale')).toBeNull()
+  })
+
+  it('does not show stale badge for guest users even when metadata reports stale', async () => {
+    setGuest(true)
+    vi.mocked(documentsApi.list).mockResolvedValue(documentListResponse(['stale-guest.txt']))
+    // getMetadata should not be called for guests, but even if it were, no badge
+    render(<DocumentList refreshKey={0} />)
+    await waitFor(() => screen.getByText('stale-guest.txt'))
+    expect(screen.queryByText('Stale')).toBeNull()
   })
 })

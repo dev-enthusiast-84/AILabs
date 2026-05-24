@@ -90,7 +90,7 @@ def test_semantic_chunker_adds_chunk_index():
     mock_openai_module = MagicMock()
     mock_openai_module.OpenAIEmbeddings = mock_embeddings_cls
 
-    with patch("app.settings_store.get_effective_api_key", return_value="sk-fake-key"), \
+    with patch("app.runtime.settings_store.get_effective_api_key", return_value="sk-fake-key"), \
          patch("app.rag.chunking.get_settings") as mock_settings, \
          patch.dict("sys.modules", {
              "langchain_experimental": MagicMock(),
@@ -177,7 +177,7 @@ def test_semantic_chunk_adds_contextual_header_and_raw_chunk():
     mock_openai = MagicMock()
     mock_openai.OpenAIEmbeddings = MagicMock(return_value=MagicMock())
 
-    with patch("app.settings_store.get_effective_api_key", return_value="sk-fake"), \
+    with patch("app.runtime.settings_store.get_effective_api_key", return_value="sk-fake"), \
          patch("app.rag.chunking.get_settings") as mock_settings, \
          patch.dict("sys.modules", {
              "langchain_experimental": MagicMock(),
@@ -207,7 +207,7 @@ def test_semantic_chunk_no_header_when_source_missing():
     mock_openai = MagicMock()
     mock_openai.OpenAIEmbeddings = MagicMock(return_value=MagicMock())
 
-    with patch("app.settings_store.get_effective_api_key", return_value="sk-fake"), \
+    with patch("app.runtime.settings_store.get_effective_api_key", return_value="sk-fake"), \
          patch("app.rag.chunking.get_settings") as mock_settings, \
          patch.dict("sys.modules", {
              "langchain_experimental": MagicMock(),

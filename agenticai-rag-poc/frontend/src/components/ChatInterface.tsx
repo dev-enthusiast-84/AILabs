@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, useRef, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { documentsApi, queryApi, settingsApi, extractErrorMessage } from '@/services/api'
+import { documentsApi, queryApi, settingsApi, voiceApi, extractErrorMessage } from '@/services/api'
 import type { ChatMessage } from '@/types'
 import DocumentViewerModal from '@/components/DocumentViewerModal'
 import { ChatComposer } from '@/components/chat/ChatComposer'
@@ -56,12 +56,17 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [maxQueryLength, setMaxQueryLength] = useState<number>(1000)
   const [voiceSupported, setVoiceSupported] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [voiceDraftReady, setVoiceDraftReady] = useState(false)
   const [playingMessageId, setPlayingMessageId] = useState<string | null>(null)
   const [exportingAudio, setExportingAudio] = useState(false)
+  const [exportJobStatus, setExportJobStatus] = useState<string | null>(null)
+  const currentExportJobIdRef = useRef<string | null>(null)
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const queryCountRef = useRef(0)
   const bottomRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const transcriptRef = useRef('')
@@ -109,6 +114,7 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
     return () => {
       recognitionRef.current?.abort()
       window.speechSynthesis?.cancel()
+      if (copyTimeoutRef.current !== null) clearTimeout(copyTimeoutRef.current)
     }
   }, [])
 
@@ -134,6 +140,7 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
 
     try {
       const settings = await settingsApi.get()
+      setMaxQueryLength(settings.max_query_length ?? 1000)
       if (settings.api_key_source === 'not_configured') {
         const message = 'OpenAI API key is required before asking questions because answers are generated with the selected LLM model.'
         toast.error(message)
@@ -179,6 +186,11 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
         output_flagged: result.output_flagged,
       }
       setMessages((prev) => [...prev, assistantMsg])
+      queryCountRef.current += 1
+      const count = queryCountRef.current
+      if (count === 10 || count === 25 || count === 50) {
+        toast(`You've asked ${count} questions — consider running Ragas evaluation to measure RAG quality.`, { icon: '📊', duration: 5000 })
+      }
     } catch (err) {
       const message = extractErrorMessage(err)
       setMessages((prev) => [
@@ -298,18 +310,32 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
         onOpenSettings?.(message)
         return
       }
-      await exportAudio(messages, chatLanguage)
+      const { redacted } = await exportAudio(messages, chatLanguage, setExportJobStatus, (jobId) => {
+        currentExportJobIdRef.current = jobId
+      })
+      if (redacted) {
+        toast('Some content was redacted from the audio export by the content policy.', {
+          icon: '🔒',
+          duration: 6000,
+        })
+      }
     } catch (err) {
       setVoiceError(extractErrorMessage(err))
     } finally {
       setExportingAudio(false)
+      currentExportJobIdRef.current = null
+      setExportJobStatus(null)
     }
   }, [chatLanguage, exportAudio, messages, onOpenSettings, voiceOnlyConversation])
 
   const copyResponse = useCallback((message: ChatMessage) => {
     navigator.clipboard.writeText(message.content)
+    if (copyTimeoutRef.current !== null) clearTimeout(copyTimeoutRef.current)
     setCopiedId(message.id)
-    setTimeout(() => setCopiedId((prev) => (prev === message.id ? null : prev)), 2000)
+    copyTimeoutRef.current = setTimeout(() => {
+      copyTimeoutRef.current = null
+      setCopiedId((prev) => (prev === message.id ? null : prev))
+    }, 2000)
   }, [])
 
   return (
@@ -317,9 +343,20 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
       <ChatToolbar
         chatLanguage={chatLanguage}
         exportingAudio={exportingAudio}
+        exportJobStatus={exportJobStatus}
         messageCount={messages.length}
         ragMode={ragMode}
         voiceOnlyConversation={voiceOnlyConversation}
+        onCancelExport={async () => {
+          if (currentExportJobIdRef.current) {
+            try {
+              await voiceApi.cancelExportJob(currentExportJobIdRef.current)
+            } catch {
+              // ignore cancellation errors
+            }
+            currentExportJobIdRef.current = null
+          }
+        }}
         onChangeLanguage={setChatLanguage}
         onChangeMode={setRagMode}
         onExportAudio={exportAudioConversation}
@@ -348,6 +385,7 @@ export default function ChatInterface({ documents, onOpenSettings }: Props) {
         input={input}
         isRecording={isRecording}
         loading={loading}
+        maxQueryLength={maxQueryLength}
         voiceDraftReady={voiceDraftReady}
         voiceError={voiceError}
         voiceSupported={voiceSupported}

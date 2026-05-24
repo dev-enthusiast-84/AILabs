@@ -8,12 +8,14 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   BeakerIcon,
+  PencilSquareIcon,
 } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
 import { guardrailsApi, extractErrorMessage } from '@/services/api'
 import type {
   GuardrailRule,
   GuardrailRuleCreate,
+  GuardrailRuleUpdate,
   GuardrailCheckResponse,
 } from '@/types'
 
@@ -270,16 +272,195 @@ function AddRuleForm({ onSave, onCancel }: AddRuleFormProps) {
   )
 }
 
+// ── EditRuleForm ──────────────────────────────────────────────────────────────
+
+interface EditRuleFormProps {
+  rule: GuardrailRule
+  onSave: (updated: GuardrailRule) => void
+  onCancel: () => void
+}
+
+function EditRuleForm({ rule, onSave, onCancel }: EditRuleFormProps) {
+  const [name, setName]               = useState(rule.name)
+  const [description, setDesc]        = useState(rule.description ?? '')
+  const [action, setAction]           = useState<GuardrailRule['action']>(rule.action)
+  const [severity, setSeverity]       = useState<GuardrailRule['severity']>(rule.severity)
+  const [words, setWords]             = useState((rule.words ?? []).join(', '))
+  const [keywords, setKeywords]       = useState((rule.keywords ?? []).join(', '))
+  const [pattern, setPattern]         = useState(rule.pattern ?? '')
+  const [replacement, setReplacement] = useState(rule.replacement ?? '[REDACTED]')
+  const [saving, setSaving]           = useState(false)
+
+  const handleSubmit = useCallback(async () => {
+    if (!name.trim()) { toast.error('Name is required.'); return }
+
+    const payload: GuardrailRuleUpdate = {
+      name: name.trim(),
+      description: description.trim() || undefined,
+      action,
+      severity,
+    }
+
+    if (rule.type === 'word') {
+      payload.words = words.split(',').map((w) => w.trim()).filter(Boolean)
+    } else if (rule.type === 'topic') {
+      payload.keywords = keywords.split(',').map((k) => k.trim()).filter(Boolean)
+    } else if (rule.type === 'regex') {
+      payload.pattern = pattern.trim()
+      payload.replacement = replacement.trim()
+    }
+
+    setSaving(true)
+    try {
+      const updated = await guardrailsApi.update(rule.id, payload)
+      onSave(updated)
+      toast.success('Rule updated.')
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }, [name, description, action, severity, words, keywords, pattern, replacement, rule, onSave])
+
+  return (
+    <div className="py-3 px-4 bg-sky-50/60 border-b border-sky-100 space-y-3" data-testid={`edit-rule-form-${rule.id}`}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Name *</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={100}
+            className="input text-sm"
+            data-testid={`edit-rule-name-${rule.id}`}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDesc(e.target.value)}
+            maxLength={200}
+            className="input text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Action</label>
+          <select
+            value={action}
+            onChange={(e) => setAction(e.target.value as GuardrailRule['action'])}
+            className="input text-sm"
+            data-testid={`edit-rule-action-${rule.id}`}
+          >
+            <option value="block">Block</option>
+            <option value="flag">Flag</option>
+            <option value="redact">Redact</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Severity</label>
+          <select
+            value={severity}
+            onChange={(e) => setSeverity(e.target.value as GuardrailRule['severity'])}
+            className="input text-sm"
+            data-testid={`edit-rule-severity-${rule.id}`}
+          >
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+      </div>
+
+      {rule.type === 'word' && (
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Words (comma-separated)</label>
+          <textarea
+            value={words}
+            onChange={(e) => setWords(e.target.value)}
+            rows={2}
+            className="input text-sm resize-none"
+            data-testid={`edit-rule-words-${rule.id}`}
+          />
+        </div>
+      )}
+      {rule.type === 'topic' && (
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Keywords (comma-separated)</label>
+          <textarea
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+            rows={2}
+            className="input text-sm resize-none"
+            data-testid={`edit-rule-keywords-${rule.id}`}
+          />
+        </div>
+      )}
+      {rule.type === 'regex' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Regex Pattern</label>
+            <input
+              type="text"
+              value={pattern}
+              onChange={(e) => setPattern(e.target.value)}
+              className="input text-sm font-mono"
+              data-testid={`edit-rule-pattern-${rule.id}`}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Replacement</label>
+            <input
+              type="text"
+              value={replacement}
+              onChange={(e) => setReplacement(e.target.value)}
+              className="input text-sm"
+              data-testid={`edit-rule-replacement-${rule.id}`}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onCancel} className="btn-secondary text-sm py-1.5" disabled={saving}>
+          Cancel
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={saving}
+          className="btn-primary text-sm py-1.5 disabled:opacity-50"
+          data-testid={`edit-rule-save-${rule.id}`}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── RuleRow ───────────────────────────────────────────────────────────────────
 
 interface RuleRowProps {
   rule: GuardrailRule
   readOnly: boolean
+  isEditing: boolean
   onToggle: (id: string, enabled: boolean) => void
   onDelete: (id: string) => void
+  onEdit: (id: string) => void
+  onEditSave: (updated: GuardrailRule) => void
+  onEditCancel: () => void
 }
 
-function RuleRow({ rule, readOnly, onToggle, onDelete }: RuleRowProps) {
+function RuleRow({ rule, readOnly, isEditing, onToggle, onDelete, onEdit, onEditSave, onEditCancel }: RuleRowProps) {
+  if (isEditing) {
+    return <EditRuleForm rule={rule} onSave={onEditSave} onCancel={onEditCancel} />
+  }
+
   return (
     <div className="flex items-center gap-3 py-3 px-4 hover:bg-slate-50 transition-colors" data-testid={`rule-row-${rule.id}`}>
       {/* Toggle switch */}
@@ -308,7 +489,12 @@ function RuleRow({ rule, readOnly, onToggle, onDelete }: RuleRowProps) {
       <div className="flex items-center gap-2 min-w-0 flex-1">
         <SeverityDot severity={rule.severity} />
         {rule.builtin && (
-          <LockClosedIcon className="h-3.5 w-3.5 text-slate-400 shrink-0" title="Built-in rule — cannot be deleted" />
+          <>
+            <LockClosedIcon className="h-3.5 w-3.5 text-slate-400 shrink-0" title="Built-in rule — cannot be deleted" />
+            <span className="text-xs text-slate-400 italic" title="Built-in rules cannot be deleted or reconfigured. Only enable/disable is allowed.">
+              Built-in
+            </span>
+          </>
         )}
         <div className="min-w-0">
           <p className="text-sm font-medium text-slate-800 truncate">{rule.name}</p>
@@ -317,6 +503,19 @@ function RuleRow({ rule, readOnly, onToggle, onDelete }: RuleRowProps) {
           )}
         </div>
       </div>
+
+      {/* Edit */}
+      {!rule.builtin && !readOnly && (
+        <button
+          onClick={() => onEdit(rule.id)}
+          className="btn-tool h-7 px-1.5"
+          aria-label={`Edit ${rule.name}`}
+          title="Edit rule"
+          data-testid={`edit-${rule.id}`}
+        >
+          <PencilSquareIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
 
       {/* Delete */}
       {!rule.builtin && !readOnly && (
@@ -470,6 +669,7 @@ export default function GuardrailsModal({ open, onClose, isGuest = false }: Prop
   const [filterTarget, setFilterTarget] = useState<FilterTarget>('all')
   const [filterAction, setFilterAction] = useState<FilterAction>('all')
   const [showAddForm, setShowAddForm]   = useState(false)
+  const [editingId, setEditingId]       = useState<string | null>(null)
 
   // Load rules when modal opens
   useEffect(() => {
@@ -481,6 +681,7 @@ export default function GuardrailsModal({ open, onClose, isGuest = false }: Prop
       .finally(() => setLoading(false))
     setTab('rules')
     setShowAddForm(false)
+    setEditingId(null)
     setFilterType('all')
     setFilterTarget('all')
     setFilterAction('all')
@@ -523,6 +724,11 @@ export default function GuardrailsModal({ open, onClose, isGuest = false }: Prop
   const handleRuleCreated = useCallback((rule: GuardrailRule) => {
     setRules((prev) => [...prev, rule])
     setShowAddForm(false)
+  }, [])
+
+  const handleEditSave = useCallback((updated: GuardrailRule) => {
+    setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+    setEditingId(null)
   }, [])
 
   if (!open) return null
@@ -661,8 +867,12 @@ export default function GuardrailsModal({ open, onClose, isGuest = false }: Prop
                       key={rule.id}
                       rule={rule}
                       readOnly={!!isGuest}
+                      isEditing={editingId === rule.id}
                       onToggle={handleToggle}
                       onDelete={handleDelete}
+                      onEdit={setEditingId}
+                      onEditSave={handleEditSave}
+                      onEditCancel={() => setEditingId(null)}
                     />
                   ))}
                 </div>

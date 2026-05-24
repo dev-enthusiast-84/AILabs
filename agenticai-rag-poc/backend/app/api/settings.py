@@ -18,6 +18,8 @@ OWASP controls:
   A07  Uniform error messages; no stack traces exposed to clients.
 """
 import asyncio
+import importlib.util
+import os
 import bleach
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
@@ -28,11 +30,11 @@ from pydantic import BaseModel, field_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.audit import audit_event
+from app.core.audit import audit_event
 from app.auth.utils import get_current_user
 from app.auth.models import UserInDB
 from app.config import get_settings
-from app.settings_store import (
+from app.runtime.settings_store import (
     ALLOWED_MODELS,
     ALLOWED_EMBEDDING_MODELS,
     ALLOWED_RERANKER_TYPES,
@@ -60,6 +62,7 @@ from app.settings_store import (
     get_effective_pinecone_region,
     get_effective_retriever_hybrid_bm25,
     get_effective_relevance_grader_enabled,
+    get_effective_ragas_evaluation_enabled,
     get_effective_reranker_type,
     get_effective_chunker_type,
     get_effective_chunk_size,
@@ -151,6 +154,7 @@ class SettingsUpdateRequest(BaseModel):
     # Pipeline feature flags (admin only — chunker/chunk settings apply to newly uploaded docs only)
     retriever_hybrid_bm25: bool | None = None
     relevance_grader_enabled: bool | None = None
+    ragas_evaluation_enabled: bool | None = None
     reranker_type: str | None = None
     chunker_type: str | None = None
     chunk_size: int | None = None
@@ -219,6 +223,7 @@ class SettingsResponse(BaseModel):
     # Pipeline feature flags
     retriever_hybrid_bm25: bool
     relevance_grader_enabled: bool
+    ragas_evaluation_enabled: bool
     reranker_type: str
     allowed_reranker_types: list[str]
     chunker_type: str
@@ -230,6 +235,19 @@ class SettingsResponse(BaseModel):
     guest_settings_locked: bool = False
     guest_settings_recoverable: bool = False
     guest_settings_reason: str = "admin"
+
+    # Informational — read-only, not user-editable
+    retriever_fusion_mode: str = "rrf"
+    reranker_top_k: int = 4
+    semantic_breakpoint_threshold_type: str = "percentile"
+    max_query_length: int = 1000
+    query_rate_limit_per_minute: int = 10
+    max_upload_size_mb: int = 20
+    guest_max_upload_size_mb: int = 2
+    guest_session_ttl_minutes: int = 15
+    guest_doc_retention_hours: float = 1.0
+    is_vercel: bool = False
+    supports_cross_encoder: bool = False
 
 
 class RagasScoresResponse(BaseModel):
@@ -326,6 +344,7 @@ def _build_response(user: UserInDB | None = None) -> SettingsResponse:
         blob_read_write_token_source=blob_source,
         retriever_hybrid_bm25=get_effective_retriever_hybrid_bm25(),
         relevance_grader_enabled=get_effective_relevance_grader_enabled(),
+        ragas_evaluation_enabled=get_effective_ragas_evaluation_enabled(),
         reranker_type=get_effective_reranker_type(),
         allowed_reranker_types=sorted(ALLOWED_RERANKER_TYPES),
         chunker_type=get_effective_chunker_type(),
@@ -335,6 +354,17 @@ def _build_response(user: UserInDB | None = None) -> SettingsResponse:
         guest_settings_locked=guest_locked,
         guest_settings_recoverable=guest_recoverable,
         guest_settings_reason=guest_reason,
+        retriever_fusion_mode=settings.retriever_fusion_mode,
+        reranker_top_k=settings.reranker_top_k,
+        semantic_breakpoint_threshold_type=settings.semantic_breakpoint_threshold_type,
+        max_query_length=settings.max_query_length,
+        query_rate_limit_per_minute=settings.query_rate_limit_per_minute,
+        max_upload_size_mb=settings.effective_max_upload_size_mb,
+        guest_max_upload_size_mb=settings.guest_max_upload_size_mb,
+        guest_session_ttl_minutes=settings.guest_token_expire_minutes,
+        guest_doc_retention_hours=settings.guest_doc_retention_seconds / 3600,
+        is_vercel=bool(os.environ.get("VERCEL")),
+        supports_cross_encoder=importlib.util.find_spec("sentence_transformers") is not None,
     )
 
 
@@ -412,7 +442,7 @@ async def update_settings(
             "retriever_fetch_k", "max_context_chunks",
             "max_completion_tokens", "token_budget_warning_threshold",
             "langchain_tracing_v2", "langchain_api_key", "langchain_project",
-            "retriever_hybrid_bm25", "relevance_grader_enabled", "reranker_type",
+            "retriever_hybrid_bm25", "relevance_grader_enabled", "ragas_evaluation_enabled", "reranker_type",
             "chunker_type", "chunk_size", "chunk_overlap",
         }
         if any(getattr(body, f) is not None for f in non_guest_fields):
@@ -434,7 +464,7 @@ async def update_settings(
         "pinecone_api_key", "pinecone_index_name",
         "pinecone_namespace", "pinecone_cloud", "pinecone_region",
         "blob_read_write_token",
-        "retriever_hybrid_bm25", "relevance_grader_enabled", "reranker_type",
+        "retriever_hybrid_bm25", "relevance_grader_enabled", "ragas_evaluation_enabled", "reranker_type",
         "chunker_type", "chunk_size", "chunk_overlap",
     ]
     if all(getattr(body, f) is None for f in all_fields):
@@ -605,6 +635,7 @@ async def update_settings(
     # Pipeline feature flags — bool fields need no custom validation beyond type check
     validated_retriever_hybrid_bm25: bool | None = body.retriever_hybrid_bm25
     validated_relevance_grader_enabled: bool | None = body.relevance_grader_enabled
+    validated_ragas_evaluation_enabled: bool | None = body.ragas_evaluation_enabled
 
     validated_reranker_type: str | None = None
     if body.reranker_type is not None:
@@ -674,6 +705,7 @@ async def update_settings(
         blob_read_write_token=validated_blob_read_write_token,
         retriever_hybrid_bm25=validated_retriever_hybrid_bm25,
         relevance_grader_enabled=validated_relevance_grader_enabled,
+        ragas_evaluation_enabled=validated_ragas_evaluation_enabled,
         reranker_type=validated_reranker_type,
         chunker_type=validated_chunker_type,
         chunk_size=validated_chunk_size,
@@ -728,8 +760,8 @@ async def _run_ragas_eval_background() -> None:
     _log.info("ragas_trigger.started")
     try:
         from app.rag.vector_store import get_all_documents, has_documents
-        from app.ragas_store import save_ragas_scores
-        from app.settings_store import get_effective_model
+        from app.runtime.ragas_store import save_ragas_scores
+        from app.runtime.settings_store import get_effective_model
 
         model = get_effective_model()
 
@@ -860,7 +892,7 @@ async def get_ragas_scores_view(user: UserInDB = Depends(get_current_user)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only.",
         )
-    from app.ragas_store import get_ragas_scores
+    from app.runtime.ragas_store import get_ragas_scores
     scores = get_ragas_scores()
     if scores is None:
         return RagasScoresResponse(

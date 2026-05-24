@@ -265,6 +265,7 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
   // Section 8 — Pipeline feature flags (admin only)
   const [hybridBm25, setHybridBm25] = useState(true)
   const [relevanceGrader, setRelevanceGrader] = useState(false)
+  const [ragasAutoEval, setRagasAutoEval] = useState(false)
   const [rerankerType, setRerankerType] = useState('none')
   const [chunkerType, setChunkerType] = useState('recursive')
   const [chunkSize, setChunkSize] = useState(800)
@@ -382,6 +383,7 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
         // Section 8 — Pipeline feature flags
         setHybridBm25(data.retriever_hybrid_bm25 ?? true)
         setRelevanceGrader(data.relevance_grader_enabled ?? false)
+        setRagasAutoEval(data.ragas_evaluation_enabled ?? false)
         setRerankerType(data.reranker_type ?? 'none')
         setChunkerType(data.chunker_type ?? 'recursive')
         setChunkSize(data.chunk_size ?? 800)
@@ -474,6 +476,8 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
         payload.retriever_hybrid_bm25 = hybridBm25
       if (relevanceGrader !== (current?.relevance_grader_enabled ?? false))
         payload.relevance_grader_enabled = relevanceGrader
+      if (ragasAutoEval !== (current?.ragas_evaluation_enabled ?? false))
+        payload.ragas_evaluation_enabled = ragasAutoEval
       if (rerankerType !== (current?.reranker_type ?? 'none'))
         payload.reranker_type = rerankerType
       if (chunkerType !== (current?.chunker_type ?? 'recursive'))
@@ -1142,6 +1146,29 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                       </button>
                     </div>
 
+                    {/* Auto-evaluate with Ragas */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-medium text-slate-600">Auto-evaluate with Ragas</p>
+                        <p className="text-xs text-slate-400">
+                          Runs Ragas quality evaluation automatically every 50 queries. Requires API key. Admin only.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={ragasAutoEval}
+                        data-testid="ragas-auto-eval-toggle"
+                        onClick={() => setRagasAutoEval((v) => !v)}
+                        disabled={isGuest}
+                        className={`relative w-9 h-5 rounded-full transition-colors ${ragasAutoEval ? 'bg-sky-500' : 'bg-slate-200'} ${isGuest ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${ragasAutoEval ? 'translate-x-4' : ''}`}
+                        />
+                      </button>
+                    </div>
+
                     {/* Reranker type */}
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -1160,6 +1187,26 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                         Cross-encoder reranker improves precision but adds ~80 MB model download.
                       </p>
                     </div>
+
+                    {/* Read-only pipeline config info */}
+                    {current?.reranker_top_k != null && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-600">Reranker top-k</span>
+                        <span className="font-mono text-slate-800">{current.reranker_top_k}</span>
+                      </div>
+                    )}
+                    {current?.retriever_fusion_mode && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-600">Retrieval fusion mode</span>
+                        <span className="font-mono text-slate-800">{current.retriever_fusion_mode.toUpperCase()}</span>
+                      </div>
+                    )}
+                    {current?.chunker_type === 'semantic' && current?.semantic_breakpoint_threshold_type && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-600">Semantic breakpoint</span>
+                        <span className="font-mono text-slate-800">{current.semantic_breakpoint_threshold_type}</span>
+                      </div>
+                    )}
 
                     {/* Chunker type */}
                     <div>

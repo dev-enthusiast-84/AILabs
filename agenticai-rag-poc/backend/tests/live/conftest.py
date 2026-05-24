@@ -7,19 +7,50 @@ Optional env : LIVE_SESSION_TIMEOUT  seconds before the entire session is killed
                LIVE_BACKEND_URL      URL of a running backend                  (default http://localhost:8000)
                LIVE_QUESTION         pre-set question so prompts are skipped   (default: empty)
 """
-import os
 import sys
+from types import ModuleType
+
+# langchain-community 0.3+ removed chat_models.vertexai (moved to langchain-google-vertexai).
+# Ragas imports ChatVertexAI from that path at module level regardless of whether VertexAI
+# is used. Inject a stub here — before ragas loads — so the import does not fail.
+# We use langchain_openai exclusively; ChatVertexAI is never instantiated.
+# ragas/llms/base.py imports ChatVertexAI and VertexAI from langchain_community at
+# module level. langchain-community 0.3+ removed those sub-modules and 0.4+ emits a
+# sunset DeprecationWarning in its __init__.py. The proper replacements are in
+# langchain-google-vertexai (a standalone independent package).
+#
+# Pre-populate sys.modules for the entire langchain_community namespace before ragas
+# loads so that:
+#   (a) langchain_community/__init__.py never runs  → no sunset DeprecationWarning
+#   (b) the two ragas VertexAI imports resolve from langchain_google_vertexai
+#
+# This shim is intentionally scoped to tests/live/ — the app itself has zero
+# langchain_community imports; langchain_experimental.text_splitter uses
+# langchain_community.utils.math but is lazy-imported and never triggered here.
+if "langchain_community" not in sys.modules:
+    from langchain_google_vertexai import ChatVertexAI as _ChatVertexAI, VertexAI as _VertexAI
+
+    def _stub(name: str) -> ModuleType:
+        m = ModuleType(name)
+        sys.modules[name] = m
+        return m
+
+    _lc = _stub("langchain_community")
+
+    _lc_cm = _stub("langchain_community.chat_models")
+    _lc.chat_models = _lc_cm  # type: ignore[attr-defined]
+
+    _lc_cm_v = _stub("langchain_community.chat_models.vertexai")
+    _lc_cm_v.ChatVertexAI = _ChatVertexAI  # type: ignore[attr-defined]
+    _lc_cm.vertexai = _lc_cm_v  # type: ignore[attr-defined]
+
+    _lc_llms = _stub("langchain_community.llms")
+    _lc_llms.VertexAI = _VertexAI  # type: ignore[attr-defined]
+    _lc.llms = _lc_llms  # type: ignore[attr-defined]
+
+import os
 import signal
 import threading
-import warnings
-
-# langgraph 0.2.x calls Reviver() without allowed_objects at import time;
-# langchain-core >=0.3.56 warns about this. Suppress until langgraph is upgraded.
-warnings.filterwarnings(
-    "ignore",
-    category=PendingDeprecationWarning,
-    module=r"langgraph\..*",
-)
 
 import httpx
 import pytest
@@ -62,7 +93,7 @@ def pytest_sessionfinish(session, exitstatus):
 # ── Interactive helpers ────────────────────────────────────────────────────────
 
 def _timed_input(prompt: str, timeout: int, default: str = "") -> str:
-    """Read from stdin; return `default` if `timeout` seconds pass without input."""
+    """Read from stdin with a visible countdown; return `default` on timeout."""
     if not sys.stdin.isatty():
         print(f"{prompt}[non-interactive — using: '{default}']", flush=True)
         return default
@@ -81,30 +112,45 @@ def _timed_input(prompt: str, timeout: int, default: str = "") -> str:
 
     t = threading.Thread(target=_read, daemon=True)
     t.start()
-    if not answered.wait(timeout):
-        print(
-            f"\n  [timeout] {timeout}s elapsed — auto-continuing with default: '{default}'",
-            flush=True,
-        )
+
+    # Print a visible countdown so the terminal doesn't look frozen.
+    remaining = timeout
+    while remaining > 0 and not answered.wait(1):
+        remaining -= 1
+        sys.stdout.write(f"\r  [auto-continues in {remaining:2d}s — press Enter to proceed now]  ")
+        sys.stdout.flush()
+
+    if not answered.is_set():
+        sys.stdout.write(f"\r  [timeout — auto-continuing with: '{default}']{' ' * 20}\n")
+        sys.stdout.flush()
+    else:
+        sys.stdout.write("\r" + " " * 60 + "\r")  # clear countdown line
+        sys.stdout.flush()
+
     return result[0]
 
 
-def _stage_gate(title: str, description: str = "", skip_on_deny: bool = True) -> bool:
+def _stage_gate(title: str, description: str = "", skip_on_deny: bool = True, interactive: bool = False) -> bool:
     """
-    Print an interactive checkpoint banner before a test stage.
+    Print a checkpoint banner before a test stage and optionally wait for confirmation.
 
-    Returns True to proceed, False if the user typed 'n'/'no'.
-    Auto-proceeds with True after LIVE_STAGE_TIMEOUT seconds.
+    When interactive=False (default): prints the banner and proceeds immediately.
+    When interactive=True: waits for user input with a countdown; returns False if
+    the user types 'n'/'no', True otherwise.
     """
     sep = "─" * 64
     print(f"\n{sep}", flush=True)
     print(f"  STAGE ▶  {title}", flush=True)
     if description:
         print(f"  {description}", flush=True)
-    print(f"  (auto-continues in {_STAGE_TIMEOUT}s — Ctrl+C to abort all)", flush=True)
+    if interactive:
+        print(f"  (auto-continues in {_STAGE_TIMEOUT}s — Ctrl+C to abort all)", flush=True)
+        print(sep, flush=True)
+        ans = _timed_input("  Proceed? [Y/n]: ", _STAGE_TIMEOUT, "y")
+        return ans.strip().lower() not in {"n", "no"}
+    print(f"  (proceeding automatically)", flush=True)
     print(sep, flush=True)
-    ans = _timed_input("  Proceed? [Y/n]: ", _STAGE_TIMEOUT, "y")
-    return ans.strip().lower() not in {"n", "no"}
+    return True
 
 
 # ── API key guard ──────────────────────────────────────────────────────────────

@@ -43,7 +43,11 @@ def sanitize_query(query: str) -> str:
     # Strip HTML tags (XSS prevention)
     clean = bleach.clean(query, tags=[], strip=True)
 
-    if _INJECTION_RE.search(clean):
+    # Replace zero-width/invisible Unicode chars (U+200B-U+200F, U+202A-U+202E,
+    # U+2060, U+FEFF) with spaces so obfuscation like "ignore previous instructions"
+    # written with zero-width spaces is still caught.
+    _stripped = re.sub(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff]", " ", clean)
+    if _INJECTION_RE.search(unicodedata.normalize("NFKC", _stripped)):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Query contains disallowed patterns.",

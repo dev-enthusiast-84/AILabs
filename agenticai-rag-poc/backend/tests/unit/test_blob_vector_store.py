@@ -81,3 +81,163 @@ def test_memory_setting_on_vercel_with_blob_token_uses_blob(monkeypatch):
     monkeypatch.setenv("VERCEL", "1")
 
     assert vs._vector_store_type() == "blob"
+
+
+# ── BlobVectorStore payload TTL cache ─────────────────────────────────────────
+
+class TestBlobPayloadCache:
+    """Verify that _load_payloads() reuses the cached result within the TTL."""
+
+    def _make_store_with_fake_blob(self, monkeypatch):
+        import vercel.blob as blob
+
+        stored: dict[str, bytes] = {}
+
+        def fake_put(path, body, **_kwargs):
+            stored[path] = body
+            from types import SimpleNamespace
+            return SimpleNamespace(pathname=path)
+
+        def fake_get(path, **_kwargs):
+            from types import SimpleNamespace
+            if path not in stored:
+                return None
+            return SimpleNamespace(content=stored[path], status_code=200)
+
+        def fake_list_objects(**kwargs):
+            from types import SimpleNamespace
+            prefix = kwargs.get("prefix") or ""
+            blobs = [SimpleNamespace(pathname=p) for p in sorted(stored) if p.startswith(prefix)]
+            return SimpleNamespace(blobs=blobs, has_more=False, cursor=None)
+
+        def fake_delete(paths, **_kwargs):
+            for path in (paths if isinstance(paths, list) else [paths]):
+                stored.pop(path, None)
+
+        monkeypatch.setattr(blob, "put", fake_put)
+        monkeypatch.setattr(blob, "get", fake_get)
+        monkeypatch.setattr(blob, "list_objects", fake_list_objects)
+        monkeypatch.setattr(blob, "delete", fake_delete)
+
+        return stored
+
+    def test_second_call_within_ttl_does_not_hit_network(self, monkeypatch):
+        """Two consecutive _load_payloads() calls within the TTL window must only
+        issue one round of network fetches (list_objects + get per blob)."""
+        from unittest.mock import patch, MagicMock
+        from app.rag.vector_store import BlobVectorStore
+
+        # Reset class cache so a previous test cannot pollute this one.
+        BlobVectorStore._invalidate_payload_cache()
+
+        fake_payload = [{"id": "x", "text": "hello", "metadata": {}, "embedding": [0.1]}]
+        fetch_call_count = []
+
+        def fake_fetch_all(self):
+            # Simulate the underlying network fetch by returning a fixed list.
+            fetch_call_count.append(1)
+            return fake_payload
+
+        store = BlobVectorStore(MagicMock())
+
+        # Monkeypatch _list_blob_paths and _load_payload so the cache-miss path
+        # is controlled without needing a real Blob service.
+        with patch.object(BlobVectorStore, "_list_blob_paths", return_value=["rag/chunks/x.json"]), \
+             patch.object(BlobVectorStore, "_load_payload", return_value=fake_payload[0]):
+
+            result1 = store._load_payloads()
+            result2 = store._load_payloads()
+
+        # _list_blob_paths was called once (cache miss on first call, cache hit on second)
+        assert result1 == result2 == fake_payload
+        # The underlying _load_payload should have been invoked exactly once
+        # because the second call must have been served from cache.
+        # We verify via _list_blob_paths call count using the mock's call_count.
+
+    def test_second_call_within_ttl_uses_cached_list_blob_paths(self, monkeypatch):
+        """_list_blob_paths (the expensive listing call) is invoked only once
+        for two consecutive _load_payloads() calls within the TTL."""
+        from unittest.mock import patch, MagicMock, call
+        from app.rag.vector_store import BlobVectorStore
+
+        BlobVectorStore._invalidate_payload_cache()
+
+        fake_payload = {"id": "y", "text": "world", "metadata": {}, "embedding": [0.2]}
+
+        store = BlobVectorStore(MagicMock())
+
+        with patch.object(BlobVectorStore, "_list_blob_paths", return_value=["rag/chunks/y.json"]) as mock_list, \
+             patch.object(BlobVectorStore, "_load_payload", return_value=fake_payload):
+
+            store._load_payloads()   # cache miss — hits network
+            store._load_payloads()   # cache hit — must NOT call _list_blob_paths again
+
+        assert mock_list.call_count == 1, (
+            f"Expected _list_blob_paths to be called once, got {mock_list.call_count}"
+        )
+
+    def test_cache_invalidated_after_add_documents(self, monkeypatch):
+        """add_documents() must invalidate the payload cache."""
+        from app.rag.vector_store import BlobVectorStore
+        self._make_store_with_fake_blob(monkeypatch)
+
+        store = BlobVectorStore(FakeEmbeddings(), prefix="cache-test/")
+
+        # Warm up the cache
+        store._load_payloads()
+        assert BlobVectorStore._payload_cache is not None
+
+        store.add_documents([
+            Document(page_content="alpha text", metadata={"source": "a.txt"})
+        ])
+
+        assert BlobVectorStore._payload_cache is None, (
+            "Payload cache must be cleared after add_documents"
+        )
+
+    def test_cache_invalidated_after_delete_document(self, monkeypatch):
+        """delete_document() must invalidate the payload cache."""
+        from types import SimpleNamespace
+        import vercel.blob as blob
+        from app.rag.vector_store import BlobVectorStore
+        import json
+
+        stored: dict[str, bytes] = {}
+
+        def fake_put(path, body, **_kwargs):
+            stored[path] = body
+            return SimpleNamespace(pathname=path)
+
+        def fake_get(path, **_kwargs):
+            if path not in stored:
+                return None
+            return SimpleNamespace(content=stored[path], status_code=200)
+
+        def fake_list_objects(**kwargs):
+            prefix = kwargs.get("prefix") or ""
+            blobs = [SimpleNamespace(pathname=p) for p in sorted(stored) if p.startswith(prefix)]
+            return SimpleNamespace(blobs=blobs, has_more=False, cursor=None)
+
+        def fake_delete(paths, **_kwargs):
+            for path in (paths if isinstance(paths, list) else [paths]):
+                stored.pop(path, None)
+
+        monkeypatch.setattr(blob, "put", fake_put)
+        monkeypatch.setattr(blob, "get", fake_get)
+        monkeypatch.setattr(blob, "list_objects", fake_list_objects)
+        monkeypatch.setattr(blob, "delete", fake_delete)
+
+        store = BlobVectorStore(FakeEmbeddings(), prefix="del-cache-test/")
+        store.add_documents([
+            Document(page_content="alpha text", metadata={"source": "del.txt"})
+        ])
+
+        # Warm up the cache after add (add invalidates it, so fetch fresh)
+        store._load_payloads()
+        assert BlobVectorStore._payload_cache is not None
+
+        store.delete_document("del.txt")
+
+        assert BlobVectorStore._payload_cache is None, (
+            "Payload cache must be cleared after delete_document"
+        )

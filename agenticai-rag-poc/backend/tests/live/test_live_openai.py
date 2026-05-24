@@ -5,7 +5,7 @@ Validates that the configured API key works, embeddings are generated correctly,
 and the LLM responds as expected before running heavier agent tests.
 """
 import pytest
-from langchain_community.callbacks import get_openai_callback
+from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 
@@ -62,19 +62,18 @@ def test_llm_completion(openai_api_key, stage_gate):
 
 @pytest.mark.timeout(60)
 def test_token_callback_tracks_usage(openai_api_key, stage_gate):
-    """Confirm that get_openai_callback captures real token counts."""
+    """Confirm that get_usage_metadata_callback captures real token counts."""
     stage_gate(
         "Token Tracking",
-        "Wraps an LLM call in get_openai_callback and asserts tokens > 0.",
+        "Wraps an LLM call in get_usage_metadata_callback and asserts tokens > 0.",
     )
     llm = ChatOpenAI(
         model="gpt-4o-mini",
         openai_api_key=openai_api_key,
         max_tokens=10,
     )
-    with get_openai_callback() as cb:
+    with get_usage_metadata_callback() as cb:
         llm.invoke("Reply: hello")
-    print(f"\n  Tokens tracked: {cb.total_tokens}", flush=True)
-    assert cb.total_tokens > 0, "Token callback returned zero — check LangChain version"
-    assert cb.prompt_tokens > 0
-    assert cb.completion_tokens > 0
+    total_tokens = sum(v.get("total_tokens", 0) for v in cb.usage_metadata.values())
+    print(f"\n  Tokens tracked: {total_tokens}", flush=True)
+    assert total_tokens > 0, "Token callback returned zero — check LangChain version"

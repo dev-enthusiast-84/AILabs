@@ -152,6 +152,7 @@ export interface ChatVoiceExportJobResponse {
   retry_count: number
   policy: ChatVoiceExportJobPolicy
   artifact: ChatVoiceExportArtifact | null
+  redacted?: boolean
   error: { code: string; message: string } | null
 }
 
@@ -213,12 +214,27 @@ export interface SettingsResponse {
   // Section 7 — Pipeline feature flags (admin only)
   retriever_hybrid_bm25: boolean
   relevance_grader_enabled: boolean
+  ragas_evaluation_enabled: boolean
   reranker_type: string
   allowed_reranker_types: string[]
   chunker_type: string
   chunk_size: number
   chunk_overlap: number
   allowed_chunker_types: string[]
+  // Section 8 — Environment / capability flags
+  is_vercel?: boolean
+  supports_cross_encoder?: boolean
+  guest_doc_retention_hours?: number
+  // Section 9 — Pipeline config (read-only informational)
+  retriever_fusion_mode?: string
+  reranker_top_k?: number
+  semantic_breakpoint_threshold_type?: string
+  max_query_length?: number
+  query_rate_limit_per_minute?: number
+  max_upload_size_mb?: number
+  guest_max_upload_size_mb?: number
+  // Guest session limits
+  guest_session_ttl_minutes?: number
 }
 
 export interface SettingsUpdateRequest {
@@ -253,10 +269,24 @@ export interface SettingsUpdateRequest {
   // Section 7 — Pipeline feature flags (admin only)
   retriever_hybrid_bm25?: boolean
   relevance_grader_enabled?: boolean
+  ragas_evaluation_enabled?: boolean
   reranker_type?: string
   chunker_type?: string
   chunk_size?: number
   chunk_overlap?: number
+}
+
+export interface DocumentMetadataItem {
+  filename: string
+  chunk_count: number
+  uploaded_at: string | null
+  owner_username: string | null
+  availability: 'usable' | 'stale' | 'unknown'
+}
+
+export interface DocumentMetadataResponse {
+  documents: DocumentMetadataItem[]
+  count: number
 }
 
 export interface DocumentChunksResponse {
@@ -304,6 +334,7 @@ export interface GuardrailRuleCreate {
 export interface GuardrailRuleUpdate {
   name?: string
   description?: string
+  action?: 'block' | 'flag' | 'redact'
   enabled?: boolean
   words?: string[]
   keywords?: string[]

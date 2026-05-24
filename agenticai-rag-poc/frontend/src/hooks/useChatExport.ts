@@ -101,12 +101,19 @@ export function useChatExport(languageByCode: (code: string) => ChatExportLangua
     downloadBlob(new Blob([transcript], { type: 'text/plain' }), `conversation-${Date.now()}.txt`)
   }, [buildFallbackTranscript, getRedactedTranscript])
 
-  const exportAudio = useCallback(async (messages: ChatMessage[], language: ChatLanguageCode) => {
-    const audio = await voiceApi.exportAudio({
-      messages: toVoiceExportMessages(messages),
-      language,
-    })
-    downloadBlob(audio, `conversation-audio-${Date.now()}.mp3`)
+  const exportAudio = useCallback(async (
+    messages: ChatMessage[],
+    language: ChatLanguageCode,
+    onStatusChange?: (status: string) => void,
+    onJobId?: (jobId: string) => void,
+  ): Promise<{ redacted: boolean }> => {
+    const result = await voiceApi.exportAudio(
+      { messages: toVoiceExportMessages(messages), language },
+      onStatusChange,
+      onJobId,
+    )
+    downloadBlob(result.blob, `conversation-audio-${Date.now()}.mp3`)
+    return { redacted: result.redacted }
   }, [])
 
   return {

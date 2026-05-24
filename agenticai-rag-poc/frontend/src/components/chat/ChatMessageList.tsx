@@ -160,6 +160,11 @@ function AssistantMessageFooter({
           )}
           {playingMessageId === message.id ? 'Stop' : 'Listen'}
         </button>
+        {message.language && message.language !== 'en' && (
+          <span className="text-xs text-slate-400 uppercase font-mono" title={`Response language: ${message.language}`} data-testid="language-badge">
+            {message.language}
+          </span>
+        )}
         {message.output_flagged && (
           <span className="text-xs text-amber-600 flex items-center gap-1" title="Content reviewed by policy" data-testid="output-flagged-badge">
             ⚠ Reviewed by content policy
@@ -181,8 +186,17 @@ function AssistantMessageFooter({
           {expandedTraces.has(message.id) && (
             <div className="mt-2 rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs font-mono space-y-1.5" data-testid={`trace-panel-${message.id}`}>
               <TraceRow label="Planner" value={message.trace.refined_query} sub={`${message.trace.planner_model} · ${message.trace.planner_tokens} tok · ${message.trace.planner_latency_ms}ms`} />
+              {message.trace.original_question && message.trace.refined_query && message.trace.original_question !== message.trace.refined_query && (
+                <div className="text-xs text-slate-400 mt-0.5 truncate" title={message.trace.original_question}>
+                  ← <span className="italic">{message.trace.original_question.slice(0, 80)}{message.trace.original_question.length > 80 ? '…' : ''}</span>
+                </div>
+              )}
               {message.trace.hypothetical_answer && (
-                <TraceRow label="HyDE" value={message.trace.hypothetical_answer} />
+                <TraceRow
+                  label="HyDE"
+                  value={message.trace.hypothetical_answer}
+                  sub={`${message.trace.hyde_tokens} tok · ${message.trace.hyde_latency_ms}ms`}
+                />
               )}
               {message.trace.query_variants && message.trace.query_variants.length > 0 && (
                 <TraceRow
@@ -191,6 +205,20 @@ function AssistantMessageFooter({
                 />
               )}
               <TraceRow label="Retriever" value={`${message.trace.chunks_found} chunk${message.trace.chunks_found !== 1 ? 's' : ''} from: ${message.sources?.join(', ') || '—'}`} />
+              {message.trace.grader_latency_ms > 0 && (
+                <TraceRow
+                  label="Grader"
+                  value={`${message.trace.chunks_after_grading} of ${message.trace.chunks_found} chunk${message.trace.chunks_found !== 1 ? 's' : ''} passed`}
+                  sub={`${message.trace.grader_tokens} tok · ${message.trace.grader_latency_ms}ms`}
+                />
+              )}
+              {message.trace.reranker_latency_ms > 0 && (
+                <TraceRow
+                  label="Reranker"
+                  value={`${message.trace.chunks_after_rerank} chunk${message.trace.chunks_after_rerank !== 1 ? 's' : ''} kept`}
+                  sub={`${message.trace.reranker_latency_ms}ms`}
+                />
+              )}
               <TraceRow
                 label="Generator"
                 value={message.trace.retries > 0 ? `answered · ${message.trace.retries} revision${message.trace.retries > 1 ? 's' : ''}` : 'answered'}

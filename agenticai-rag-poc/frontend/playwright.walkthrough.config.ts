@@ -2,6 +2,17 @@ import { defineConfig, devices } from '@playwright/test'
 
 const baseURL = process.env.WALKTHROUGH_BASE_URL ?? 'http://localhost:5173'
 
+// Inherit env label from record-walkthrough.sh; fall back to URL-based detection.
+function resolveEnv(): 'local' | 'remote' {
+  const explicit = process.env.WALKTHROUGH_ENV
+  if (explicit === 'local' || explicit === 'remote') return explicit
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(baseURL)
+    ? 'local'
+    : 'remote'
+}
+
+const walkthroughEnv = resolveEnv()
+
 export default defineConfig({
   testDir: './tests/walkthrough',
   timeout: 180_000,
@@ -11,9 +22,9 @@ export default defineConfig({
   workers: 1,
   reporter: [
     ['list'],
-    ['html', { outputFolder: '../artifacts/walkthrough/report', open: 'never' }],
+    ['html', { outputFolder: `../artifacts/walkthrough/${walkthroughEnv}/report`, open: 'never' }],
   ],
-  outputDir: '../artifacts/walkthrough/results',
+  outputDir: `../artifacts/walkthrough/${walkthroughEnv}/results`,
   use: {
     ...devices['Desktop Chrome'],
     baseURL,

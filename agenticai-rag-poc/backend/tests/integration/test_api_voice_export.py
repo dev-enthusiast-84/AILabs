@@ -418,3 +418,202 @@ def test_voice_export_uses_guest_runtime_api_key_scope(client):
 
     assert resp.status_code == 200
     mock_openai.assert_called_once_with(api_key=_VALID_KEY, timeout=30.0)
+
+
+# ── Validation edge cases for ChatVoiceExportRequest ─────────────────────────
+
+def test_voice_export_invalid_voice_name_returns_422(client, auth_headers):
+    """An unsupported voice name is rejected at the request validation layer."""
+    resp = client.post(
+        "/api/chat/voice/export",
+        headers=auth_headers,
+        json={"text": "Hello there", "voice": "invalid_voice"},
+    )
+    assert resp.status_code == 422
+
+
+def test_voice_export_message_content_too_long_returns_422(client, auth_headers):
+    """A message with content exceeding _MAX_MESSAGE_CHARS is rejected."""
+    long_content = "A" * 6001  # _MAX_MESSAGE_CHARS = 6000
+    resp = client.post(
+        "/api/chat/voice/export",
+        headers=auth_headers,
+        json={
+            "messages": [
+                {"role": "assistant", "content": long_content}
+            ]
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_voice_export_transcript_too_long_returns_422(client, auth_headers):
+    """A transcript field exceeding _MAX_TRANSCRIPT_CHARS is rejected."""
+    long_transcript = "B" * 12001  # _MAX_TRANSCRIPT_CHARS = 12000
+    resp = client.post(
+        "/api/chat/voice/export",
+        headers=auth_headers,
+        json={"transcript": long_transcript},
+    )
+    assert resp.status_code == 422
+
+
+def test_voice_export_no_content_returns_422(client, auth_headers):
+    """A request with no text, transcript, or messages is rejected."""
+    resp = client.post(
+        "/api/chat/voice/export",
+        headers=auth_headers,
+        json={"voice": "alloy"},
+    )
+    assert resp.status_code == 422
+
+
+def test_voice_export_too_many_messages_returns_422(client, auth_headers):
+    """A request with more than _MAX_MESSAGES messages is rejected."""
+    messages = [{"role": "user", "content": "Hello"} for _ in range(101)]  # _MAX_MESSAGES = 100
+    resp = client.post(
+        "/api/chat/voice/export",
+        headers=auth_headers,
+        json={"messages": messages},
+    )
+    assert resp.status_code == 422
+
+
+def test_voice_export_text_field_too_long_returns_422(client, auth_headers):
+    """A text field exceeding _MAX_TRANSCRIPT_CHARS is rejected."""
+    long_text = "C" * 12001  # _MAX_TRANSCRIPT_CHARS = 12000
+    resp = client.post(
+        "/api/chat/voice/export",
+        headers=auth_headers,
+        json={"text": long_text},
+    )
+    assert resp.status_code == 422
+
+
+def test_voice_export_deferred_job_fails_on_general_exception(client, auth_headers):
+    """When job execution raises a non-timeout exception, job status is failed."""
+    with patch("app.api.voice_export.get_effective_api_key", return_value=_VALID_KEY), \
+         patch("app.api.voice_export.OpenAI") as mock_openai:
+        mock_openai.return_value.audio.speech.create.side_effect = RuntimeError("unexpected crash")
+        resp = client.post(
+            "/api/chat/voice/export",
+            headers=auth_headers,
+            json={"text": "Fail this export", "defer": True},
+        )
+        assert resp.status_code == 202
+        job_id = resp.json()["job_id"]
+        done = _wait_for_job(client, auth_headers, job_id, target="failed")
+
+    assert done["status"] == "failed"
+    assert done["error"]["code"] == "voice_export_generation_failed"
+
+
+def test_voice_export_deferred_job_not_found_returns_404(client, auth_headers):
+    """Polling a non-existent job ID returns 404."""
+    resp = client.get("/api/chat/voice/export/jobs/nonexistent-job-id", headers=auth_headers)
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "voice_export_job_not_found"
+
+
+def test_voice_export_cancel_nonexistent_job_returns_404(client, auth_headers):
+    """Canceling a non-existent job returns 404."""
+    resp = client.delete("/api/chat/voice/export/jobs/does-not-exist-job", headers=auth_headers)
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "voice_export_job_not_found"
+
+
+def test_voice_redact_no_content_returns_422(client, auth_headers):
+    """The /redact endpoint also requires at least one content field."""
+    resp = client.post(
+        "/api/chat/voice/redact",
+        headers=auth_headers,
+        json={"voice": "alloy"},
+    )
+    assert resp.status_code == 422
+
+
+def test_voice_export_deferred_job_fails_on_max_retries_timeout(client, auth_headers):
+    """When all retries are exhausted due to timeout, job status is failed."""
+    import httpx as _httpx
+    request = _httpx.Request("POST", "https://api.openai.test/v1/audio/speech")
+
+    with patch("app.api.voice_export._ASYNC_EXPORT_RETRY_AFTER_SECONDS", 0), \
+         patch("app.api.voice_export._ASYNC_EXPORT_MAX_RETRIES", 0), \
+         patch("app.api.voice_export.get_effective_api_key", return_value=_VALID_KEY), \
+         patch("app.api.voice_export.OpenAI") as mock_openai:
+        mock_openai.return_value.audio.speech.create.side_effect = APITimeoutError(request)
+        resp = client.post(
+            "/api/chat/voice/export",
+            headers=auth_headers,
+            json={"text": "Timeout this export", "defer": True},
+        )
+        assert resp.status_code == 202
+        done = _wait_for_job(client, auth_headers, resp.json()["job_id"], target="failed")
+
+    assert done["status"] == "failed"
+    assert done["error"]["code"] == "voice_export_timeout"
+
+
+def test_voice_export_sync_empty_audio_triggers_generation_failed(client, auth_headers):
+    """When OpenAI returns empty bytes in sync path, a 502 error is returned."""
+    with patch("app.api.voice_export.get_effective_api_key", return_value=_VALID_KEY), \
+         patch("app.api.voice_export.OpenAI") as mock_openai:
+        mock_openai.return_value.audio.speech.create.return_value = MagicMock(content=b"")
+        resp = client.post(
+            "/api/chat/voice/export",
+            headers=auth_headers,
+            json={"text": "Short text"},
+        )
+
+    # Empty audio raises ValueError which is caught as generation_failed
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["code"] == "voice_export_generation_failed"
+
+
+def test_voice_export_empty_after_redaction_returns_422(client, auth_headers):
+    """When transcript is empty after redaction, export returns 422."""
+    with patch("app.api.voice_export.get_effective_api_key", return_value=_VALID_KEY), \
+         patch("app.api.voice_export._export_text", return_value=""), \
+         patch("app.api.voice_export._raw_export_text", return_value="some original text"), \
+         patch("app.api.voice_export.OpenAI") as mock_openai:
+        resp = client.post(
+            "/api/chat/voice/export",
+            headers=auth_headers,
+            json={"text": "some original text"},
+        )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "empty_after_redaction"
+    mock_openai.assert_not_called()
+
+
+def test_voice_redact_empty_after_redaction_returns_422(client, auth_headers):
+    """When transcript is empty after redaction on /redact endpoint, returns 422."""
+    with patch("app.api.voice_export._export_text", return_value=""), \
+         patch("app.api.voice_export._raw_export_text", return_value="some text"):
+        resp = client.post(
+            "/api/chat/voice/redact",
+            headers=auth_headers,
+            json={"text": "some text"},
+        )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "empty_after_redaction"
+
+
+def test_voice_export_deferred_job_audio_too_large_fails_job(client, auth_headers):
+    """When async job generates audio exceeding max bytes, job status is failed."""
+    with patch("app.api.voice_export.get_effective_api_key", return_value=_VALID_KEY), \
+         patch("app.api.voice_export._MAX_AUDIO_BYTES", 4), \
+         patch("app.api.voice_export.OpenAI") as mock_openai:
+        _mock_openai_audio(mock_openai, b"12345")  # 5 bytes > limit of 4
+        resp = client.post(
+            "/api/chat/voice/export",
+            headers=auth_headers,
+            json={"text": "Test deferred too large", "defer": True},
+        )
+        assert resp.status_code == 202
+        done = _wait_for_job(client, auth_headers, resp.json()["job_id"], target="failed")
+
+    assert done["status"] == "failed"
+    assert done["error"]["code"] == "audio_response_too_large"

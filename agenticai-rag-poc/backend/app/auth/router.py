@@ -58,7 +58,7 @@ async def logout(
     payload = _decode_token_payload(credentials.credentials)
     jti = payload.get("jti")
     if jti:
-        revoke_token(jti)
+        revoke_token(jti, exp=payload.get("exp"))
     return {"message": "Logged out successfully"}
 
 

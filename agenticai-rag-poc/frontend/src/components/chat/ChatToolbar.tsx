@@ -8,9 +8,11 @@ import { CHAT_LANGUAGES, type ChatLanguageCode } from '@/lib/chatLanguages'
 interface ChatToolbarProps {
   chatLanguage: ChatLanguageCode
   exportingAudio: boolean
+  exportJobStatus?: string | null
   messageCount: number
   ragMode: 'simple' | 'agentic'
   voiceOnlyConversation: boolean
+  onCancelExport?: () => void
   onChangeLanguage: (language: ChatLanguageCode) => void
   onChangeMode: (mode: 'simple' | 'agentic') => void
   onExportAudio: () => void
@@ -20,9 +22,11 @@ interface ChatToolbarProps {
 export function ChatToolbar({
   chatLanguage,
   exportingAudio,
+  exportJobStatus,
   messageCount,
   ragMode,
   voiceOnlyConversation,
+  onCancelExport,
   onChangeLanguage,
   onChangeMode,
   onExportAudio,
@@ -94,17 +98,34 @@ export function ChatToolbar({
           Export transcript
         </button>
         {voiceOnlyConversation && (
-          <button
-            type="button"
-            onClick={onExportAudio}
-            disabled={messageCount === 0 || exportingAudio}
-            className="btn-tool"
-            data-testid="export-audio-btn"
-            title="Export redacted voice chat audio"
-          >
-            <SpeakerWaveIcon className="h-4 w-4" />
-            {exportingAudio ? 'Exporting…' : 'Export audio'}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onExportAudio}
+              disabled={messageCount === 0 || exportingAudio}
+              className="btn-tool"
+              data-testid="export-audio-btn"
+              title="Export redacted voice chat audio"
+            >
+              <SpeakerWaveIcon className="h-4 w-4" />
+              {exportingAudio ? 'Exporting…' : 'Export audio'}
+            </button>
+            {exportingAudio && exportJobStatus && (
+              <span className="text-xs text-slate-500" data-testid="export-job-status">
+                {exportJobStatus === 'queued' ? 'Queued…' : exportJobStatus === 'running' ? 'Processing…' : 'Exporting…'}
+              </span>
+            )}
+            {exportingAudio && onCancelExport && (
+              <button
+                type="button"
+                onClick={onCancelExport}
+                className="text-xs text-rose-600 underline"
+                data-testid="cancel-export-btn"
+              >
+                Cancel
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

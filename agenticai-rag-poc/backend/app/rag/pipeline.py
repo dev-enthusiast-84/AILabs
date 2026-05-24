@@ -12,14 +12,14 @@ OWASP notes (A03 / A01): ``run_simple_rag`` does not call the LLM with
 unvalidated user input — the caller (``query_documents``) must apply
 ``sanitize_query`` and the guardrail engine *before* calling this function.
 """
-from langchain_community.callbacks import get_openai_callback
+from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 from app.config import get_settings
 from app.rag.vector_store import similarity_search
-from app.settings_store import get_effective_max_context_chunks
+from app.runtime.settings_store import get_effective_max_context_chunks
 
 settings = get_settings()
 
@@ -69,7 +69,7 @@ def run_simple_rag(
         context = "No relevant documents found in the knowledge base."
         sources = []
 
-    with get_openai_callback() as cb:
+    with get_usage_metadata_callback() as cb:
         chain = _SIMPLE_RAG_PROMPT | _llm() | StrOutputParser()
         answer: str = chain.invoke({
             "context": context,
@@ -82,7 +82,7 @@ def run_simple_rag(
         "sources": sources,
         "validation": "N/A",
         "mode": "simple",
-        "tokens_used": cb.total_tokens,
+        "tokens_used": sum(v.get("total_tokens", 0) for v in cb.usage_metadata.values()),
         "retry_count": 0,
         "trace": None,
     }

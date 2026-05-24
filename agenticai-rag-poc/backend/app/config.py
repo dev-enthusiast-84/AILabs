@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     # ── Self-RAG relevance grader ─────────────────────────────────────────────
     # Adds one extra LLM call per query to filter irrelevant chunks before generation.
     relevance_grader_enabled: bool = False
+    # ── Ragas quality evaluation ──────────────────────────────────────────────
+    # When true, Ragas evaluation runs automatically every N queries (see api/query.py).
+    # Can be toggled at runtime via POST /api/settings/ {ragas_evaluation_enabled: true}.
+    ragas_evaluation_enabled: bool = False
     # ── Cross-encoder reranker ────────────────────────────────────────────────
     # "none"          — disabled (default)
     # "cross-encoder" — requires: pip install sentence-transformers (~80 MB model download)
@@ -120,6 +124,7 @@ class Settings(BaseSettings):
 
     # Guest mode
     guest_token_expire_minutes: int = 15  # 15-minute session timeout
+    guest_doc_retention_seconds: int = 3600  # 1 hour
 
     @cached_property
     def allowed_origins_list(self) -> list[str]:

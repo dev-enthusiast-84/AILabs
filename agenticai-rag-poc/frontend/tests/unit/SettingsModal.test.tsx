@@ -49,6 +49,7 @@ const mockSettings = vi.hoisted(() => ({
   // Section 7 — Pipeline feature flags (admin only)
   retriever_hybrid_bm25: true,
   relevance_grader_enabled: false,
+  ragas_evaluation_enabled: false,
   reranker_type: 'none',
   allowed_reranker_types: ['cross-encoder', 'none'],
   chunker_type: 'recursive',

@@ -617,3 +617,66 @@ class TestSimilaritySearchChroma:
         mock_store.similarity_search_with_relevance_scores.assert_called_once_with(
             "chroma query", k=4
         )
+
+
+# ── _metadata_matches_filter and _apply_retrieval_filter ─────────────────────
+
+class TestMetadataFilter:
+    """Cover the filter helper functions (lines 37-56)."""
+
+    def test_no_filter_returns_true(self):
+        from app.rag.vector_store import _metadata_matches_filter
+        assert _metadata_matches_filter({"a": "b"}, None) is True
+        assert _metadata_matches_filter({}, {}) is True
+
+    def test_simple_equality_match(self):
+        from app.rag.vector_store import _metadata_matches_filter
+        assert _metadata_matches_filter({"role": "admin"}, {"role": "admin"}) is True
+        assert _metadata_matches_filter({"role": "guest"}, {"role": "admin"}) is False
+
+    def test_ne_operator_returns_false_when_actual_equals_excluded(self):
+        """$ne: actual == excluded → return False (line 43)."""
+        from app.rag.vector_store import _metadata_matches_filter
+        # {"role": {"$ne": "guest"}} should reject a doc where role == "guest"
+        assert _metadata_matches_filter({"role": "guest"}, {"role": {"$ne": "guest"}}) is False
+
+    def test_ne_operator_returns_true_when_actual_differs(self):
+        """$ne: actual != excluded → continue (no early return), eventually True."""
+        from app.rag.vector_store import _metadata_matches_filter
+        assert _metadata_matches_filter({"role": "admin"}, {"role": {"$ne": "guest"}}) is True
+
+    def test_eq_operator_returns_false_when_actual_differs(self):
+        """$eq: actual != expected → return False (line 45)."""
+        from app.rag.vector_store import _metadata_matches_filter
+        assert _metadata_matches_filter({"role": "guest"}, {"role": {"$eq": "admin"}}) is False
+
+    def test_eq_operator_returns_true_when_actual_matches(self):
+        """$eq: actual == expected → continue (line 45 not triggered), eventually True."""
+        from app.rag.vector_store import _metadata_matches_filter
+        assert _metadata_matches_filter({"role": "admin"}, {"role": {"$eq": "admin"}}) is True
+
+    def test_dict_operator_with_no_ne_or_eq_continues(self):
+        """A dict operator with an unrecognised key hits the continue (line 46)."""
+        from app.rag.vector_store import _metadata_matches_filter
+        # An unsupported operator like $gt is ignored — continue to next key.
+        assert _metadata_matches_filter({"score": 5}, {"score": {"$gt": 3}}) is True
+
+    def test_apply_retrieval_filter_no_filter_returns_all(self):
+        """_apply_retrieval_filter with no filter context var set returns all docs (line 54)."""
+        from app.rag.vector_store import _apply_retrieval_filter, set_retrieval_metadata_filter
+        from langchain_core.documents import Document
+        set_retrieval_metadata_filter(None)
+        docs = [Document(page_content="a", metadata={"role": "admin"})]
+        assert _apply_retrieval_filter(docs) == docs
+
+    def test_apply_retrieval_filter_excludes_non_matching(self):
+        """_apply_retrieval_filter with a filter removes non-matching docs (line 56)."""
+        from app.rag.vector_store import _apply_retrieval_filter, set_retrieval_metadata_filter
+        from langchain_core.documents import Document
+        set_retrieval_metadata_filter({"role": {"$ne": "guest"}})
+        admin_doc = Document(page_content="admin content", metadata={"role": "admin"})
+        guest_doc = Document(page_content="guest content", metadata={"role": "guest"})
+        result = _apply_retrieval_filter([admin_doc, guest_doc])
+        assert admin_doc in result
+        assert guest_doc not in result
+        set_retrieval_metadata_filter(None)  # cleanup

@@ -30,6 +30,9 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Generate docs/README.md from root README
+        run: sed 's|](docs/|](|g' README.md > docs/README.md
+
       - name: Upload docs artifact
         uses: actions/upload-pages-artifact@v3
         with:

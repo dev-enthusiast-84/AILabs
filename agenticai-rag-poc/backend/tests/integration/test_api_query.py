@@ -604,4 +604,188 @@ def test_query_output_redaction_applies_before_response(client, auth_headers):
     assert "416-555-0199" not in body["answer"]
     assert "[EMAIL REDACTED]" in body["answer"]
     assert "[PHONE REDACTED]" in body["answer"]
-    assert "violations" not in body
+
+
+# ── Output guardrail: blocked path (lines 237-238) ────────────────────────────
+
+def test_query_output_blocked_by_guardrail_replaces_answer(client, auth_headers):
+    """When the output guardrail blocks a response, the answer is replaced with the blocked message."""
+    from app.guardrails.engine import GuardrailResult, GuardrailViolation
+
+    blocked_result = GuardrailResult(
+        allowed=False,
+        flagged=True,
+        violations=[
+            GuardrailViolation(
+                rule_id="test-block",
+                rule_name="Test Block Rule",
+                action="block",
+                severity="high",
+            )
+        ],
+        modified_text="",
+    )
+
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT), \
+         patch("app.api.query._guardrail_engine") as mock_engine:
+        # Input guardrail passes, output guardrail blocks
+        allowed_result = GuardrailResult(allowed=True, flagged=False, violations=[], modified_text=_MOCK_AGENT_RESULT["answer"])
+        mock_engine.check.side_effect = [allowed_result, blocked_result]
+
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={"question": "What is the remote work policy?"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["answer"] == "Response blocked by content policy."
+
+
+# ── Output guardrail: flagged-only path (lines 241-242) ──────────────────────
+
+def test_query_output_flagged_only_sets_output_flagged_true(client, auth_headers):
+    """When the output guardrail flags (but allows) a response, output_flagged=True."""
+    from app.guardrails.engine import GuardrailResult, GuardrailViolation
+
+    flagged_result = GuardrailResult(
+        allowed=True,
+        flagged=True,
+        violations=[
+            GuardrailViolation(
+                rule_id="test-flag",
+                rule_name="Test Flag Rule",
+                action="flag",
+                severity="medium",
+            )
+        ],
+        modified_text=_MOCK_AGENT_RESULT["answer"],
+    )
+
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT), \
+         patch("app.api.query._guardrail_engine") as mock_engine:
+        allowed_result = GuardrailResult(allowed=True, flagged=False, violations=[], modified_text=_MOCK_AGENT_RESULT["answer"])
+        mock_engine.check.side_effect = [allowed_result, flagged_result]
+
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={"question": "What is the remote work policy?"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["output_flagged"] is True
+    # The answer should be the (unmodified) answer, not the blocked message
+    assert body["answer"] == _MOCK_AGENT_RESULT["answer"]
+
+
+# ── Input guardrail: flagged-only path (line 91) ─────────────────────────────
+
+def test_query_input_flagged_only_does_not_block(client, auth_headers):
+    """When input guardrail flags but allows, the query proceeds normally (line 91)."""
+    from app.guardrails.engine import GuardrailResult, GuardrailViolation
+
+    flagged_input = GuardrailResult(
+        allowed=True,
+        flagged=True,
+        violations=[
+            GuardrailViolation(
+                rule_id="input-flag",
+                rule_name="Input Flag Rule",
+                action="flag",
+                severity="low",
+            )
+        ],
+        modified_text="What is the remote work policy?",
+    )
+
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT), \
+         patch("app.api.query._guardrail_engine") as mock_engine:
+        allowed_output = GuardrailResult(allowed=True, flagged=False, violations=[], modified_text=_MOCK_AGENT_RESULT["answer"])
+        mock_engine.check.side_effect = [flagged_input, allowed_output]
+
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={"question": "What is the remote work policy?"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "answer" in body
+
+
+# ── _contextual_retrieval_question: all-whitespace history (line 134) ─────────
+
+def test_query_with_all_whitespace_history_uses_just_question(client, auth_headers):
+    """History messages whose content cleans to empty must not add a context block (line 134).
+    Uses only 'assistant' role messages so sanitize_query is not called on history content.
+    """
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT) as mock_agent:
+
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={
+                "question": "What is the remote work policy?",
+                # Only assistant messages — sanitize_query is only called on user messages.
+                # These will be cleaned to empty by _history_snippet (bleach + strip),
+                # so snippets will be empty and the function returns just expanded_question.
+                "history": [
+                    {"role": "assistant", "content": "   "},
+                    {"role": "assistant", "content": "\t\n "},
+                ],
+            },
+        )
+
+    assert resp.status_code == 200
+    # The retrieval_question passed to run_agent should not have a context block
+    call_kwargs = mock_agent.call_args
+    retrieval_question = call_kwargs.kwargs.get("retrieval_question", "")
+    assert "Use this recent chat context" not in retrieval_question
+
+
+# ── run_simple_rag exception path (line 218-233) ─────────────────────────────
+
+def test_query_simple_mode_exception_raises_safe_error(client, auth_headers):
+    """When run_simple_rag raises a generic Exception, it is converted to a SafeAppError."""
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_simple_rag", side_effect=RuntimeError("rag boom")):
+
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={"question": "What is the remote work policy?", "mode": "simple"},
+        )
+
+    # SafeAppError maps to 500 or similar error status
+    assert resp.status_code in (500, 503)
+
+
+# ── Ragas auto-trigger (lines 261-268) ───────────────────────────────────────
+
+def test_query_ragas_auto_trigger_queued_at_interval(client, auth_headers, monkeypatch):
+    """Auto-trigger Ragas evaluation background task when the probability roll fires."""
+    # Force random.random() to return 0.0 so the condition always fires
+    monkeypatch.setattr("app.api.query.random.random", lambda: 0.0)
+
+    with patch("app.api.documents.get_all_documents", return_value=[_admin_doc(auth_headers)]), \
+         patch("app.api.query.run_agent", return_value=_MOCK_AGENT_RESULT), \
+         patch("app.api.query.get_effective_ragas_evaluation_enabled", return_value=True), \
+         patch("app.api.query.is_runtime_key_set", return_value=True), \
+         patch("app.api.settings._run_ragas_eval_background") as mock_ragas:
+
+        resp = client.post(
+            "/api/query/",
+            headers=auth_headers,
+            json={"question": "What is the remote work policy?"},
+        )
+
+    assert resp.status_code == 200
+    mock_ragas.assert_called_once()

@@ -1,131 +1,107 @@
 # Agentic RAG — Enterprise Document Q&A
 
-> **Full documentation:** [GitHub Pages →](https://dev-enthusiast-84.github.io/AILabs/)
+An AI agent–based knowledge and decision support system built for the **Edureka / Illinois Tech Generative AI & ML Capstone**. Upload enterprise documents (PDF, TXT, CSV, Excel) and ask natural-language questions — a **7-node LangGraph agent pipeline** retrieves the most relevant content and produces grounded, validated answers via OpenAI GPT-4o-mini.
 
-An AI agent–based knowledge and decision support system built for the **Edureka / Illinois Tech Generative AI & ML Capstone**.
+> **Full documentation, submission reference, and walkthrough:** [GitHub Pages →](https://dev-enthusiast-84.github.io/AILabs/)  
+> **Capability Showcase (all 10 tasks, pipeline demo, metrics):** [Capability Showcase →](https://dev-enthusiast-84.github.io/AILabs/pitch.html)  
+> **Capstone submission reference:** [CAPSTONE-AUDIT.md](docs/project/CAPSTONE-AUDIT.md) — all 10 requirements mapped to implementation, tests, and documentation
 
-Upload enterprise documents (PDF, TXT, CSV, Excel) and ask natural-language questions. A **LangGraph multi-agent pipeline** (Planner → HyDE → Retriever → Grader → Reranker → Generator → Validator) retrieves the most relevant content from the configured vector store and produces grounded, validated answers via OpenAI GPT-4o-mini.
+---
+
+## Quick Navigation
+
+| Getting Started | System | Reference |
+|---|---|---|
+| [Quick Start](#quick-start) | [Feature Highlights](#feature-highlights) | [Submission Reference](#submission-reference) |
+| [Live Demo](#live-demo) | [Access Modes](#access-modes) | [Documentation Index](#documentation) |
+| [Deployment](#deployment-steps) | [Agent Pipeline](#agent-pipeline) | [Environment Variables](#key-environment-variables) |
+| [SDD Workflow](#spec-driven-development-sdd) | [Technology Stack](#technology-stack) | [Limitations & Challenges](#submission-reference) |
+
+---
+
+## Live Demo
+
+| | |
+|--|--|
+| **Deployed app** | [agenticai-rag-poc.vercel.app](https://agenticai-rag-poc.vercel.app) |
+| **Walkthrough videos** | [GitHub Pages gallery →](https://dev-enthusiast-84.github.io/AILabs/walkthrough/) |
 
 ---
 
 ## Quick Start
 
 ```bash
-# Clone and install everything
 git clone https://github.com/dev-enthusiast-84/AILabs && cd AILabs/agenticai-rag-poc
-bash scripts/local/setup.sh   # auto-detects Python 3.11–3.13, installs deps, generates sample data
-
-# Local only: you may set your OpenAI key in .env, or enter it in Settings UI
-nano backend/.env             # optional local-only: OPENAI_API_KEY=<your-openai-api-key>
-
-# Start both servers with hot reload
-bash scripts/local/dev.sh --open   # → http://localhost:5173
+bash scripts/local/setup.sh        # auto-detects Python 3.11–3.13, installs deps, copies .env
+nano backend/.env                  # optional: OPENAI_API_KEY=<your-key>  (or enter via Settings UI)
+bash scripts/local/dev.sh --open   # starts backend :8000 + frontend :5173, opens browser
 ```
 
 Login: username `admin`, password shown in the startup banner.
 
 ```bash
-make setup && make dev   # or via Makefile
-docker compose up --build  # or via Docker (full stack on :3000 + :8000)
+make setup && make dev      # via Makefile
+docker compose up --build   # full stack on :3000 + :8000
 ```
 
+→ [Full Setup Guide](docs/deployment/SETUP.md) — prerequisites, Windows/Linux install, Docker Compose, Vercel.
+
 ---
 
-## Features
+## Feature Highlights
 
-| | |
-|--|--|
-| **Document types** | PDF, TXT, CSV, XLSX / XLS |
+| Feature | Details |
+|---------|---------|
+| **Document types** | PDF, TXT, CSV, XLSX/XLS |
 | **7-node agent pipeline** | Planner → HyDE → Retriever → Grader → Reranker → Generator → Validator |
-| **Voice + multilingual chat** | Voice input/playback, English/Spanish/French answer language, backend-redacted transcript/audio export |
-| **Guest mode** | Chat and upload TXT with no credentials |
-| **Content guardrails** | Block / redact / flag rules on input, output, export, and voice transcript surfaces |
-| **Token transparency** | `tokens_used` field in every response |
-| **Production hardening** | Role/session isolation, safe audit logs, readiness endpoint, CSP/Permissions-Policy, Pinecone/Blob deployment path |
-| **One-command Vercel deploy** | `bash scripts/remote/deploy-vercel.sh` |
+| **Voice + multilingual chat** | Voice input/playback, English/Spanish/French answers, backend-redacted transcript/audio export |
+| **Guest mode** | No credentials needed — TXT uploads, 15-min sessions |
+| **Content guardrails** | Configurable block / redact / flag rules on input, output, export, and voice transcript surfaces |
+| **Token transparency** | `tokens_used` per response + per-node breakdown via AgentTrace |
+| **Production hardening** | Role/session isolation, backend-redacted exports, safe audit logs, readiness endpoint, CSP/Permissions-Policy |
+| **Rate limiting** | 10 req/min on login and query endpoints |
+| **One-command deploy** | `bash scripts/remote/deploy-vercel.sh` |
 
 ---
 
-## Spec-Driven Development (SDD)
+## Access Modes
 
-This project uses [Spec-Kit](https://github.com/github/spec-kit) as its SDD framework. Feature specs live in `.specify/specs/`. See [docs/SDD.md](docs/SDD.md) for the full guide, including slash commands, brownfield back-specs, and the 6-step workflow. Run `make spec-check` to validate specs in CI.
-
----
-
-## Key Environment Variables
-
-Production ignores billing-bearing provider env values such as `OPENAI_API_KEY`,
-`PINECONE_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `LANGCHAIN_API_KEY`, and model/token
-cost controls. Use the app Settings UI for those values after deployment.
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `OPENAI_API_KEY` | — | Local development only; production uses Settings UI |
-| `SECRET_KEY` | insecure default | JWT signing key — rotate in prod |
-| `ADMIN_PASSWORD` | _(generated)_ | Admin login password |
-| `VECTOR_STORE_TYPE` | `chroma` | `chroma` (local), `memory` (tests), `pinecone` (production/Vercel default), `blob` (small Vercel Blob vector demo/fallback only) |
-| `FILE_STORE_TYPE` | `local` | Set to `blob` to persist original uploaded files for preview/download on Vercel |
-| `BLOB_READ_WRITE_TOKEN` | — | Local development only; production uses Settings UI |
-| `PINECONE_API_KEY` | — | Local development only; production uses Settings UI |
-| `PINECONE_INDEX_NAME` | `agenticai-rag-poc-documents` | Pinecone index name; auto-created if absent (serverless, cosine) |
-| `PINECONE_NAMESPACE` | `"agenticai-rag-poc"` | Pinecone namespace for multi-tenancy (optional) |
-| `PINECONE_CLOUD` | `aws` | Serverless cloud: `aws` or `gcp` |
-| `PINECONE_REGION` | `us-east-1` | Serverless region for index creation |
-| `MAX_INDEXED_DOCUMENTS` | `10` | Admin corpus cap to bound file/vector storage growth |
-| `GUEST_MAX_INDEXED_DOCUMENTS` | `3` | Per-guest-session document cap |
-| `MAX_COMPLETION_TOKENS` | `1024` | Local development default; production uses Settings UI/runtime default |
-| `GUEST_TOKEN_EXPIRE_MINUTES` | `15` | Guest session length |
-| `QUERY_RATE_LIMIT_PER_MINUTE` | `10` | Per-IP cap on `POST /api/query/` |
-| `GUEST_UPLOAD_RATE_LIMIT_PER_MINUTE` | `5` | Per-IP upload cap for guests (admins exempt) |
-| `RETRIEVER_K` | `4` | Top-k chunks returned by similarity search |
-| `SIMILARITY_SCORE_THRESHOLD` | `0.0` | Min cosine similarity (0–1); chunks below threshold dropped. `0.0` = disabled |
-| `RETRIEVER_USE_MMR` | `false` | Use Max Marginal Relevance search (Chroma only) for diversity |
-| `RETRIEVER_FETCH_K` | `20` | Candidate pool size for MMR re-ranking (should be ≥ `RETRIEVER_K`) |
-| `CHUNKER_TYPE` | `recursive` | `recursive` or `semantic` — semantic uses embedding boundaries |
-| `SEMANTIC_BREAKPOINT_THRESHOLD_TYPE` | `percentile` | SemanticChunker threshold: percentile, standard_deviation, interquartile, gradient |
-| `PLANNER_MODEL` | _(llm_model)_ | Per-node model override for the Planner agent |
-| `GENERATOR_MODEL` | _(llm_model)_ | Per-node model override for the Generator agent (consider `gpt-4o` in prod) |
-| `VALIDATOR_MODEL` | _(llm_model)_ | Per-node model override for the Validator agent |
-| `LANGCHAIN_TRACING_V2` | `false` | Set `true` to enable LangSmith tracing |
-| `LANGCHAIN_API_KEY` | — | LangSmith API key (required when tracing enabled) |
-| `LANGCHAIN_PROJECT` | `agenticai-rag-poc` | LangSmith project name for trace grouping |
-| `RETRIEVER_FUSION_MODE` | `rrf` | Multi-query result fusion strategy: `rrf` (Reciprocal Rank Fusion) or `dedup` |
-| `RETRIEVER_RRF_K` | `60` | RRF constant — higher value reduces rank-position sensitivity |
-| `RETRIEVER_HYBRID_BM25` | `false` | Enable BM25 lexical search fused with dense results via RRF (requires `pip install rank-bm25`) |
-| `RETRIEVER_BM25_WEIGHT` | `0.5` | BM25 weight hint (informational; RRF drives actual fusion weighting) |
-| `RELEVANCE_GRADER_ENABLED` | `false` | Enable self-RAG relevance grader — drops irrelevant chunks before generation (adds one LLM call) |
-| `RERANKER_TYPE` | `none` | Cross-encoder reranking: `none` (disabled) or `cross-encoder` (requires `pip install sentence-transformers`) |
-| `RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder model used when `RERANKER_TYPE=cross-encoder` |
-| `RERANKER_TOP_K` | `4` | Number of chunks to keep after reranking |
-| `RAGAS_SCORES_FILE` | `/tmp/ragas_scores.json` | Path where live Ragas evaluation results are persisted; read by the admin dashboard |
+| Capability | Guest | Admin |
+|------------|:-----:|:-----:|
+| Chat against indexed documents | ✅ | ✅ |
+| List documents | ✅ | ✅ |
+| Upload TXT (max 2 MB) | ✅ | ✅ |
+| Upload PDF / CSV / Excel (up to 20 MB) | ❌ | ✅ |
+| Delete documents | ❌ | ✅ |
+| Set OpenAI / Pinecone / Blob keys | ✅ once / session | ✅ |
+| Change LLM model | ✅ once / session | unlimited |
+| Session duration | 15 min | 45 min |
 
 ---
 
-## Engineering Challenge: Persistence Across Environments
+## Agent Pipeline
 
-Local and Docker deployments use ChromaDB because it can persist embeddings to a normal writable filesystem. Vercel full-stack deployments are serverless: function instances are ephemeral, `/var/task` is read-only, and `/tmp` is not shared across instances. A file-backed Chroma store can therefore appear to work briefly, then disappear or diverge after reloads, cold starts, or cross-instance requests.
+```
+User question
+   ▼ [Planner]    — multi-query rewrite + 2 alternative phrasings
+   ▼ [HyDE]       — hypothetical document embedding for better recall
+   ▼ [Retriever]  — fan-out across all queries + RRF fusion (BM25 optional)
+   ▼ [Grader]     — self-RAG relevance filter (opt-in)
+   ▼ [Reranker]   — cross-encoder precision sort (opt-in)
+   ▼ [Generator]  — GPT-4o-mini grounded strictly to retrieved context
+   ▼ [Validator]  — VALID or NEEDS_REVISION (≤ 2 retries → Generator)
+   ▼ { answer, sources, validation, tokens_used, mode, trace }
+```
 
-To handle that deployment constraint, production Vercel deployments default to `VECTOR_STORE_TYPE=pinecone`. The active vector store type is deployment configuration and is not changed from the UI. Pinecone stores vectors/chunks in managed durable storage so list, query, and delete operations survive serverless cold starts. The Settings UI may supply Pinecone connection details such as API key, index, namespace, cloud, and region when Pinecone is the configured store. Blob storage is still useful as `FILE_STORE_TYPE=blob` for durable original uploaded files such as PDF previews and downloads; its read/write token can also be supplied through Settings UI when Blob is enabled. `VECTOR_STORE_TYPE=blob` remains available only as a Vercel-native small-demo vector fallback; larger production RAG should pair Pinecone or another hosted vector database with Blob/S3-style object storage for originals.
+`mode="agentic"` (default, 3–5 LLM calls) or `mode="simple"` (single retrieve→generate, ~3× faster).
 
----
-
-## Documentation
-
-| | |
-|--|--|
-| [**Pitch Proposal**](pitch.html) | One-page visual summary of capabilities beyond capstone requirements |
-| [Capstone Audit](docs/CAPSTONE-AUDIT.md) | Edureka PDF task mapping, submission checklist, and engineering challenges |
-| [Setup Guide](docs/SETUP.md) | Full install for macOS, Windows, Linux · Vercel &amp; Docker deployment |
-| [Architecture](docs/ARCHITECTURE.md) | System design, data-flow diagrams, project structure |
-| [API Reference](docs/API.md) | All endpoints, schemas, example `curl` commands |
-| [Content Guardrails](docs/GUARDRAILS.md) | Rule types, built-in rules, API examples |
-| [Spec-Driven Development](docs/SDD.md) | Spec-Kit SDD workflow, slash commands, brownfield specs |
+→ [Agent Pipeline docs](docs/architecture/AGENT-PIPELINE.md) — per-node inputs/outputs, search features, retry logic, limitations.
 
 ---
 
-## Stack
+## Technology Stack
 
-**Backend** — FastAPI · LangGraph · ChromaDB/Pinecone · OpenAI (GPT-4o-mini + text-embedding-3-small)  
+**Backend** — FastAPI · LangGraph · ChromaDB / Pinecone · OpenAI (GPT-4o-mini + text-embedding-3-small)  
 **Frontend** — React 18 · TypeScript · Vite · Tailwind CSS · Zustand  
 **Auth** — JWT (python-jose) · bcrypt  
 **Testing** — pytest · Vitest · Playwright  
@@ -133,20 +109,142 @@ To handle that deployment constraint, production Vercel deployments default to `
 
 ---
 
-## Deployment
+## Key Environment Variables
+
+Production ignores billing-bearing provider values — enter OpenAI, Pinecone, Blob, LangSmith, model, and token settings through the app **Settings UI** after deployment.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OPENAI_API_KEY` | — | Local dev only; production uses Settings UI |
+| `SECRET_KEY` | insecure default | JWT signing key — `openssl rand -hex 32` in prod |
+| `ADMIN_PASSWORD` | _(auto-generated)_ | Login password — printed at startup in dev |
+| `VECTOR_STORE_TYPE` | `chroma` | `chroma` (local/Docker), `pinecone` (production/Vercel), `memory` (tests) |
+| `FILE_STORE_TYPE` | `local` | `blob` to persist uploaded files for preview/download on Vercel |
+| `BLOB_READ_WRITE_TOKEN` | — | Local dev only; production uses Settings UI |
+| `PINECONE_API_KEY` | — | Local dev only; production uses Settings UI |
+
+→ [Full Environment Variables Reference](docs/deployment/DEPLOY-LOCAL-ENV.md) — all retrieval, chunking, reranker, LLM, rate-limit, and observability variables.
+
+---
+
+## Submission Reference
+
+Capstone submission requirements map directly to the dedicated documentation below.
+
+### System Setup
+
+Step-by-step installation for macOS, Windows, and Linux, covering Python 3.11–3.13, Node.js 20 LTS+, virtual environment, npm dependencies, `.env` generation, and one-command startup.
+
+| Guide | Covers |
+|-------|--------|
+| [Setup Guide](docs/deployment/SETUP.md) | Prerequisites, `setup.sh` walkthrough, all platforms |
+| [Local & Docker Deployment](docs/deployment/DEPLOY-LOCAL.md) | Dev server, production-like build, Docker Compose |
+| [Environment Variables](docs/deployment/DEPLOY-LOCAL-ENV.md) | All `backend/.env` variables with defaults and purpose |
+
+### Architecture
+
+Full system design including component diagram, data-flow from upload through chunking, embedding, retrieval, and generation, frontend auth flow, and storage layer options.
+
+| Guide | Covers |
+|-------|--------|
+| [Architecture](docs/architecture/ARCHITECTURE.md) | System overview, data-flow diagrams, component responsibilities |
+| [Architecture Structure](docs/architecture/ARCHITECTURE-STRUCTURE.md) | Project directory layout, module boundaries |
+
+### Agent Roles
+
+Each of the 7 LangGraph nodes is documented — its purpose, inputs, outputs, and connection to the next node in the reasoning chain.
+
+| Guide | Covers |
+|-------|--------|
+| [Agent Pipeline](docs/architecture/AGENT-PIPELINE.md) | All 7 nodes, HyDE, RRF fusion, self-RAG grader, reranker, retry loop |
+
+**Pipeline at a glance:**
+
+| Node | Role |
+|------|------|
+| **Planner** | Rewrites the user question into 3 search variants |
+| **HyDE** | Generates a hypothetical answer passage for embedding-space alignment |
+| **Retriever** | Fan-out search across all variants; fuses results with RRF (BM25 optional) |
+| **Grader** | Self-RAG LLM filter — drops irrelevant chunks before generation (opt-in) |
+| **Reranker** | Cross-encoder precision sort of retrieved chunks (opt-in) |
+| **Generator** | Produces a grounded answer strictly from retrieved context |
+| **Validator** | Independently verifies grounding quality; retries Generator up to 2× |
+
+### Deployment Steps
+
+Four fully scripted deployment targets, each documented end-to-end.
+
+| Guide | Target |
+|-------|--------|
+| [Local & Docker](docs/deployment/DEPLOY-LOCAL.md) | `dev.sh` hot reload · `deploy-local.sh` production-like build · Docker Compose |
+| [Vercel Deployment](docs/deployment/DEPLOY-VERCEL.md) | Full-stack serverless · frontend-only + external backend · interactive deploy |
+| [Vercel Advanced](docs/deployment/DEPLOY-VERCEL-ADVANCED.md) | CI/non-interactive deploy · multi-environment · teardown |
+
+**Quick deploy commands:**
 
 ```bash
-bash scripts/remote/deploy-vercel.sh        # Vercel: interactive (asks full-stack vs frontend-only)
-bash scripts/remote/deploy-vercel.sh --fullstack                        # full-stack serverless (Pinecone vector default)
-bash scripts/remote/deploy-vercel.sh --frontend-only \                  # frontend on Vercel + external backend
-    --backend-url https://my-api.railway.app
+# Vercel (serverless)
+bash scripts/remote/deploy-vercel.sh --fullstack          # full-stack, Pinecone default
+bash scripts/remote/deploy-vercel.sh --frontend-only \
+    --backend-url https://my-api.railway.app              # frontend CDN + external backend
 bash scripts/remote/redeploy-vercel.sh --sample-data --sample-topic "Healthcare Policy"
-bash scripts/remote/undeploy-vercel.sh      # remove the Vercel project
+bash scripts/remote/undeploy-vercel.sh
 
-make docker                  # Docker Compose: full stack, persistent ChromaDB
+# Docker Compose (persistent ChromaDB)
+make docker
 make docker-sample-data TOPIC="Healthcare Policy"
 ```
 
-The deploy script checks all prerequisites (Git, Python 3.11–3.13, Node.js ≥ 20, Vercel CLI) and installs or prompts for anything missing.
+### Limitations & Challenges
 
-See [docs/SETUP.md § 4 — Deployment](docs/SETUP.md#4-deployment--vercel) for the full step-by-step guide, CI/non-interactive usage, teardown, and backend hosting options.
+Local and Docker deployments use ChromaDB (writable filesystem). Vercel serverless instances are ephemeral — `/tmp` is not shared — so a file-backed Chroma store loses data across cold starts. Production Vercel deployments use `VECTOR_STORE_TYPE=pinecone` for durable shared vector storage and `FILE_STORE_TYPE=blob` for original file storage, both configurable through the Settings UI without a redeploy.
+
+| Guide | Covers |
+|-------|--------|
+| [Limitations & Development Challenges](docs/project/CHALLENGES.md) | Serverless persistence, chunking/retrieval, hallucination control, agent complexity, secrets, role isolation, voice security, testing strategy, known limitations |
+| [Operational Limits](docs/deployment/DEPLOY-LIMITS.md) | Upload caps, voice export limits, rate limits — all hard-coded values |
+| [Vercel Deployment](docs/deployment/DEPLOY-VERCEL.md) | Serverless trade-offs, cold-start latency, 4 MB upload cap on Vercel |
+
+---
+
+## Spec-Driven Development (SDD)
+
+This project uses [Spec-Kit](https://github.com/github/spec-kit) as its SDD framework. Feature specs live in `.specify/specs/`. Run `make spec-check` to validate specs in CI.
+
+→ [SDD Workflow](docs/project/SDD.md) — slash commands, brownfield back-specs, governance, and the 6-step workflow.
+
+---
+
+## Documentation
+
+Setup, architecture, deployment, and limitations docs are organized in the [Submission Reference](#submission-reference) above. The guides below cover the remaining reference areas.
+
+**API**
+
+| Guide | Description |
+|-------|-------------|
+| [API Reference](docs/api/API.md) | All endpoints, access modes, guest/admin flows |
+| [API Schemas & Examples](docs/api/API-SCHEMAS.md) | Request/response examples, AgentTrace, rate limits |
+
+**Security**
+
+| Guide | Description |
+|-------|-------------|
+| [Security](docs/security/SECURITY.md) | OWASP Top 10 controls, auth, input validation, upload safety |
+| [Content Guardrails](docs/security/GUARDRAILS.md) | Rule types, built-ins, UI/API management |
+
+**Testing**
+
+| Guide | Description |
+|-------|-------------|
+| [Backend Testing](docs/testing/TESTING.md) | Unit + integration test suite, running commands |
+| [Frontend & E2E Tests](docs/testing/TESTING-FRONTEND.md) | Playwright, live tests, Ragas evaluation, coverage |
+| [Coverage Matrix](docs/testing/COVERAGE-MATRIX.md) | Guardrail, redaction, role/session isolation coverage |
+
+**Project**
+
+| Guide | Description |
+|-------|-------------|
+| [Capstone Audit](docs/project/CAPSTONE-AUDIT.md) | Edureka task mapping, submission checklist |
+| [Spec 005 Compliance](docs/project/SPEC-005-COMPLIANCE.md) | Production-hardening checklist |
+| [SDD Workflow](docs/project/SDD.md) | Spec-Kit slash commands, brownfield specs, governance |

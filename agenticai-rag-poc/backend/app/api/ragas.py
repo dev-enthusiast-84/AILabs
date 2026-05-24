@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.auth.utils import require_full_access
-from app.ragas_store import get_ragas_scores, save_ragas_scores
+from app.runtime.ragas_store import get_ragas_scores, save_ragas_scores
 
 log = structlog.get_logger()
 router = APIRouter()
@@ -43,7 +43,7 @@ def _run_ragas_evaluation() -> dict:
     """Synchronous Ragas evaluation — called via asyncio.to_thread to avoid blocking."""
     import os
 
-    from app.settings_store import get_effective_api_key
+    from app.runtime.settings_store import get_effective_api_key
     api_key = get_effective_api_key() or os.environ.get("OPENAI_API_KEY", "")
     if not api_key or api_key.startswith("your_") or api_key.startswith("sk-xxx"):
         raise ValueError("OPENAI_API_KEY is not configured. Set it in Settings before running evaluation.")

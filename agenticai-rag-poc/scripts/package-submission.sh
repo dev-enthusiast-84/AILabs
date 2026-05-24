@@ -28,7 +28,12 @@
 #   - test-reports/         — generated HTML reports
 #   - frontend/playwright-report/ and frontend/test-results/ — generated browser test artefacts
 #   - coverage/, htmlcov/, .coverage* — generated coverage artefacts
-#   - artifacts/            — generated walkthrough/video/report artefacts
+#   - artifacts/walkthrough/local/   — local demo walkthrough videos + Playwright report
+#   - artifacts/walkthrough/remote/  — remote/Vercel demo walkthrough videos + Playwright report
+#   - artifacts/walkthrough/         — any legacy results at the top-level path
+#
+# What is excluded (intentionally, within artifacts/):
+#   - artifacts/walkthrough/*/report/trace/  — Playwright trace-viewer JS/CSS assets (~150 MB, not needed for submission)
 #   - .vercel/              — local Vercel project metadata
 #   - .git/                 — version control internals
 #   - .claude/              — local Claude Code settings
@@ -88,6 +93,10 @@ fi
 rm -f "${OUTPUT_PATH}"
 
 cd "${SCRIPT_DIR}"
+
+# Generate docs/README.md (Docsify homepage) — gitignored, must be created before zipping
+echo "Generating docs/README.md from root README..."
+sed 's|](docs/|](|g' README.md > docs/README.md
 
 zip -r "${OUTPUT_PATH}" . \
     --exclude "*.DS_Store" \
@@ -159,8 +168,9 @@ zip -r "${OUTPUT_PATH}" . \
     --exclude "test-reports" \
     --exclude "coverage/*" \
     --exclude "coverage" \
-    --exclude "artifacts/*" \
-    --exclude "artifacts" \
+    --exclude "artifacts/walkthrough/local/report/trace/*" \
+    --exclude "artifacts/walkthrough/remote/report/trace/*" \
+    --exclude "artifacts/walkthrough/report/trace/*" \
     --exclude "htmlcov/*" \
     --exclude "htmlcov" \
     --exclude ".coverage*" \
@@ -200,7 +210,8 @@ unzip -Z1 "${OUTPUT_PATH}" > "${ARCHIVE_LIST}"
 
 # Key source files
 for f in \
-    "pitch.html" \
+    "docs/pitch.html" \
+    "docs/README.md" \
     "scripts/local/setup.sh" \
     "scripts/local/dev.sh" \
     "scripts/record-walkthrough.sh" \
@@ -211,9 +222,10 @@ for f in \
     "backend/app/rag/bm25.py" \
     "backend/app/config.py" \
     "backend/.env.example" \
-    "docs/ARCHITECTURE.md" \
-    "docs/SECURITY.md" \
-    "docs/API.md" \
+    "docs/architecture/ARCHITECTURE.md" \
+    "docs/security/SECURITY.md" \
+    "docs/api/API.md" \
+    "docs/project/CAPSTONE-AUDIT.md" \
     "frontend/tests/e2e/guest.spec.ts" \
     "frontend/tests/e2e/guardrails.spec.ts"; do
     if grep -qx "${f}" "${ARCHIVE_LIST}"; then
@@ -222,6 +234,21 @@ for f in \
         echo "  [MISS] ${f} — NOT FOUND in zip"
     fi
 done
+
+
+# Walkthrough artifact presence check (warn but don't fail)
+LOCAL_VIDEOS=$(grep -cE 'artifacts/walkthrough/(local/)?results/.*\.webm$' "${ARCHIVE_LIST}" || true)
+REMOTE_VIDEOS=$(grep -cE 'artifacts/walkthrough/remote/results/.*\.webm$' "${ARCHIVE_LIST}" || true)
+if [[ "${LOCAL_VIDEOS}" -gt 0 ]]; then
+    echo "  [OK]   local walkthrough artifacts (${LOCAL_VIDEOS} video(s))"
+else
+    echo "  [WARN] no local walkthrough videos found — run: bash scripts/record-walkthrough.sh --url http://localhost:5173 ..."
+fi
+if [[ "${REMOTE_VIDEOS}" -gt 0 ]]; then
+    echo "  [OK]   remote walkthrough artifacts (${REMOTE_VIDEOS} video(s))"
+else
+    echo "  [WARN] no remote walkthrough videos found — run: bash scripts/record-walkthrough.sh --url <vercel-url> ..."
+fi
 
 echo ""
 
@@ -237,7 +264,7 @@ for pat in \
     '(^|/)frontend/playwright-report/' \
     '(^|/)frontend/test-results/' \
     '(^|/)test-reports/' \
-    '(^|/)artifacts/' \
+    '(^|/)artifacts/walkthrough/.*/report/trace/' \
     '(^|/)\.claude/' \
     '(^|/)\.agents/' \
     '(^|/)\.cursor/' \

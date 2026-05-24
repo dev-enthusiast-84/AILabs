@@ -10,6 +10,7 @@ interface ChatComposerProps {
   voiceDraftReady: boolean
   voiceError: string | null
   voiceSupported: boolean
+  maxQueryLength?: number
   onChangeInput: (value: string) => void
   onStartRecording: () => void
   onStopRecording: () => void
@@ -24,11 +25,20 @@ export function ChatComposer({
   voiceDraftReady,
   voiceError,
   voiceSupported,
+  maxQueryLength = 1000,
   onChangeInput,
   onStartRecording,
   onStopRecording,
   onSubmit,
 }: ChatComposerProps) {
+  const charPct = maxQueryLength > 0 ? input.length / maxQueryLength : 0
+  const charCountClass =
+    charPct > 0.95
+      ? 'text-rose-600'
+      : charPct > 0.80
+        ? 'text-amber-600'
+        : 'text-slate-400'
+
   return (
     <>
       {voiceError && (
@@ -81,7 +91,7 @@ export function ChatComposer({
                 : 'Ask a question about your documents…'
           }
           disabled={loading || documentsCount === 0}
-          maxLength={1000}
+          maxLength={maxQueryLength}
           className="input flex-1"
           data-testid="query-input"
           aria-label="Question input"
@@ -95,6 +105,15 @@ export function ChatComposer({
           <PaperAirplaneIcon className="h-5 w-5" />
         </button>
       </form>
+      {input.length > 0 && (
+        <p
+          className={`text-xs mt-1 text-right ${charCountClass}`}
+          aria-live="polite"
+          data-testid="char-counter"
+        >
+          {input.length} / {maxQueryLength}
+        </p>
+      )}
     </>
   )
 }

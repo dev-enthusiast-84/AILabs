@@ -88,17 +88,19 @@ def test_revoke_token_blocks_subsequent_check():
 
 
 def test_jti_blocklist_evicts_at_capacity():
-    """When blocklist is full, revoke_token evicts the oldest entry (LRU) not all entries."""
+    """When blocklist is full (with non-expired entries), revoke_token evicts the oldest (LRU)."""
+    import time
     import app.auth.utils as _utils
     saved = dict(_utils._revoked_jtis)
+    far_future = time.time() + 86400  # non-expired
     try:
         _utils._revoked_jtis.clear()
-        # Fill to exactly capacity
+        # Fill to exactly capacity with non-expired entries
         for i in range(_utils._MAX_REVOKED):
-            _utils._revoked_jtis[f"fill-{i}"] = True
+            _utils._revoked_jtis[f"fill-{i}"] = far_future
         assert len(_utils._revoked_jtis) == _utils._MAX_REVOKED
         # Adding one more evicts the oldest ("fill-0") and adds the new JTI
-        revoke_token("lru-trigger")
+        revoke_token("lru-trigger", exp=far_future)
         assert len(_utils._revoked_jtis) == _utils._MAX_REVOKED  # still at capacity
         assert "lru-trigger" in _utils._revoked_jtis
         assert "fill-0" not in _utils._revoked_jtis  # oldest evicted

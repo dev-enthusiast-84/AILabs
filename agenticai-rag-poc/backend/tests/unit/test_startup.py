@@ -94,3 +94,89 @@ def test_lifespan_does_not_raise_for_empty_secret_in_development():
 
 def test_lifespan_strong_secret_does_not_raise():
     asyncio.run(_run_lifespan(_make_lifespan_settings("a" * 32, "production")))
+
+
+# ── LangSmith tracing env-var branch (lines 90-95) ───────────────────────────
+
+def _make_lifespan_settings_with_langsmith(
+    secret_key: str,
+    app_env: str,
+    tracing: bool = True,
+    api_key: str = "ls__testkey",
+    project: str = "test-project",
+) -> MagicMock:
+    s = MagicMock()
+    s.secret_key = secret_key
+    s.app_env = app_env
+    s.langchain_tracing_v2 = tracing
+    s.langchain_api_key = api_key
+    s.langchain_project = project
+    s.admin_username = "admin"
+    s.admin_password = "test-only"
+    return s
+
+
+def test_lifespan_sets_langchain_env_vars_in_development():
+    """When app_env != 'production', langchain_tracing_v2=True, and langchain_api_key set,
+    LANGCHAIN_TRACING_V2 and LANGCHAIN_PROJECT env vars are set during lifespan startup."""
+    import os
+
+    mock_settings = _make_lifespan_settings_with_langsmith(
+        secret_key="a" * 32,
+        app_env="development",
+        tracing=True,
+        api_key="ls__testkey1234",
+        project="my-test-project",
+    )
+
+    # Clear any pre-existing values so we can detect the write
+    os.environ.pop("LANGCHAIN_TRACING_V2", None)
+    os.environ.pop("LANGCHAIN_PROJECT", None)
+
+    asyncio.run(_run_lifespan(mock_settings))
+
+    assert os.environ.get("LANGCHAIN_TRACING_V2") == "true"
+    assert os.environ.get("LANGCHAIN_PROJECT") == "my-test-project"
+
+    # Clean up
+    os.environ.pop("LANGCHAIN_TRACING_V2", None)
+    os.environ.pop("LANGCHAIN_PROJECT", None)
+
+
+def test_lifespan_does_not_set_langchain_env_vars_when_tracing_false():
+    """LANGCHAIN_TRACING_V2 must NOT be set when langchain_tracing_v2 is False."""
+    import os
+
+    mock_settings = _make_lifespan_settings_with_langsmith(
+        secret_key="a" * 32,
+        app_env="development",
+        tracing=False,
+        api_key="ls__testkey1234",
+        project="my-test-project",
+    )
+
+    os.environ.pop("LANGCHAIN_TRACING_V2", None)
+
+    asyncio.run(_run_lifespan(mock_settings))
+
+    # Should NOT have been set
+    assert os.environ.get("LANGCHAIN_TRACING_V2") is None
+
+
+def test_lifespan_does_not_set_langchain_env_vars_in_production():
+    """LANGCHAIN_TRACING_V2 must NOT be set from startup when app_env is 'production'."""
+    import os
+
+    mock_settings = _make_lifespan_settings_with_langsmith(
+        secret_key="a" * 32,
+        app_env="production",
+        tracing=True,
+        api_key="ls__testkey1234",
+        project="my-test-project",
+    )
+
+    os.environ.pop("LANGCHAIN_TRACING_V2", None)
+
+    asyncio.run(_run_lifespan(mock_settings))
+
+    assert os.environ.get("LANGCHAIN_TRACING_V2") is None

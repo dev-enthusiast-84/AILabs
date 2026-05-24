@@ -11,7 +11,7 @@ import os
 import pathlib
 from mimetypes import guess_type
 
-from app.settings_store import (
+from app.runtime.settings_store import (
     get_effective_blob_read_write_token,
     get_effective_file_store_type,
     get_effective_vector_store_type,
@@ -50,12 +50,14 @@ def _upload_dir() -> pathlib.Path:
         base = str(pathlib.Path(__file__).parent.parent.parent / "uploads")
     d = pathlib.Path(base)
     d.mkdir(parents=True, exist_ok=True)
+    d.chmod(0o700)
     return d
 
 
 def _chunk_manifest_dir() -> pathlib.Path:
     d = _upload_dir() / ".chunk-manifests"
     d.mkdir(parents=True, exist_ok=True)
+    d.chmod(0o700)
     return d
 
 

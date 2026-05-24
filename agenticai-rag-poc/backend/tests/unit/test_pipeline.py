@@ -89,9 +89,9 @@ def test_format_context_backward_compat_no_raw_chunk():
 # ── run_simple_rag (mocked LLM + vector store) ────────────────────────────────
 
 def _make_fake_callback(total_tokens: int = 150):
-    """Return a context-manager mock that exposes total_tokens."""
+    """Return a context-manager mock that exposes usage_metadata."""
     cb = MagicMock()
-    cb.total_tokens = total_tokens
+    cb.usage_metadata = {"m": {"total_tokens": total_tokens, "input_tokens": 0, "output_tokens": 0}}
     cm = MagicMock()
     cm.__enter__ = MagicMock(return_value=cb)
     cm.__exit__ = MagicMock(return_value=False)
@@ -115,7 +115,7 @@ def test_run_simple_rag_happy_path():
 
     # Patch the three external dependencies of run_simple_rag
     with patch("app.rag.pipeline.similarity_search", return_value=fake_docs), \
-         patch("app.rag.pipeline.get_openai_callback", return_value=fake_cb_cm), \
+         patch("app.rag.pipeline.get_usage_metadata_callback", return_value=fake_cb_cm), \
          patch("app.agents.rag_agent._llm", return_value=mock_llm_instance) as _mock_llm, \
          patch("app.rag.pipeline.StrOutputParser") as mock_parser_cls:
 
@@ -158,7 +158,7 @@ def test_run_simple_rag_no_chunks_returns_empty_sources():
     mock_chain_a.__or__ = MagicMock(return_value=mock_chain)
 
     with patch("app.rag.pipeline.similarity_search", return_value=[]), \
-         patch("app.rag.pipeline.get_openai_callback", return_value=fake_cb_cm), \
+         patch("app.rag.pipeline.get_usage_metadata_callback", return_value=fake_cb_cm), \
          patch("app.agents.rag_agent._llm", return_value=MagicMock()), \
          patch("app.rag.pipeline._SIMPLE_RAG_PROMPT") as mock_prompt:
 
@@ -186,7 +186,7 @@ def test_run_simple_rag_token_count_included():
     mock_chain_a.__or__ = MagicMock(return_value=mock_chain)
 
     with patch("app.rag.pipeline.similarity_search", return_value=fake_docs), \
-         patch("app.rag.pipeline.get_openai_callback", return_value=fake_cb_cm), \
+         patch("app.rag.pipeline.get_usage_metadata_callback", return_value=fake_cb_cm), \
          patch("app.agents.rag_agent._llm", return_value=MagicMock()), \
          patch("app.rag.pipeline._SIMPLE_RAG_PROMPT") as mock_prompt:
 
@@ -213,7 +213,7 @@ def test_run_simple_rag_multiple_sources_deduped():
     mock_chain_a.__or__ = MagicMock(return_value=mock_chain)
 
     with patch("app.rag.pipeline.similarity_search", return_value=fake_docs), \
-         patch("app.rag.pipeline.get_openai_callback", return_value=fake_cb_cm), \
+         patch("app.rag.pipeline.get_usage_metadata_callback", return_value=fake_cb_cm), \
          patch("app.agents.rag_agent._llm", return_value=MagicMock()), \
          patch("app.rag.pipeline._SIMPLE_RAG_PROMPT") as mock_prompt:
 
@@ -243,7 +243,7 @@ def test_run_simple_rag_spanish_language_keeps_retrieval_query_clean():
     mock_chain_a.__or__ = MagicMock(return_value=mock_chain)
 
     with patch("app.rag.pipeline.similarity_search", return_value=fake_docs) as mock_search, \
-         patch("app.rag.pipeline.get_openai_callback", return_value=fake_cb_cm), \
+         patch("app.rag.pipeline.get_usage_metadata_callback", return_value=fake_cb_cm), \
          patch("app.agents.rag_agent._llm", return_value=MagicMock()), \
          patch("app.rag.pipeline._SIMPLE_RAG_PROMPT") as mock_prompt:
 

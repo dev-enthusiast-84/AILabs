@@ -48,7 +48,12 @@ export const useAuthStore = create<AuthState>()(
         sessionStorage.removeItem('token')
         set({ token: null, username: null, isGuest: false, guestUploadedDocs: [], guestSettingsUsed: false })
       },
-      isAuthenticated: () => !!get().token,
+      isAuthenticated: () => {
+        const token = get().token
+        if (!token) return false
+        const expiry = getTokenExpiry(token)
+        return expiry === null || expiry > new Date()
+      },
       addGuestUploadedDoc: (filename) =>
         set((s) => ({ guestUploadedDocs: [...s.guestUploadedDocs, filename] })),
       /** Return and clear the list atomically so cleanup runs exactly once. */

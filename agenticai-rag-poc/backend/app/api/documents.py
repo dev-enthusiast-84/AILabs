@@ -1,16 +1,18 @@
 import structlog
+import time
 from pathlib import Path
+from typing import Literal
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.audit import audit_event
+from app.core.audit import audit_event
 from app.auth.utils import get_current_user, is_token_revoked, require_full_access
 from app.auth.models import UserInDB
 from app.config import get_settings
-from app.errors import SafeAppError, safe_app_error_from_exception
+from app.core.errors import SafeAppError, safe_app_error_from_exception
 from app.guardrails.safety import validate_filename
 from app.rag.chunking import chunk_text
 from app.rag.file_store import (
@@ -84,6 +86,7 @@ def _document_metadata(filename: str, source_key: str, user: UserInDB) -> dict[s
         "owner_role": user.role,
         "owner_username": user.username,
         "owner_session": user.session_id or "",
+        "uploaded_at": str(int(time.time())),
     }
 
 
@@ -330,6 +333,19 @@ class DocumentContentResponse(BaseModel):
     word_count: int
 
 
+class DocumentMetadataItem(BaseModel):
+    filename: str
+    chunk_count: int
+    uploaded_at: str | None
+    owner_username: str | None
+    availability: Literal["usable", "stale", "unknown"]
+
+
+class DocumentMetadataResponse(BaseModel):
+    documents: list[DocumentMetadataItem]
+    count: int
+
+
 @router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
 @_upload_limiter.limit(f"{settings.guest_upload_rate_limit_per_minute}/minute")
 async def upload_document(
@@ -347,8 +363,30 @@ async def upload_document(
     safe_name = validate_filename(file.filename or "upload")
     source_key = _document_source_key(safe_name, user)
 
-    # Reject duplicate before doing any I/O (OWASP A04 — resource limits).
-    # Use document_exists for a targeted single-chunk lookup instead of fetching all sources.
+    # ── Early content guards (no vector-store I/O) ─────────────────────────────
+    # Peek at the first few bytes to catch empty files and executable magic
+    # bytes *before* any vector-store interaction. UploadFile.seek(0) rewinds
+    # the SpooledTemporaryFile so the full read below sees all bytes.
+    _peek_size = max(len(sig) for sig in _EXEC_SIGNATURES)
+    peek = await file.read(_peek_size)
+    await file.seek(0)
+
+    if not peek:
+        audit_event("document_upload", status="rejected", request=request, user=user,
+                    error_category="validation_error", filename=safe_name)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="File is empty.")
+
+    for sig in _EXEC_SIGNATURES:
+        if peek[:len(sig)] == sig:
+            audit_event("document_upload", status="rejected", request=request, user=user,
+                        error_category="validation_error", filename=safe_name)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Executable content detected. Upload rejected.",
+            )
+
+    # ── Vector-store checks: duplicate + document-count limit ──────────────────
+    # Reject duplicate before doing any full I/O (OWASP A04 — resource limits).
     # Case-insensitive: check both the exact name and the lowercase variant to handle
     # OS filesystems that normalise case on upload.
     try:
@@ -404,6 +442,7 @@ async def upload_document(
             detail=f"Document limit reached ({limit}). Delete an existing document before uploading another.",
         )
 
+    # ── Full content read + remaining validation ────────────────────────────────
     content = await file.read()
 
     # Apply the stricter guest size limit; on Vercel, admin uploads are also capped at 4 MB
@@ -431,6 +470,8 @@ async def upload_document(
             detail="Guest accounts may only upload .txt files.",
         )
 
+    # Empty guard is redundant after the peek check above but kept as a safety net
+    # for any code path where peek could have been non-empty yet content is empty.
     if not content:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="File is empty.")
 
@@ -514,6 +555,41 @@ async def list_documents(request: Request, user: UserInDB = Depends(get_current_
     return DocumentListResponse(documents=sources, count=len(sources))
 
 
+@router.get("/metadata", response_model=DocumentMetadataResponse)
+async def get_documents_metadata(user=Depends(require_full_access)):
+    """Return enriched metadata for all admin documents. Admin-only."""
+    seen: set[str] = set()
+    items: list[DocumentMetadataItem] = []
+
+    for doc in get_all_documents():
+        meta = doc.metadata or {}
+        if meta.get("owner_role") == "guest":
+            continue
+        source = meta.get("source", "unknown")
+        if source in seen:
+            continue
+        seen.add(source)
+
+        display_name = _display_filename(source, meta)
+        availability = _document_availability(source)
+
+        try:
+            chunks = get_document_chunks(source)
+            chunk_count = len(chunks)
+        except Exception:
+            chunk_count = 0
+
+        items.append(DocumentMetadataItem(
+            filename=display_name,
+            chunk_count=chunk_count,
+            uploaded_at=meta.get("uploaded_at"),
+            owner_username=meta.get("owner_username"),
+            availability=availability,
+        ))
+
+    return DocumentMetadataResponse(documents=items, count=len(items))
+
+
 @router.get("/{filename}/chunks", response_model=DocumentChunksResponse)
 async def get_chunks(filename: str, _user=Depends(get_current_user)):
     """Return all indexed text chunks for a document. Read-only; any authenticated user."""
@@ -593,9 +669,30 @@ async def remove_document(filename: str, request: Request, _user=Depends(require
     """Remove a document and all its chunks from the index. Admin required."""
     safe_name = validate_filename(filename)
     source_key = _document_source_key(safe_name, _user)
+
+    # Check persistent storage before touching the vector store so that
+    # obviously non-existent documents return 404 even when the vector store
+    # is temporarily unavailable (e.g. Pinecone maintenance window).
+    try:
+        _has_file = read_file(source_key) is not None
+    except Exception:
+        _has_file = True   # can't confirm absence; let VS decide
+
+    try:
+        _has_manifest = bool(read_chunk_manifest(source_key))
+    except Exception:
+        _has_manifest = True  # can't confirm absence; let VS decide
+
     try:
         removed = delete_document(source_key)
     except Exception as exc:
+        # If neither the file store nor the manifest has any trace of this
+        # document, it definitively does not exist — return 404 instead of 503.
+        if not _has_file and not _has_manifest:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document '{safe_name}' not found.",
+            ) from None
         safe_error = safe_app_error_from_exception(exc, default="vector_store_error")
         audit_event(
             "document_delete",

@@ -1,7 +1,7 @@
 from langchain_core.documents import Document
 
 from app.config import get_settings
-from app.settings_store import (
+from app.runtime.settings_store import (
     get_effective_embedding_model,
     get_effective_chunker_type,
     get_effective_chunk_size,
@@ -48,7 +48,7 @@ def _get_openai_embeddings():
     rebuild the client for every document upload.
     """
     from langchain_openai import OpenAIEmbeddings
-    from app.settings_store import get_effective_api_key
+    from app.runtime.settings_store import get_effective_api_key
     key = get_effective_api_key() or ""
     model = get_effective_embedding_model()
     if not hasattr(_get_openai_embeddings, "_cache"):
