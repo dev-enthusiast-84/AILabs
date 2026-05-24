@@ -848,8 +848,27 @@ async function runWalkthrough(
   if (await ragasDashboardBtn.isVisible().catch(() => false)) {
     await ragasDashboardBtn.click()
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 }).catch(() => null)
-    // Let the dashboard load and stay clearly visible before closing.
-    await page.waitForTimeout(5500)
+    await page.waitForTimeout(1500) // let existing scores and settings load
+
+    // Click Run to trigger a live evaluation — open to all authenticated users
+    // (guest and admin).  The spinner shows while the 4 metrics are computed.
+    const runBtn = page.getByTestId('ragas-dashboard-run-btn')
+    const canRun = await runBtn.isVisible({ timeout: 2000 }).catch(() => false)
+      && await runBtn.isEnabled().catch(() => false)
+    if (canRun) {
+      await caption(
+        page,
+        'Ragas evaluation — running',
+        'Live evaluation started: Faithfulness, Answer Relevancy, Context Precision, and Context Recall are computed against the indexed documents.',
+        'top',
+      )
+      await runBtn.click()
+      // Show the running spinner for a few seconds — full results appear when complete.
+      await page.waitForTimeout(4500)
+    }
+
+    // Stay on the dashboard to show either the live scores or the running state.
+    await page.waitForTimeout(2000)
     await maybeCloseDialog(page)
   } else {
     await caption(

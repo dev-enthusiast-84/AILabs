@@ -70,7 +70,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: agenticai-rag-poc/frontend/package-lock.json
 
@@ -81,6 +81,12 @@ jobs:
         run: npm run build
 
       - name: Run frontend unit coverage gates
+        # NODE_OPTIONS caps the V8 heap to 4 GB so the process raises an
+        # explicit out-of-memory error rather than crashing with SIGSEGV (139).
+        # The CI pool strategy (singleFork) is set in vite.config.ts when
+        # process.env.CI is truthy, which GitHub Actions sets automatically.
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: npm run test:coverage
 
   secrets-scan:

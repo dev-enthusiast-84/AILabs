@@ -126,15 +126,15 @@ def _run_ragas_evaluation() -> dict:
 
 
 @router.post("/evaluate", response_model=_EvaluateResponse)
-async def trigger_evaluation(_user=Depends(require_full_access)):
+async def trigger_evaluation(_user=Depends(get_current_user)):
     """
-    Run Ragas evaluation against indexed documents (admin only).
+    Run Ragas evaluation against indexed documents (any authenticated user).
 
     Builds a synthetic dataset from up to 5 indexed chunks, runs the 4 standard
     Ragas metrics, persists results, and returns them immediately.
 
     Returns HTTP 503 if OPENAI_API_KEY is not configured or no documents are indexed.
-    OWASP A01 — restricted to full-access (admin) users.
+    Concurrent runs are blocked with HTTP 429.
     """
     try:
         scores = await asyncio.to_thread(_run_ragas_evaluation)
