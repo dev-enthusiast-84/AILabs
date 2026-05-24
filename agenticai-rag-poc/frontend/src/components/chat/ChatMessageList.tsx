@@ -78,7 +78,7 @@ function EmptyChatState({
             </div>
           ) : (
             <p className="text-xs text-slate-400 max-w-sm">
-              Start by asking about a topic, term, row, section, or decision that appears in the uploaded document.
+              Type your question in the box below to get started.
             </p>
           )}
         </>
@@ -315,7 +315,7 @@ export function ChatMessageList({
   onToggleTrace,
 }: ChatMessageListProps) {
   return (
-    <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-1">
+    <div className="flex-1 min-h-0 overflow-y-auto space-y-4 mb-4 pr-1">
       {messages.length === 0 && (
         <EmptyChatState
           documentsCount={documentsCount}

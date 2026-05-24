@@ -18,6 +18,9 @@ test-reports/
 PENDING_TASKS.md
 pitch.html
 
+# Submission zips — regenerate with: bash scripts/package-submission.sh
+*.zip
+
 **/.venv/
 **/__pycache__/
 **/.pytest_cache/

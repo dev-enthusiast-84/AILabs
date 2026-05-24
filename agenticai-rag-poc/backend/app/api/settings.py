@@ -22,7 +22,7 @@ import importlib.util
 import os
 import bleach
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import jwt as _jwt
@@ -34,6 +34,7 @@ from app.core.audit import audit_event
 from app.auth.utils import get_current_user
 from app.auth.models import UserInDB
 from app.config import get_settings
+from app.runtime.runtime_settings_cookie import set_runtime_settings_cookie
 from app.runtime.settings_store import (
     ALLOWED_MODELS,
     ALLOWED_EMBEDDING_MODELS,
@@ -69,6 +70,10 @@ from app.runtime.settings_store import (
     get_effective_chunker_type,
     get_effective_chunk_size,
     get_effective_chunk_overlap,
+    get_effective_api_key,
+    get_effective_pinecone_api_key,
+    get_effective_blob_read_write_token,
+    get_effective_langchain_api_key,
     get_masked_api_key,
     get_masked_langchain_api_key,
     get_masked_pinecone_api_key,
@@ -389,6 +394,7 @@ async def get_settings_view(_user=Depends(get_current_user)):
 @limiter.limit("20/minute")
 async def update_settings(
     request: Request,
+    response: Response,
     body: SettingsUpdateRequest,
     user: UserInDB = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
@@ -739,6 +745,33 @@ async def update_settings(
         _guest_settings_used.add(jti)  # type: ignore[possibly-undefined]  # jti resolved above
 
     set_runtime_scope(user.role, jti if user.role == "guest" else None)  # type: ignore[possibly-undefined]
+
+    # Persist settings into an encrypted httponly cookie so Vercel serverless
+    # instances (which share no memory) can restore them on the next request.
+    set_runtime_settings_cookie(response, user=user, settings_values={
+        "api_key": get_effective_api_key(),
+        "model": get_effective_model(),
+        "embedding_model": get_effective_embedding_model(),
+        "planner_model": get_effective_planner_model(),
+        "generator_model": get_effective_generator_model(),
+        "validator_model": get_effective_validator_model(),
+        "langchain_api_key": get_effective_langchain_api_key(),
+        "pinecone_api_key": get_effective_pinecone_api_key(),
+        "pinecone_index_name": get_effective_pinecone_index_name(),
+        "pinecone_namespace": get_effective_pinecone_namespace(),
+        "pinecone_cloud": get_effective_pinecone_cloud(),
+        "pinecone_region": get_effective_pinecone_region(),
+        "blob_read_write_token": get_effective_blob_read_write_token(),
+        "reranker_type": get_effective_reranker_type(),
+        "reranker_judge_model": get_effective_reranker_judge_model(),
+        "retriever_k": get_effective_retriever_k(),
+        "retriever_use_mmr": get_effective_retriever_use_mmr(),
+        "retriever_fetch_k": get_effective_retriever_fetch_k(),
+        "retriever_hybrid_bm25": get_effective_retriever_hybrid_bm25(),
+        "similarity_score_threshold": get_effective_similarity_score_threshold(),
+        "max_context_chunks": get_effective_max_context_chunks(),
+        "relevance_grader_enabled": get_effective_relevance_grader_enabled(),
+    })
     audit_event(
         "settings_update",
         status="completed",

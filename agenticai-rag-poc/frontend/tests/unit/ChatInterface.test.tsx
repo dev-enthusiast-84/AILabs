@@ -1,6 +1,6 @@
 /**
  * Unit tests for ChatInterface.
- * Covers: empty/loaded doc states, suggestion chips, mode toggle,
+ * Covers: empty/loaded doc states, generic query prompt, mode toggle,
  * validation badge copy, latency and retry display, agent trace accordion.
  */
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
@@ -18,16 +18,9 @@ beforeAll(() => {
   HTMLAnchorElement.prototype.click = vi.fn()
 })
 
-// Ensure getContent always returns a resolved Promise so the useEffect's
-// Promise.allSettled().then() microtask settles inside act() for every test.
-// Suites that need specific content override this in their own beforeEach.
 beforeEach(async () => {
   const { documentsApi, settingsApi, voiceApi } = await import('@/services/api')
-  vi.mocked(documentsApi.getContent).mockResolvedValue({
-    filename: '',
-    content: '',
-    word_count: 0,
-  })
+  vi.mocked(documentsApi.getSuggestions).mockResolvedValue({ suggestions: [] })
   vi.mocked(settingsApi.get).mockResolvedValue({
     api_key_source: 'runtime',
     vector_store_type: 'chroma',
@@ -38,7 +31,7 @@ beforeEach(async () => {
 
 vi.mock('@/services/api', () => ({
   documentsApi: {
-    getContent: vi.fn(),
+    getSuggestions: vi.fn(),
   },
   queryApi: { ask: vi.fn() },
   voiceApi: { exportAudio: vi.fn(), redactTranscript: vi.fn(), cancelExportJob: vi.fn() },
@@ -53,12 +46,9 @@ const renderChat = async (
   props: Partial<ComponentProps<typeof ChatInterface>> = {},
 ) => {
   const result = render(<ChatInterface documents={documents} {...props} />)
-  if (documents.length > 0) {
-    // Drain the suggestions effect. Suggestions are content-derived and may be
-    // empty, so wait for the loading hint to leave rather than a specific chip.
-    await waitFor(() => expect(screen.queryByText('Reading uploaded content…')).toBeNull())
-    await act(async () => { await new Promise(r => setTimeout(r, 0)) })
-  }
+  // Drain the suggestions effect so loading state resolves before assertions.
+  await waitFor(() => expect(screen.queryByText('Reading uploaded content…')).toBeNull())
+  await act(async () => { await new Promise(r => setTimeout(r, 0)) })
   return result
 }
 
@@ -134,68 +124,53 @@ describe('ChatInterface — empty doc state', () => {
 })
 
 describe('ChatInterface — with loaded documents', () => {
-  beforeEach(async () => {
-    vi.clearAllMocks()
-    const { documentsApi } = await import('@/services/api')
-    vi.mocked(documentsApi.getContent).mockResolvedValue({
-      filename: 'test.txt',
-      content: 'Quarterly revenue improved because customer retention and onboarding completion improved. Customer retention is the strongest theme. Support response time decreased while renewal risk stayed low.',
-      word_count: 12,
-    })
-  })
+  beforeEach(() => vi.clearAllMocks())
 
-  it('shows content-based suggestion chips when documents are present', async () => {
-    await renderChat(['annual_report.pdf', 'hr_policy.txt'])
+  it('shows LLM-generated suggestion chips when backend returns questions', async () => {
+    const { documentsApi } = await import('@/services/api')
+    vi.mocked(documentsApi.getSuggestions).mockResolvedValue({
+      suggestions: [
+        'What is Retrieval-Augmented Generation?',
+        'What are the RAG ingestion pipeline stages?',
+        'How does temperature affect LLM output?',
+        'What file formats does the pipeline support?',
+      ],
+    })
+    await renderChat(['doc.txt'])
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /customer retention/i })).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: /What is Retrieval-Augmented Generation/i })).toBeInTheDocument(),
     )
-    expect(screen.getAllByRole('button', { name: /what details does the document provide about/i }).length).toBeGreaterThanOrEqual(3)
-    expect(screen.queryByText(/summarize annual_report/i)).toBeNull()
-    expect(screen.queryByText(/summarize hr_policy/i)).toBeNull()
-    expect(screen.queryByText(/summarize the uploaded content/i)).toBeNull()
-    expect(screen.queryByText(/related to|compare/i)).toBeNull()
+    expect(screen.getAllByRole('button', { name: /\?/ }).length).toBeGreaterThanOrEqual(4)
   })
 
-  it('does NOT show hardcoded generic or filename-based queries', async () => {
-    await renderChat(['report.pdf'])
-    expect(screen.queryByText(/remote work policy/i)).toBeNull()
-    expect(screen.queryByText(/top performing departments/i)).toBeNull()
-    expect(screen.queryByText(/uploaded content/i)).toBeNull()
-    expect(screen.queryByText(/report\.pdf/i)).toBeNull()
+  it('shows generic fallback when backend returns no suggestions', async () => {
+    await renderChat(['doc.txt'])
+    expect(screen.getByText(/Type your question in the box below to get started/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /\?/ })).toBeNull()
   })
 
-  it('does not load sample queries when content cannot produce relevant questions', async () => {
-    const { documentsApi } = await import('@/services/api')
-    vi.mocked(documentsApi.getContent).mockResolvedValue({
-      filename: 'thin.txt',
-      content: 'ok yes',
-      word_count: 2,
+  it('clicking a suggestion chip sends the query', async () => {
+    const { documentsApi, queryApi } = await import('@/services/api')
+    vi.mocked(documentsApi.getSuggestions).mockResolvedValue({
+      suggestions: ['What are the RAG pipeline stages?'],
     })
-    await renderChat(['thin.txt'])
-    expect(screen.getByText(/Start by asking about a topic/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /what details does the document provide about|document say|related|important details|compare|summarize/i })).toBeNull()
+    vi.mocked(queryApi.ask).mockResolvedValue({
+      answer: 'The RAG pipeline has several stages.',
+      sources: ['doc.txt'],
+      validation: 'VALID',
+      tokens_used: 50,
+      mode: 'agentic',
+    })
+    await renderChat(['doc.txt'])
+    const chip = await screen.findByRole('button', { name: /What are the RAG pipeline stages/i })
+    fireEvent.click(chip)
+    await waitFor(() => expect(queryApi.ask).toHaveBeenCalledOnce())
+    expect(vi.mocked(queryApi.ask).mock.calls[0][0].question).toBe('What are the RAG pipeline stages?')
   })
 
   it('enables the query input when documents are present', async () => {
     await renderChat(['doc.txt'])
     expect(screen.getByTestId('query-input')).not.toBeDisabled()
-  })
-
-  it('clicking a suggestion chip sends the query', async () => {
-    const { queryApi } = await import('@/services/api')
-    vi.mocked(queryApi.ask).mockResolvedValue({
-      answer: 'Test answer',
-      sources: ['doc.txt'],
-      validation: 'VALID',
-      tokens_used: 5,
-      mode: 'agentic',
-    })
-    await renderChat(['report.txt'])
-    const chip = await screen.findByRole('button', { name: /customer retention/i })
-    fireEvent.click(chip)
-    await waitFor(() => expect(queryApi.ask).toHaveBeenCalledOnce())
-    const call = vi.mocked(queryApi.ask).mock.calls[0][0]
-    expect(call.question).toMatch(/retention/i)
   })
 
   it('sends recent chat history so follow-up questions keep context', async () => {
@@ -295,12 +270,6 @@ describe('ChatInterface — with loaded documents', () => {
     expect(queryApi.ask).not.toHaveBeenCalled()
   })
 
-  it('suggestion chips are capped at 4 regardless of doc count', async () => {
-    await renderChat(['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt'])
-    await screen.findByRole('button', { name: /customer retention/i })
-    const chips = screen.getAllByRole('button', { name: /what details does the document provide about/i })
-    expect(chips.length).toBeLessThanOrEqual(4)
-  })
 })
 
 // ── Mode toggle ───────────────────────────────────────────────────────────────

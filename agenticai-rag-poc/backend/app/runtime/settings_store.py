@@ -37,6 +37,7 @@ _PRODUCTION_SAFE_DEFAULTS = {
     "planner_model": "",
     "generator_model": "",
     "validator_model": "",
+    "reranker_judge_model": "gpt-4.1-mini",
     "retriever_k": 4,
     "retriever_fetch_k": 20,
     "max_context_chunks": 4,
@@ -938,7 +939,11 @@ def get_effective_reranker_type() -> str:
 def get_effective_reranker_judge_model() -> str:
     """Return the effective LLM-as-judge reranker model (falls back to config default)."""
     with _lock:
-        return _runtime_reranker_judge_model or get_settings().reranker_judge_model
+        return _first_non_empty(
+            str(_request_value("reranker_judge_model")),
+            _runtime_reranker_judge_model,
+            str(_account_env_default("reranker_judge_model")),
+        )
 
 
 def get_effective_chunker_type() -> str:

@@ -19,5 +19,11 @@ htmlcov/
 coverage.xml
 .coverage
 
+# Walkthrough/test artifacts — large generated files, not needed at runtime
+artifacts/
+
+# Submission zips
+*.zip
+
 .DS_Store
 **/.DS_Store

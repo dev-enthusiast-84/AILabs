@@ -46,6 +46,7 @@ _ALLOWED_KEYS = {
     # Pipeline settings — included so Vercel serverless instances honour
     # Settings UI changes across cold starts without requiring a restart.
     "reranker_type",
+    "reranker_judge_model",
     "relevance_grader_enabled",
     "retriever_k",
     "retriever_use_mmr",

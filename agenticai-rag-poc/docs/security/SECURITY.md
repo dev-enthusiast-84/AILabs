@@ -107,6 +107,60 @@ Set in `vercel.json` (Vercel) and `main.py` middleware (local/Docker):
 
 ---
 
+## Billable Parameter Isolation (`runtime/settings_store.py`)
+
+All parameters that influence cost or data access are classified into three tiers. The gate is `account_env_fallback_allowed()` → `APP_ENV != "production"`. In production this returns `False`, which two helper functions enforce:
+
+- `_account_env_value(v)` → `v` locally, `""` in production
+- `_account_env_default(name)` → `getattr(cfg, name)` locally, `_PRODUCTION_SAFE_DEFAULTS[name]` in production
+
+### Tier 1 — Credentials: blocked from env in production
+
+These return `""` when no Settings UI value has been provided. Any downstream call immediately fails with `openai_provider_error` rather than silently using a deployment credential.
+
+| Parameter | Guard |
+|-----------|-------|
+| `OPENAI_API_KEY` | `_account_env_value()` |
+| `LANGCHAIN_API_KEY` | `_account_env_value()` |
+| `PINECONE_API_KEY` | `_account_env_value()` |
+| `BLOB_READ_WRITE_TOKEN` / `VERCEL_BLOB_READ_WRITE_TOKEN` | explicit zero when `not account_env_fallback_allowed()` |
+
+### Tier 2 — Cost-shaping model choices: hardcoded safe defaults in production
+
+These never read from `.env` in production. They resolve from `_PRODUCTION_SAFE_DEFAULTS`, which holds hardcoded values that cannot be overridden by deployment env vars.
+
+| Parameter | Production safe default | Approx. cost |
+|-----------|------------------------|-------------|
+| `llm_model` | `gpt-4o-mini` | $0.15 / $0.60 per 1M in/out |
+| `embedding_model` | `text-embedding-3-small` | $0.02 per 1M tokens |
+| `planner_model` / `generator_model` / `validator_model` | `""` → falls through to `llm_model` → `gpt-4o-mini` | same as `llm_model` |
+| `reranker_judge_model` | `gpt-4.1-mini` | $0.40 / $1.60 per 1M in/out — independent allowlist; never falls through to `llm_model` |
+| `max_completion_tokens` | `1024` | — |
+| `retriever_k`, `retriever_fetch_k`, `max_context_chunks` | `4`, `20`, `4` | — |
+
+**Per-node model fallback:** when a per-node model resolves to `""` (no UI override), `_first_non_empty()` continues down the chain and lands on the `llm_model` safe default (`gpt-4o-mini`). No empty string ever reaches ChatOpenAI.
+
+**Historical gap (fixed):** `reranker_judge_model` originally used `get_settings().reranker_judge_model` directly — bypassing the production guard and reading from `.env` in all environments. It was also absent from the cookie's `_ALLOWED_KEYS`, so UI-entered values were not carried across Vercel serverless instances. Both gaps are resolved: `reranker_judge_model` is now in `_PRODUCTION_SAFE_DEFAULTS`, uses `_account_env_default()`, checks `_request_value()` for cookie-restored values first, and is included in `_ALLOWED_KEYS`.
+
+### Tier 3 — Deployment infrastructure config: allowed from env in all environments
+
+These are infrastructure decisions made at deploy time, not runtime credentials. They follow the same pattern as `VECTOR_STORE_TYPE` and `FILE_STORE_TYPE` (which have no guard either). Since Tier 1 credentials are blocked, these values cannot trigger billing or data access on their own.
+
+| Parameter | Rationale |
+|-----------|-----------|
+| `PINECONE_INDEX_NAME` | Determines which index to use — legitimately set per environment in Vercel env vars |
+| `PINECONE_NAMESPACE` | Same — deployment-level data partitioning |
+| `PINECONE_CLOUD` / `PINECONE_REGION` | Infrastructure topology — set at deployment, not per-session |
+| `VECTOR_STORE_TYPE` / `FILE_STORE_TYPE` | Backend storage driver — deployment decision |
+
+### Settings persistence across Vercel instances
+
+Vercel serverless functions share no memory. Settings saved via the UI are stored in a Fernet-encrypted `httponly` cookie (`rag_ui_settings`, 4-hour TTL, `samesite=none; secure` in production). On every subsequent request the cookie is decrypted and injected into a `ContextVar` scoped to that request, making UI-provided values available as if the same process had handled the settings save.
+
+The cookie payload includes all Tier 1 and Tier 2 parameters. Tier 3 infrastructure config is read from Vercel env vars on each cold start — no cookie entry needed.
+
+---
+
 ## Security Logging (structlog)
 
 | Event | Log level | Detail leaked to client |

@@ -304,6 +304,10 @@ export interface DocumentContentResponse {
   word_count: number
 }
 
+export interface DocumentSuggestionsResponse {
+  suggestions: string[]
+}
+
 export interface GuardrailRule {
   id: string
   name: string

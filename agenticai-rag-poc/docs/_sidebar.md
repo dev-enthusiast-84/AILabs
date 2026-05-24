@@ -13,11 +13,13 @@
   - [Deployment Overview](deployment/DEPLOYMENT.md)
     - [Setup Guide](deployment/SETUP.md)
     - [Setup Verification](deployment/SETUP-VERIFY.md)
+    - **— Local —**
     - [Local & Docker](deployment/DEPLOY-LOCAL.md)
-    - [Vercel](deployment/DEPLOY-VERCEL.md)
-    - [Vercel Advanced](deployment/DEPLOY-VERCEL-ADVANCED.md)
     - [Environment Variables](deployment/DEPLOY-LOCAL-ENV.md)
     - [Pipeline & Retrieval Vars](deployment/DEPLOY-LOCAL-ENV-PIPELINE.md)
+    - **— Remote —**
+    - [Vercel Deployment](deployment/DEPLOY-VERCEL.md)
+    - [Vercel Operations](deployment/DEPLOY-VERCEL-OPS.md)
     - [Operational Limits](deployment/DEPLOY-LIMITS.md)
 
 - **API Reference**
@@ -45,6 +47,7 @@
     - [Capstone Audit](project/CAPSTONE-AUDIT.md)
     - [Limitations & Challenges](project/CHALLENGES.md)
       - [Retrieval & Reranking](project/CHALLENGES-RETRIEVAL.md)
+      - [Agent Pipeline Challenges](project/CHALLENGES-AGENT-PIPELINE.md)
     - [Cost Analysis](project/COST-ANALYSIS.md)
       - [Cost Tracing Guide](project/COST-ANALYSIS-TRACING.md)
     - [SDD Workflow](project/SDD.md)

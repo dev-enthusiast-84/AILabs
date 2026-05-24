@@ -14,6 +14,22 @@ planner → hyde → retriever → grader → reranker → generator → validat
                                               NEEDS_REVISION (≤2 retries)
 ```
 
+**Node roles at a glance:**
+
+```
+User question
+   ▼ [Planner]    — multi-query rewrite + 2 alternative phrasings
+   ▼ [HyDE]       — hypothetical document embedding for better recall
+   ▼ [Retriever]  — fan-out across all queries + RRF fusion (BM25 optional)
+   ▼ [Grader]     — self-RAG relevance filter (opt-in)
+   ▼ [Reranker]   — llm-judge precision sort (opt-in; cross-encoder local only)
+   ▼ [Generator]  — grounded strictly to retrieved context; refuses fabrication
+   ▼ [Validator]  — VALID or NEEDS_REVISION (≤ 2 retries → Generator)
+   ▼ { answer, sources, validation, tokens_used, mode, trace }
+```
+
+`mode="agentic"` (default, 3–5 LLM calls) or `mode="simple"` (single retrieve→generate, ~3× faster) — see [Simple RAG Mode](#simple-rag-mode).
+
 ---
 
 ## Node Descriptions
@@ -62,7 +78,7 @@ Seven complementary techniques are layered into the agentic pipeline. All featur
 | **Serverless persistence** | On Vercel / Lambda use `VECTOR_STORE_TYPE=pinecone` for durable vectors/chunks; use `FILE_STORE_TYPE=blob` for durable original files |
 | **Document update** | Re-uploading the same filename appends chunks — delete first, then re-upload |
 | **Vercel rate limits** | `slowapi` counters are per function instance, not global |
-| **Token cost scales with pipeline** | All 7 features enabled = up to 5 LLM calls per query (planner + HyDE + grader + llm-judge + generator+validator) |
+| **Token cost scales with pipeline** | All 7 features enabled = up to 5 LLM calls per query (planner + HyDE + grader + llm-judge + generator + validator). At default `gpt-4o-mini` ($0.15/$0.60 per 1M in/out) + `gpt-4.1-mini` reranker judge ($0.40/$1.60 per 1M in/out), a typical agentic query costs ~$0.002–$0.005. `mode="simple"` cuts to 1 LLM call. Full model cost reference: [LLM & Token Budget](deployment/DEPLOY-LOCAL-ENV.md#llm--token-budget). |
 | **BM25 IDF accuracy** | IDF ≈ 0 with fewer than ~10 documents; hybrid search works best with larger corpora |
 | **Cross-encoder not on Vercel** | `sentence_transformers` (~80 MB model) exceeds serverless constraints; use `RERANKER_TYPE=llm-judge` (the default) on Vercel |
 | **Self-RAG grader latency** | Adds ~1–3 s per query; disable with `RELEVANCE_GRADER_ENABLED=false` if latency is priority |
@@ -72,20 +88,4 @@ Seven complementary techniques are layered into the agentic pipeline. All featur
 
 ## Key Engineering Challenges
 
-| Challenge | Resolution |
-|-----------|------------|
-| `TypedDict` + `Annotated` reducers conflicting with LangGraph versions | Used `operator.add` only on `messages`; last-write-wins on all other fields |
-| Token accumulation across nodes with no shared context manager | Wrapped every LLM call in `get_openai_callback()`, accumulated in `AgentState` |
-| ChromaDB `@lru_cache` causing state leakage between test runs | Patched `get_vector_store` at session scope in `conftest.py` before any import |
-| `with_structured_output` chains returning Pydantic model instead of string | Changed planner to invoke chain separately and extract fields explicitly |
-| HyDE generating conversational prose, degrading embedding quality | Refined system prompt to require 3–5 sentence factual prose, no preamble |
-| Contextual headers appearing in LLM context and document viewer | Stored original text in `metadata["raw_chunk"]`; `format_context()` reads from it |
-| RRF deduplication key slow/memory-intensive for large chunks | Truncated to first 200 characters as practical deduplication key |
-| `rank_bm25==0.8.1` not found on PyPI | Corrected to `rank-bm25==0.2.2` (latest available) |
-| `sentence_transformers` heavy optional dep breaking tests + cold starts | Wrapped import in `try/except ImportError`; node falls back silently |
-| Integration test isolation — `@lru_cache` on `get_vector_store` caused state leakage between test runs | Patched at session scope in `conftest.py` via `pytest_sessionstart` before any app import; `_LIVE_MODE` flag preserves real calls for live suite |
-| Vercel + ChromaDB — ChromaDB persists to local files, but Vercel serverless instances are ephemeral and do not share writable storage | Production Vercel deployments use `VECTOR_STORE_TYPE=pinecone` for durable vectors/chunks. Blob is repositioned as `FILE_STORE_TYPE=blob` for original uploaded files, with `VECTOR_STORE_TYPE=blob` kept only for small full-stack demos/fallbacks |
-| Multi-format ingestion — CSV/Excel with mixed dtypes produce inconsistent string output | Used `pandas` with `to_string(index=False)` for consistent column-aligned text |
-| Stored prompt injection in document content can poison the vector store | Added regex-based injection detection in `guardrails/safety.py`; generator prompt explicitly rejects fabrication |
-| Self-RAG grader mock wiring — chain is `PROMPT \| LLM` (one pipe) but tests used two nested `__or__` levels | Fixed to single `__or__`: `mock_prompt.__or__ = MagicMock(return_value=mock_chain)` |
-| `AgentState` field expansion — adding 6 new telemetry fields required touching every test that constructed a state dict | Updated `_base_agent_state()` helper in `test_rag_agent.py` to include all new fields with safe defaults |
+Implementation challenges and their resolutions are documented in [Agent Pipeline Engineering Challenges](project/CHALLENGES-AGENT-PIPELINE.md).

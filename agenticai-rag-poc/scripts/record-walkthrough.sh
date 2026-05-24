@@ -663,7 +663,37 @@ else
     unset WALKTHROUGH_UPLOAD_FILE
 fi
 
-"${CMD[@]}"
+# Run the walkthrough recorder; kill the whole process group on interrupt so
+# that headed Chrome windows (and chromium sub-processes) are always cleaned up.
+_WALKTHROUGH_PID=""
+_cleanup_walkthrough() {
+    local sig="${1:-INT}"
+    echo "" >&2
+    echo "Walkthrough interrupted — closing browser and cleaning up..." >&2
+    if [[ -n "$_WALKTHROUGH_PID" ]]; then
+        # Kill the npm/Playwright process group; this closes headed Chrome too.
+        kill -- "-${_WALKTHROUGH_PID}" 2>/dev/null \
+            || kill "$_WALKTHROUGH_PID" 2>/dev/null \
+            || true
+        wait "$_WALKTHROUGH_PID" 2>/dev/null || true
+    fi
+    # Belt-and-suspenders: close any orphaned Playwright-launched Chromium instances.
+    pkill -f "playwright.*chromium" 2>/dev/null || true
+    exit 130
+}
+trap '_cleanup_walkthrough INT'  INT
+trap '_cleanup_walkthrough TERM' TERM
+
+"${CMD[@]}" &
+_WALKTHROUGH_PID=$!
+wait "$_WALKTHROUGH_PID"
+_PLAYWRIGHT_EXIT=$?
+trap - INT TERM
+_WALKTHROUGH_PID=""
+
+if [[ $_PLAYWRIGHT_EXIT -ne 0 ]]; then
+    exit $_PLAYWRIGHT_EXIT
+fi
 
 if [[ "$PUBLISH" == true ]]; then
     _publish_videos "$ENV_LABEL" "$BASE_URL"

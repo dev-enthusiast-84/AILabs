@@ -77,18 +77,27 @@ limitations: (a) knowledge becomes stale after the training cutoff date, and
 (b) private or proprietary knowledge is never in the model at all. RAG addresses
 both by injecting retrieved text at inference time.
 
-2.2 RAG Pipeline Stages
-1. Ingestion — Documents are split into overlapping chunks (typically 256–1024 tokens
-   with a 10–20% overlap). Each chunk is embedded into a dense vector using a model
-   such as text-embedding-3-small (OpenAI) or bge-m3 (BAAI).
+2.2 RAG Ingestion and Pipeline Stages
+The RAG ingestion process is the foundation of a retrieval-augmented system. RAG ingestion
+refers specifically to the first stage of the RAG pipeline where raw documents are
+processed and stored for later retrieval.
 
-2. Indexing — Chunk vectors are stored in a vector database (ChromaDB, Pinecone,
-   Weaviate, Qdrant). The database supports approximate nearest-neighbour (ANN)
-   search via algorithms such as HNSW.
+1. RAG Ingestion (Document Processing) — During RAG ingestion, documents are parsed,
+   cleaned, and split into overlapping chunks (typically 256–1024 tokens with a 10–20%
+   overlap). Each chunk is embedded into a dense vector using a model such as
+   text-embedding-3-small (OpenAI) or bge-m3 (BAAI). RAG ingestion supports multiple
+   file formats: PDF, TXT, CSV, and Excel. This step is also called the indexing or
+   ingestion pipeline.
+
+2. Indexing — After RAG ingestion, chunk vectors are stored in a vector database
+   (ChromaDB, Pinecone, Weaviate, Qdrant). The database supports approximate
+   nearest-neighbour (ANN) search via algorithms such as HNSW. BM25 keyword indices
+   may also be built during this stage for hybrid retrieval.
 
 3. Retrieval — At query time the question is embedded and the top-k most similar
    chunks are fetched via cosine similarity or MMR (Maximal Marginal Relevance)
-   to reduce redundancy.
+   to reduce redundancy. Hybrid retrieval combines dense vector search with BM25
+   lexical search for improved recall.
 
 4. Generation — Retrieved chunks are concatenated into a prompt context and the
    LLM generates a grounded answer. The model is instructed to cite only information
@@ -520,6 +529,50 @@ def generate_pdf(topic: str) -> None:
         story += [t1, Spacer(1, 12)]
 
         story += [
+            h1("What is RAG (Retrieval-Augmented Generation)?"),
+            body(
+                "RAG — Retrieval-Augmented Generation — is a technique that grounds LLM responses in "
+                "private or up-to-date knowledge by retrieving relevant document chunks at query time. "
+                "Instead of relying solely on the LLM's training data, RAG fetches the most relevant "
+                "passages from a vector database and injects them as context into the prompt. This "
+                "approach reduces hallucination, keeps answers current, and enables the model to cite "
+                "sources. RAG is now the standard architecture for enterprise document Q&A systems."
+            ),
+            Spacer(1, 12),
+            h1("RAG Ingestion Pipeline"),
+            body(
+                "The RAG ingestion pipeline is the process of preparing documents for retrieval. "
+                "RAG ingestion consists of four main stages:"
+            ),
+            Spacer(1, 6),
+            body(
+                "<b>Stage 1 — RAG Ingestion (Document Processing):</b> During RAG ingestion, raw documents "
+                "(PDF, TXT, CSV, Excel) are parsed and split into overlapping chunks of 256–1024 tokens "
+                "with a 10–20% overlap to preserve context at chunk boundaries. Each chunk is then "
+                "embedded into a dense vector using text-embedding-3-small (OpenAI) or bge-m3 (BAAI). "
+                "RAG ingestion supports file formats including PDF, plain text, CSV, and Excel spreadsheets."
+            ),
+            Spacer(1, 4),
+            body(
+                "<b>Stage 2 — Indexing:</b> After RAG ingestion, chunk embeddings are stored in a vector "
+                "database (ChromaDB, Pinecone, Weaviate, or Qdrant). The database builds an approximate "
+                "nearest-neighbour (ANN) index using algorithms such as HNSW. A BM25 keyword index may "
+                "also be built at this stage for hybrid retrieval combining lexical and semantic search."
+            ),
+            Spacer(1, 4),
+            body(
+                "<b>Stage 3 — Retrieval:</b> At query time, the user's question is embedded and the "
+                "top-k most similar chunks are fetched via cosine similarity or MMR (Maximal Marginal "
+                "Relevance) to reduce redundancy. Multi-query expansion and HyDE (Hypothetical Document "
+                "Embeddings) can further improve recall."
+            ),
+            Spacer(1, 4),
+            body(
+                "<b>Stage 4 — Generation:</b> The retrieved chunks are concatenated into a prompt context "
+                "and the LLM generates a grounded answer, citing only information present in the context "
+                "to reduce hallucination."
+            ),
+            Spacer(1, 12),
             h1("Agentic AI Framework Landscape"),
             body(
                 "Agentic frameworks provide the scaffolding for multi-step, tool-using LLM systems. "

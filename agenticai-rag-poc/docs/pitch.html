@@ -47,31 +47,27 @@
   border-bottom:1px solid rgba(139,103,20,.2);
 }
 .nav-brand                              { color:#F2E8D0 !important; }
-.nav-list a                             { color:rgba(196,164,107,.7) !important; }
+.nav-list a                             { color:#C4A46B !important; }
 .nav-list a:hover                       { color:#F2E8D0 !important; background:rgba(255,255,255,.06) !important; }
-.nav-list a[aria-current="true"]        { color:#56CCF2 !important; background:rgba(56,189,248,.12) !important; box-shadow:inset 0 -2px 0 rgba(56,189,248,.6) !important; }
+.nav-list a[aria-current="true"]        { color:#FAF6EE !important; background:rgba(196,164,107,.2) !important; box-shadow:inset 0 -2px 0 rgba(196,164,107,.9) !important; }
 .nav-badge { background:rgba(76,122,76,.2); color:#3D6B3D; border-color:rgba(76,122,76,.35); }
 
-/* Hero: captivating dark-oat gradient, override --text tokens for light text */
+/* Hero: light-oat surface with dark text for readability */
 .hero {
-  background:linear-gradient(135deg, #2C1A08 0%, #5C3D1E 60%, #8B6914 100%);
-  --text:#FAF6EE;
-  --text-dim:#D4B896;
-  --text-soft:#C4A46B;
   --border:rgba(196,164,107,.2);
 }
 .hero::before {
-  background-image:radial-gradient(circle, rgba(196,164,107,.22) 1px, transparent 1px);
+  background-image:radial-gradient(circle, rgba(196,164,107,.25) 1px, transparent 1px);
 }
 .hero::after {
-  background:radial-gradient(circle, rgba(181,83,42,.25) 0%, transparent 70%);
+  background:radial-gradient(circle, rgba(196,164,107,.18) 0%, transparent 70%);
 }
 .hero .eyebrow {
   background:rgba(196,164,107,.18);
   border-color:rgba(196,164,107,.38);
-  color:#F2E8D0;
+  color:#5C3D08;
 }
-.hero .eyebrow-dot { background:#F2E8D0; }
+.hero .eyebrow-dot { background:#8B6914; }
 
 /* Page container: warm oat border + shadow */
 .page {
@@ -163,14 +159,14 @@ body {
 }
 .nav-brand-dot {
   width:8px; height:8px; border-radius:50%;
-  background:var(--grad-main); box-shadow:0 0 8px rgba(56,189,248,.6);
+  background:var(--grad-main); box-shadow:0 0 8px rgba(196,164,107,.6);
   animation:pulse 2.5s ease-in-out infinite;
 }
 .nav-list { display:flex; list-style:none; gap:2px; align-items:center; }
 .nav-list a {
   display:inline-flex; align-items:center; gap:6px;
   padding:5px 14px; font-size:12px; font-weight:600;
-  color:rgba(196,164,107,.7); text-decoration:none;
+  color:#C4A46B; text-decoration:none;
   border-radius:6px;
   transition:color .18s, background .18s;
 }
@@ -179,9 +175,9 @@ body {
   background:rgba(255,255,255,.06);
 }
 .nav-list a[aria-current="true"] {
-  color:#56CCF2;
-  background:rgba(56,189,248,.12);
-  box-shadow:inset 0 -2px 0 rgba(56,189,248,.6);
+  color:#FAF6EE;
+  background:rgba(196,164,107,.2);
+  box-shadow:inset 0 -2px 0 rgba(196,164,107,.9);
 }
 .nav-badge {
   font-size:9px; font-weight:800; padding:1px 5px;
@@ -197,7 +193,7 @@ body {
   width:980px; margin:24px auto 48px;
   border-radius:16px; overflow:hidden;
   border:1px solid var(--border-hi);
-  box-shadow:0 32px 80px rgba(0,0,0,.6), 0 0 120px rgba(56,189,248,.04);
+  box-shadow:0 24px 64px rgba(60,40,15,.18), 0 0 80px rgba(139,103,20,.07);
 }
 .hero {
   position:relative; background:var(--surface);
@@ -206,7 +202,7 @@ body {
 }
 .hero::before {
   content:''; position:absolute; inset:0;
-  background-image:radial-gradient(circle, rgba(56,189,248,.15) 1px, transparent 1px);
+  background-image:radial-gradient(circle, rgba(196,164,107,.25) 1px, transparent 1px);
   background-size:26px 26px;
   mask-image:linear-gradient(to bottom,transparent,rgba(0,0,0,.4) 40%,transparent);
   pointer-events:none;
@@ -214,7 +210,7 @@ body {
 .hero::after {
   content:''; position:absolute; top:-60px; right:-60px;
   width:320px; height:320px;
-  background:radial-gradient(circle, rgba(167,139,250,.16) 0%, transparent 70%);
+  background:radial-gradient(circle, rgba(196,164,107,.18) 0%, transparent 70%);
   pointer-events:none;
 }
 .hero-inner { position:relative; z-index:1; display:flex; align-items:flex-start; gap:28px; }
@@ -224,7 +220,7 @@ body {
   font-size:11px; font-weight:700; letter-spacing:.08em;
   text-transform:uppercase; color:var(--cyan);
   margin-bottom:14px; padding:4px 12px;
-  background:var(--cyan-dim); border:1px solid rgba(56,189,248,.28); border-radius:20px;
+  background:var(--cyan-dim); border:1px solid rgba(196,164,107,.28); border-radius:20px;
 }
 .eyebrow-dot {
   width:6px; height:6px; border-radius:50%; background:var(--cyan);
@@ -246,7 +242,7 @@ body {
   align-self:flex-end; flex-shrink:0; width:200px;
 }
 .hl-card {
-  background:rgba(255,255,255,.03); border:1px solid var(--border-hi);
+  background:rgba(255,255,255,.5); border:1px solid var(--border-hi);
   border-radius:var(--r-sm); padding:10px 14px;
   position:relative; overflow:hidden;
 }

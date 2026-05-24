@@ -2,7 +2,7 @@
 
 > [← Home](README.md) · [← Project](project/PROJECT.md) · [Operational Limits](deployment/DEPLOY-LIMITS.md)
 
-Architectural decisions, trade-offs, and known limitations. Retrieval and reranking decisions → [Retrieval & Reranking](project/CHALLENGES-RETRIEVAL.md). Hard operational limits → [Operational Limits](deployment/DEPLOY-LIMITS.md). Testing challenges → [Testing Challenges](testing/TESTING-CHALLENGES.md).
+Architectural decisions, trade-offs, and known limitations. Retrieval and reranking decisions → [Retrieval & Reranking](project/CHALLENGES-RETRIEVAL.md). Agent pipeline implementation challenges → [Agent Pipeline Challenges](project/CHALLENGES-AGENT-PIPELINE.md). Hard operational limits → [Operational Limits](deployment/DEPLOY-LIMITS.md). Testing challenges → [Testing Challenges](testing/TESTING-CHALLENGES.md).
 
 ---
 
@@ -40,6 +40,8 @@ Provider credentials must be available at runtime but must not appear in logs, r
 - Startup credential banner suppressed in `APP_ENV=production`.
 - API responses use masked sources; raw keys are never returned.
 - Settings UI is role-aware: guests configure keys exactly once per session; admins update without restriction.
+
+**Billable parameter isolation:** Credentials, cost-shaping model choices, and deployment infrastructure config each follow a different env-fallback policy in production. Full classification, per-node model fallback chain, Vercel cross-instance persistence via encrypted cookie, and the `reranker_judge_model` guard fix are documented in [Billable Parameter Isolation](security/SECURITY.md#billable-parameter-isolation-runtimesettings_storepy).
 
 **Test isolation:** Unit and integration tests run without real credentials using mocks. Live tests (`backend/tests/live/`) require real keys and are excluded from standard CI.
 

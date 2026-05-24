@@ -61,23 +61,6 @@ Login: `admin` / password shown in startup banner. Alternatives: `make setup && 
 
 ---
 
-## Agent Pipeline
-
-```
-User question
-   ▼ [Planner]    — multi-query rewrite + 2 alternative phrasings
-   ▼ [HyDE]       — hypothetical document embedding for better recall
-   ▼ [Retriever]  — fan-out across all queries + RRF fusion (BM25 optional)
-   ▼ [Grader]     — self-RAG relevance filter (opt-in)
-   ▼ [Reranker]   — cross-encoder precision sort (opt-in)
-   ▼ [Generator]  — GPT-4o-mini grounded strictly to retrieved context
-   ▼ [Validator]  — VALID or NEEDS_REVISION (≤ 2 retries → Generator)
-   ▼ { answer, sources, validation, tokens_used, mode, trace }
-```
-
-`mode="agentic"` (default, 3–5 LLM calls) or `mode="simple"` (single retrieve→generate, ~3× faster). → [Agent Pipeline docs](docs/architecture/AGENT-PIPELINE.md) — per-node inputs/outputs, search features, retry logic, limitations.
-
----
 
 ## Technology Stack
 
@@ -100,9 +83,10 @@ Production ignores env-supplied provider credentials — enter OpenAI, Pinecone,
 | Area | Guides |
 |------|--------|
 | **System Setup** | [Setup Guide](docs/deployment/SETUP.md) · [Local & Docker](docs/deployment/DEPLOY-LOCAL.md) · [Env Vars](docs/deployment/DEPLOY-LOCAL-ENV.md) |
-| **Architecture** | [Architecture](docs/architecture/ARCHITECTURE.md) · [Agent Pipeline](docs/architecture/AGENT-PIPELINE.md) · [Project Structure](docs/architecture/ARCHITECTURE-STRUCTURE.md) |
-| **Deployment** | [Deployment Overview](docs/deployment/DEPLOYMENT.md) · [Vercel](docs/deployment/DEPLOY-VERCEL.md) · [Vercel Advanced](docs/deployment/DEPLOY-VERCEL-ADVANCED.md) |
-| **Limitations** | [Challenges](docs/project/CHALLENGES.md) · [Operational Limits](docs/deployment/DEPLOY-LIMITS.md) · [Vercel Limits](docs/deployment/DEPLOY-VERCEL.md) |
+| **Architecture** | [Architecture](docs/architecture/ARCHITECTURE.md) · [Project Structure](docs/architecture/ARCHITECTURE-STRUCTURE.md) |
+| **Agent Roles** | [Agent Pipeline](docs/architecture/AGENT-PIPELINE.md) — node roles, search features, retry logic, cost, limitations |
+| **Deployment** | [Deployment Overview](docs/deployment/DEPLOYMENT.md) · [Vercel](docs/deployment/DEPLOY-VERCEL.md) · [Vercel Operations](docs/deployment/DEPLOY-VERCEL-OPS.md) |
+| **Limitations and Challenges** | [Challenges](docs/project/CHALLENGES.md) · [Operational Limits](docs/deployment/DEPLOY-LIMITS.md) · [Vercel Limits](docs/deployment/DEPLOY-VERCEL.md) |
 | **Capstone Audit** | [CAPSTONE-AUDIT.md](docs/project/CAPSTONE-AUDIT.md) — all 10 requirements mapped to implementation, tests, and documentation |
 
 ---
@@ -112,8 +96,6 @@ Production ignores env-supplied provider credentials — enter OpenAI, Pinecone,
 | Reference Area | Root Guide |
 |----------------|-----------|
 | **API** | [API Reference](docs/api/API.md) — endpoints, schemas, voice export, guardrails API |
-| **Architecture** | [Architecture](docs/architecture/ARCHITECTURE.md) — system design, agent pipeline, project structure |
-| **Deployment** | [Deployment](docs/deployment/DEPLOYMENT.md) — setup, Docker, Vercel, env vars, operational limits |
 | **Security** | [Security](docs/security/SECURITY.md) — OWASP controls, guardrails, production hardening |
 | **Testing** | [Testing](docs/testing/TESTING.md) — unit, integration, frontend, E2E, coverage |
 | **Project** | [Project Reference](docs/project/PROJECT.md) — capstone audit, challenges, SDD, videos, future enhancements |

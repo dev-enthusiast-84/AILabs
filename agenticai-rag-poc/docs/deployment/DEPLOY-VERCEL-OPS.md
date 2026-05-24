@@ -1,8 +1,31 @@
-# Vercel Deployment: Advanced Options
+# Vercel Operations
 
-> [← Home](README.md) · [← Deployment](deployment/DEPLOYMENT.md) · [Vercel](deployment/DEPLOY-VERCEL.md)
+> [← Home](README.md) · [← Deployment](deployment/DEPLOYMENT.md) · [← Vercel Deployment](deployment/DEPLOY-VERCEL.md)
 
-Teardown, redeployment, and backend hosting alternatives for frontend-only mode.
+CI/non-interactive deploy, redeployment, teardown, and backend hosting alternatives.
+
+---
+
+## CI / Non-Interactive Deploy
+
+```bash
+export ADMIN_PASSWORD="<your-strong-password>"
+export VERCEL_TOKEN="<from vercel.com/account/tokens>"
+export PROJECT_NAME="my-rag-app"
+
+bash scripts/remote/deploy-vercel.sh --fullstack --yes
+# or
+export BACKEND_URL="https://my-backend.railway.app"
+bash scripts/remote/deploy-vercel.sh --frontend-only --backend-url "$BACKEND_URL" --yes
+```
+
+| Flag | Description |
+|------|-------------|
+| `--fullstack` | Deploy backend + frontend on Vercel |
+| `--frontend-only` | Deploy React SPA only |
+| `--backend-url <url>` | Backend URL for frontend-only mode |
+| `--project-name <name>` | Override the Vercel project name |
+| `--yes` | Skip all interactive prompts |
 
 ---
 

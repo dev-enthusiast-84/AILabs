@@ -139,6 +139,31 @@ def test_blob_chunk_manifest_roundtrip(monkeypatch):
     assert fs.read_chunk_manifest("doc.txt") is None
 
 
+def test_blob_read_file_returns_none_on_blob_not_found(monkeypatch):
+    """BlobNotFoundError from vercel.blob.get() must return None, not propagate as a storage error.
+
+    Regression test: previously BlobNotFoundError was caught by _document_availability as a
+    generic Exception → returned "unknown" → upload endpoint raised 503 ("Document retrieval
+    is unavailable") instead of treating the missing file as stale and allowing re-upload.
+    """
+    import vercel.blob as blob
+
+    def fake_get(path, **_kwargs):
+        raise blob.BlobNotFoundError()
+
+    def fake_put(path, body, **_kwargs):
+        pass
+
+    monkeypatch.delenv("UPLOAD_DIR", raising=False)
+    monkeypatch.setenv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_test")
+    monkeypatch.setenv("FILE_STORE_TYPE", "blob")
+    _clear_settings_cache()
+    monkeypatch.setattr(blob, "put", fake_put)
+    monkeypatch.setattr(blob, "get", fake_get)
+
+    assert fs.read_file("missing.pdf") is None
+
+
 def test_binary_content_preserved():
     raw = bytes(range(256))
     fs.save_file("binary.bin", raw)

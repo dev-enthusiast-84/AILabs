@@ -18,6 +18,7 @@ from app.auth.models import UserInDB
 from app.core.chat_languages import SUPPORTED_LANGUAGES, ChatLanguageCode
 from app.config import get_settings
 from app.core.errors import SafeAppError, safe_app_error_from_exception
+from app.runtime.runtime_settings_cookie import restore_runtime_settings_from_cookie
 from app.runtime.settings_store import get_effective_ragas_evaluation_enabled, is_runtime_key_set
 from app.guardrails.engine import GuardrailEngine
 from app.guardrails.store import get_guardrail_store
@@ -161,6 +162,9 @@ async def query_documents(request: Request, body: QueryRequest, background_tasks
     - Output blocked: answer is replaced with a policy-blocked message.
     - Flagged violations are logged server-side only (OWASP A09).
     """
+    # Restore settings saved via the UI from the encrypted cookie so the API key
+    # and model choices survive across Vercel serverless invocations.
+    restore_runtime_settings_from_cookie(request, user)
     set_retrieval_metadata_filter(_retrieval_filter_for_user(user))
     try:
         visible_documents = _has_visible_documents(user)

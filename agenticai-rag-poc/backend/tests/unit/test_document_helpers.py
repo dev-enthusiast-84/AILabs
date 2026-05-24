@@ -520,3 +520,117 @@ class TestGuestUploadKey:
         result = _guest_upload_key(fake_request)
         # Invalid JWT → JoseError caught → fallback to IP
         assert result == "10.0.0.1"
+
+
+# ── get_document_suggestions ──────────────────────────────────────────────────
+
+
+class TestGetDocumentSuggestions:
+    """Unit tests for the /documents/suggestions endpoint helper logic."""
+
+    def _make_admin(self) -> "UserInDB":
+        return _make_user(role="admin")
+
+    def test_returns_empty_when_no_files(self, monkeypatch):
+        """Empty files list → empty suggestions immediately."""
+        import asyncio
+        from app.api.documents import get_document_suggestions
+
+        result = asyncio.get_event_loop().run_until_complete(
+            get_document_suggestions(files=[], _user=self._make_admin())
+        )
+        assert result.suggestions == []
+
+    def test_returns_empty_when_chunks_not_found(self, monkeypatch):
+        """Files with no indexed chunks → empty suggestions."""
+        import asyncio
+        from app.api.documents import get_document_suggestions
+
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr("app.api.documents._load_document_chunks_for_display", lambda _: [])
+
+        result = asyncio.get_event_loop().run_until_complete(
+            get_document_suggestions(files=["missing.txt"], _user=self._make_admin())
+        )
+        assert result.suggestions == []
+
+    def test_returns_empty_when_api_key_not_configured(self, monkeypatch):
+        """No API key → skips LLM call and returns empty list."""
+        import asyncio
+        from app.api.documents import get_document_suggestions
+
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr(
+            "app.api.documents._load_document_chunks_for_display",
+            lambda _: ["This document describes RAG pipeline stages."],
+        )
+
+        result = asyncio.get_event_loop().run_until_complete(
+            get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
+        )
+        # No API key configured in test env → suggestions must be empty
+        assert result.suggestions == []
+
+    def test_returns_llm_questions_when_configured(self, monkeypatch):
+        """LLM returns valid JSON array → questions surfaced as suggestions."""
+        import asyncio
+        import json
+        from unittest.mock import MagicMock
+        from app.api.documents import get_document_suggestions
+
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr(
+            "app.api.documents._load_document_chunks_for_display",
+            lambda _: ["Retrieval-Augmented Generation (RAG) combines retrieval with generation."],
+        )
+
+        expected = [
+            "What is Retrieval-Augmented Generation?",
+            "How does RAG combine retrieval with generation?",
+            "What problem does RAG solve?",
+            "What are the stages of a RAG pipeline?",
+        ]
+
+        fake_llm = MagicMock()
+        fake_llm.invoke.return_value = MagicMock(content=json.dumps(expected))
+        fake_chat_class = MagicMock(return_value=fake_llm)
+
+        monkeypatch.setattr("app.api.documents.get_effective_api_key", lambda: "sk-test", raising=False)
+
+        import sys
+        fake_module = MagicMock()
+        fake_module.ChatOpenAI = fake_chat_class
+        monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+        result = asyncio.get_event_loop().run_until_complete(
+            get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
+        )
+        assert result.suggestions == expected
+
+    def test_returns_empty_on_llm_json_parse_error(self, monkeypatch):
+        """Malformed LLM response → empty list, no exception raised."""
+        import asyncio
+        from unittest.mock import MagicMock
+        from app.api.documents import get_document_suggestions
+
+        monkeypatch.setattr("app.api.documents._document_source_key", lambda name, user: name)
+        monkeypatch.setattr(
+            "app.api.documents._load_document_chunks_for_display",
+            lambda _: ["Some document content here."],
+        )
+
+        fake_llm = MagicMock()
+        fake_llm.invoke.return_value = MagicMock(content="not valid json at all")
+        fake_chat_class = MagicMock(return_value=fake_llm)
+
+        monkeypatch.setattr("app.api.documents.get_effective_api_key", lambda: "sk-test", raising=False)
+
+        import sys
+        fake_module = MagicMock()
+        fake_module.ChatOpenAI = fake_chat_class
+        monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+        result = asyncio.get_event_loop().run_until_complete(
+            get_document_suggestions(files=["doc.txt"], _user=self._make_admin())
+        )
+        assert result.suggestions == []

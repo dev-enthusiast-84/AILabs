@@ -2,7 +2,7 @@ import structlog
 import time
 from pathlib import Path
 from typing import Literal
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 from slowapi import Limiter
@@ -10,6 +10,7 @@ from slowapi.util import get_remote_address
 
 from app.core.audit import audit_event
 from app.auth.utils import get_current_user, is_token_revoked, require_full_access
+from app.runtime.runtime_settings_cookie import restore_runtime_settings_from_cookie
 from app.auth.models import UserInDB
 from app.config import get_settings
 from app.core.errors import SafeAppError, safe_app_error_from_exception
@@ -360,6 +361,11 @@ async def upload_document(
     from the upload rate limit. All content undergoes basic safety validation
     (magic bytes, executable detection, script injection) before indexing (OWASP A04).
     """
+    # Restore settings saved via the UI (e.g. OpenAI key) from the encrypted
+    # httponly cookie. Required on Vercel where each invocation is a fresh process
+    # with no shared memory — the module-level _runtime_api_key global is empty.
+    restore_runtime_settings_from_cookie(request, user)
+
     safe_name = validate_filename(file.filename or "upload")
     source_key = _document_source_key(safe_name, user)
 
@@ -588,6 +594,74 @@ async def get_documents_metadata(user=Depends(require_full_access)):
         ))
 
     return DocumentMetadataResponse(documents=items, count=len(items))
+
+
+class DocumentSuggestionsResponse(BaseModel):
+    suggestions: list[str]
+
+
+@router.get("/suggestions", response_model=DocumentSuggestionsResponse)
+async def get_document_suggestions(
+    files: list[str] = Query(default=[]),
+    _user: UserInDB = Depends(get_current_user),
+):
+    """Generate LLM-based answerable questions from the content of up to 3 uploaded documents.
+
+    Returns an empty list when the LLM is not configured or content is insufficient.
+    Read-only; any authenticated user (OWASP A01 — same access as /content).
+    """
+    if not files:
+        return DocumentSuggestionsResponse(suggestions=[])
+
+    combined_chunks: list[str] = []
+    for filename in files[:3]:
+        try:
+            safe_name = validate_filename(filename)
+            source_key = _document_source_key(safe_name, _user)
+            chunks = _load_document_chunks_for_display(source_key)
+            combined_chunks.extend(chunks[:8])
+        except Exception:
+            continue
+
+    if not combined_chunks:
+        return DocumentSuggestionsResponse(suggestions=[])
+
+    content_snippet = "\n".join(combined_chunks)[:3000]
+
+    try:
+        import json
+        from langchain_core.messages import HumanMessage
+        from langchain_openai import ChatOpenAI as _ChatOpenAI
+        from app.runtime.settings_store import get_effective_api_key, get_effective_model
+
+        api_key = get_effective_api_key()
+        if not api_key:
+            return DocumentSuggestionsResponse(suggestions=[])
+
+        llm = _ChatOpenAI(
+            model=get_effective_model(),
+            temperature=0.0,
+            openai_api_key=api_key,
+            max_tokens=300,
+        )
+        prompt = (
+            "Based on the document content below, generate exactly 4 specific questions "
+            "that a user could ask and receive a clear, factual answer from this document. "
+            "Each question must be directly and fully answerable from the content shown. "
+            "Return ONLY a JSON array of 4 question strings, nothing else.\n\n"
+            f"Document content:\n{content_snippet}"
+        )
+        result = llm.invoke([HumanMessage(content=prompt)])
+        raw = result.content.strip()
+        if raw.startswith("```"):
+            raw = "\n".join(raw.split("\n")[1:])
+            raw = raw.rsplit("```", 1)[0].strip()
+        parsed = json.loads(raw)
+        suggestions = [str(q) for q in parsed if isinstance(q, str) and q.strip()][:4]
+    except Exception:
+        suggestions = []
+
+    return DocumentSuggestionsResponse(suggestions=suggestions)
 
 
 @router.get("/{filename}/chunks", response_model=DocumentChunksResponse)

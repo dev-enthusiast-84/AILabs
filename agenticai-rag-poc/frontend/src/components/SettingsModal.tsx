@@ -101,6 +101,7 @@ function validatePineconeRegion(region: string): string | null {
 
 // ── Accordion section wrapper ──────────────────────────────────────────────────
 function SettingsSection({
+  id,
   title,
   open,
   onToggle,
@@ -112,21 +113,31 @@ function SettingsSection({
   onToggle: () => void
   children: React.ReactNode
 }) {
+  const btnId = `settings-section-btn-${id}`
+  const panelId = `settings-section-panel-${id}`
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden">
       <button
+        id={btnId}
         type="button"
         onClick={onToggle}
         className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors"
         aria-expanded={open}
+        aria-controls={panelId}
       >
         <span>{title}</span>
         <ChevronRightIcon
+          aria-hidden="true"
           className={`h-4 w-4 text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`}
         />
       </button>
       {open && (
-        <div className="px-4 pb-4 pt-2 space-y-4 border-t border-slate-200 bg-slate-50/40">
+        <div
+          id={panelId}
+          role="region"
+          aria-labelledby={btnId}
+          className="px-4 pb-4 pt-2 space-y-4 border-t border-slate-200 bg-slate-50/40"
+        >
           {children}
         </div>
       )}
@@ -615,33 +626,35 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 backdrop-blur-sm overflow-y-auto py-8 px-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="settings-title"
     >
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/40 w-full max-w-md overflow-hidden max-h-[90vh] flex flex-col">
+      <div
+        className="bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/40 w-full max-w-md overflow-hidden flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+      >
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-2">
-            <Cog6ToothIcon className="h-5 w-5 text-sky-600" />
+            <Cog6ToothIcon aria-hidden="true" className="h-5 w-5 text-sky-600" />
             <h2 id="settings-title" className="text-base font-semibold text-slate-900">
               Model Settings
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 transition-colors"
+            className="text-slate-400 hover:text-slate-700 transition-colors rounded focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
             aria-label="Close settings"
           >
-            <XMarkIcon className="h-5 w-5" />
+            <XMarkIcon aria-hidden="true" className="h-5 w-5" />
           </button>
         </div>
 
         {/* Body — scrollable */}
-        <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1">
+        <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0 max-h-[60vh]">
           {isGuest && (
             <div
               className={`text-xs rounded-lg px-3 py-2.5 border ${

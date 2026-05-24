@@ -66,5 +66,5 @@ artifacts/
 # Generated — produced by CI (deploy-docs.yml) and `make docs-readme`; do not commit
 docs/README.md
 
-# Submission zip — regenerate with: bash scripts/package-submission.sh
-agentic-rag-poc-submission.zip
+# Submission zips — regenerate with: bash scripts/package-submission.sh
+*.zip
