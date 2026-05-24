@@ -363,15 +363,14 @@ bash scripts/record-walkthrough.sh \
           </div>
           <div class="video-wrap"
                data-src="https://github.com/dev-enthusiast-84/AILabs/releases/download/walkthrough-remote/guest-walkthrough.webm"
-               data-filename="guest-walkthrough.webm"
-               data-placeholder="true">
+               data-filename="guest-walkthrough.webm">
             <video controls preload="none" aria-label="Remote guest walkthrough video"></video>
-            <div class="video-overlay" aria-hidden="true">
-              <div class="ov-play-btn" style="opacity:.3" aria-hidden="true">&#9654;</div>
-              <div class="ov-placeholder-msg">
-                <div class="ov-main">Recording not yet generated</div>
-                <div class="ov-sub">Run the command below to produce this video</div>
-              </div>
+            <div class="video-overlay clickable" role="button" tabindex="0"
+                 aria-label="Load and play remote guest walkthrough">
+              <div class="ov-play-btn" aria-hidden="true">&#9654;</div>
+              <div class="ov-label">Click to watch</div>
+              <div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div>
+              <div class="ov-progress-pct"></div>
             </div>
           </div>
         </div>
