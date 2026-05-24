@@ -829,6 +829,7 @@ class TestRerankerNode:
 
         with patch("app.agents.rag_agent.get_effective_reranker_type", return_value="cross-encoder"), \
              patch("app.agents.rag_agent.settings") as mock_s, \
+             patch("app.agents.rag_agent._cross_encoder_cache", {}), \
              patch.dict("sys.modules", {"sentence_transformers": None}):
             mock_s.reranker_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"
             mock_s.reranker_top_k = 2

@@ -57,14 +57,28 @@ def _run_ragas_evaluation() -> dict:
     model_name = get_settings().llm_model
 
     # Lazy imports — heavy optional dependencies
+    # ragas/llms/base.py imports from langchain_community.chat_models.vertexai at module
+    # level, but langchain-community 0.3+ removed that sub-module. Stub it with the
+    # standalone langchain-google-vertexai package before ragas is imported.
+    import sys
+    from types import ModuleType
+    if "langchain_community.chat_models.vertexai" not in sys.modules:
+        try:
+            from langchain_google_vertexai import ChatVertexAI as _CV, VertexAI as _VA
+            _cv_mod = ModuleType("langchain_community.chat_models.vertexai")
+            _cv_mod.ChatVertexAI = _CV  # type: ignore[attr-defined]
+            sys.modules["langchain_community.chat_models.vertexai"] = _cv_mod
+            _llms_mod = sys.modules.setdefault("langchain_community.llms", ModuleType("langchain_community.llms"))
+            _llms_mod.VertexAI = _VA  # type: ignore[attr-defined]
+        except ImportError:
+            pass
+
     from datasets import Dataset
     from ragas import evaluate
-    from ragas.metrics import (
-        answer_relevancy,
-        context_precision,
-        context_recall,
-        faithfulness,
-    )
+    from ragas.metrics._faithfulness import faithfulness
+    from ragas.metrics._answer_relevance import answer_relevancy
+    from ragas.metrics._context_precision import context_precision
+    from ragas.metrics._context_recall import context_recall
     from app.rag.pipeline import run_simple_rag
 
     sample_size = min(5, len(docs))

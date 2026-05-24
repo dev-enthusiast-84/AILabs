@@ -1,6 +1,6 @@
 .PHONY: setup dev dev-backend dev-frontend deploy-local test test-e2e test-deploy docker docker-backend docker-down \
         deploy deploy-fullstack deploy-frontend vercel-redeploy vercel-undeploy sample-data docker-sample-data \
-        spec-check spec-validate spec-install spec-new docs-readme help
+        spec-check spec-validate spec-install spec-new docs-readme docs-serve help
 
 # ── One-command setup ──────────────────────────────────────────────────────────
 setup:

@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'docs/**'
-      - 'README.md'
+      - 'agenticai-rag-poc/docs/**'
+      - 'agenticai-rag-poc/README.md'
   workflow_dispatch:
 
 permissions:
@@ -31,12 +31,12 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Generate docs/README.md from root README
-        run: sed 's|](docs/|](|g' README.md > docs/README.md
+        run: sed 's|](docs/|](|g' agenticai-rag-poc/README.md > agenticai-rag-poc/docs/README.md
 
       - name: Upload docs artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs
+          path: agenticai-rag-poc/docs
 
       - name: Deploy to GitHub Pages
         id: deployment

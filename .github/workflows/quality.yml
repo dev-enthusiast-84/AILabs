@@ -3,22 +3,20 @@ name: Quality Checks
 on:
   pull_request:
     paths:
-      - "backend/**"
-      - "frontend/**"
-      - "scripts/**"
+      - "agenticai-rag-poc/backend/**"
+      - "agenticai-rag-poc/frontend/**"
+      - "agenticai-rag-poc/scripts/**"
       - ".github/workflows/quality.yml"
-      - "api/**"
-      - "Makefile"
+      - "agenticai-rag-poc/Makefile"
   push:
     branches:
       - main
     paths:
-      - "backend/**"
-      - "frontend/**"
-      - "scripts/**"
+      - "agenticai-rag-poc/backend/**"
+      - "agenticai-rag-poc/frontend/**"
+      - "agenticai-rag-poc/scripts/**"
       - ".github/workflows/quality.yml"
-      - "api/**"
-      - "Makefile"
+      - "agenticai-rag-poc/Makefile"
   workflow_dispatch:
 
 jobs:
@@ -27,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: backend
+        working-directory: agenticai-rag-poc/backend
     env:
       APP_ENV: test
       LIVE_TESTS: "0"
@@ -64,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: agenticai-rag-poc/frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,7 +72,7 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: agenticai-rag-poc/frontend/package-lock.json
 
       - name: Install frontend dependencies
         run: npm ci
@@ -92,7 +90,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Fetch enough history so git diff --cached can be simulated via git diff HEAD
           fetch-depth: 2
 
       - name: Set up Python
@@ -101,9 +98,7 @@ jobs:
           python-version: "3.11"
 
       - name: Run secrets scanner on all tracked files
-        # In CI there is no index / staged set, so we scan every tracked file directly.
-        # The scanner is invoked in "full-tree" mode via the --ci flag.
-        run: python3 scripts/pre-commit --ci
+        run: python3 agenticai-rag-poc/scripts/pre-commit --ci
 
       - name: Verify pre-commit hook script is valid Python
-        run: python3 -m py_compile scripts/pre-commit
+        run: python3 -m py_compile agenticai-rag-poc/scripts/pre-commit
