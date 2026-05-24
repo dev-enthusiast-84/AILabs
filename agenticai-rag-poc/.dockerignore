@@ -1,0 +1,37 @@
+# Root Docker context safety net. The active compose build uses backend/ and
+# frontend/ contexts, which also have dedicated .dockerignore files.
+
+.git/
+.vercel/
+.env
+.env.*
+
+.agents/
+.claude/
+.github/
+.specify/
+artifacts/
+docs/
+scripts/
+shared/
+test-reports/
+PENDING_TASKS.md
+pitch.html
+
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/node_modules/
+**/dist/
+**/playwright-report/
+**/test-results/
+
+backend/chroma_db/
+backend/uploads/
+sample-data/
+
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/

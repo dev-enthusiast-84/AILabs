@@ -1,0 +1,15 @@
+.env
+.env.*
+
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+tests/
+
+.vite/
+.vitest/
+
+.DS_Store
+**/.DS_Store

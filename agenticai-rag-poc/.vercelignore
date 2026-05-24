@@ -1,0 +1,48 @@
+# Local secrets and Vercel project metadata
+.env
+.env.*
+backend/.env
+backend/.env.*
+.vercel/
+
+# Non-runtime repository material
+.agents/
+.claude/
+.github/
+.specify/
+docs/
+scripts/
+shared/
+CLAUDE.md
+PENDING_TASKS.md
+
+# Python environments, caches, local vector data, and uploads
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+backend/chroma_db/
+backend/uploads/
+backend/tests/
+
+# Node dependencies and generated frontend output
+**/node_modules/
+frontend/dist/
+frontend/tests/
+frontend/playwright-report/
+frontend/test-results/
+playwright-report/
+test-results/
+
+# Generated test/report/walkthrough artifacts can exceed Vercel upload limits
+artifacts/
+test-reports/
+
+# Locally generated sample documents are uploaded through the app UI, not deployed
+sample-data/
+
+# OS/editor noise
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/

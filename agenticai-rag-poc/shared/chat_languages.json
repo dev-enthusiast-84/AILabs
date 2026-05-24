@@ -1,0 +1,17 @@
+[
+  {
+    "code": "en",
+    "label": "English",
+    "speech": "en-US"
+  },
+  {
+    "code": "es",
+    "label": "Spanish",
+    "speech": "es-ES"
+  },
+  {
+    "code": "fr",
+    "label": "French",
+    "speech": "fr-FR"
+  }
+]
