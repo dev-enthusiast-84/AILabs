@@ -162,13 +162,45 @@ wait_for_backend() {
     return 1
 }
 
+# ── Port-in-use helper ────────────────────────────────────────────────────────
+# Kills any process already listening on $1 so a fresh server can bind cleanly.
+# This prevents [Errno 48] when re-running dev.sh after a previous session or
+# after exporting new env vars (e.g. OPENAI_API_KEY) that require a restart.
+_free_port() {
+    local port="$1"
+    local pids
+    # lsof -ti returns PIDs bound to the port; tolerate empty output.
+    pids=$(lsof -ti :"$port" 2>/dev/null || true)
+    if [[ -n "$pids" ]]; then
+        warn "Port ${port} is already in use — killing stale process(es): ${pids}"
+        # SIGTERM first; SIGKILL if still alive after 2 s.
+        echo "$pids" | xargs kill -TERM 2>/dev/null || true
+        local waited=0
+        while [[ $waited -lt 4 ]]; do
+            sleep 0.5
+            ((waited++))
+            pids=$(lsof -ti :"$port" 2>/dev/null || true)
+            [[ -z "$pids" ]] && break
+        done
+        if [[ -n "$pids" ]]; then
+            echo "$pids" | xargs kill -KILL 2>/dev/null || true
+            sleep 0.5
+        fi
+        success "Port ${port} is now free."
+    fi
+}
+
 # ── Start backend ─────────────────────────────────────────────────────────────
 start_backend() {
     preflight_backend
+    _free_port "$BACKEND_PORT"
     info "Starting backend (port ${BACKEND_PORT}, hot reload enabled)…"
 
     # setsid creates a new process group so kill -- -$PID reaches uvicorn's
     # child reloader process as well.
+    # The subshell inherits the current shell's environment, so any variables
+    # exported before running dev.sh (e.g. OPENAI_API_KEY) are automatically
+    # forwarded to uvicorn without needing to be written to backend/.env.
     PYTHONUNBUFFERED=1 setsid bash -c "
         source '${VENV}/bin/activate'
         cd '${BACKEND_DIR}'

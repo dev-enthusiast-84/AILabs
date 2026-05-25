@@ -17,7 +17,7 @@ This audit maps `docs/requirements/edureka-project.pdf` to the implemented syste
 | 7 | RAG pipeline | Simple retrieve-generate path and 7-node LangGraph agentic path return grounded answer, sources, validation, token telemetry | `test_pipeline.py`, `test_api_query.py`, live API/agent tests |
 | 8 | Agent-based reasoning | Planner, HyDE, Retriever, Grader, Reranker, Generator, Validator with retry loop and trace telemetry | `test_rag_agent.py`, `test_live_agent.py` |
 | 9 | Reliability and safety controls | Guardrails, Pydantic validation, rate limits, JWT/bcrypt auth, upload scanner, grounded answer validation | auth, guardrails, query, documents, and agent tests |
-| 10 | Deploy and document | Vercel Services full-stack, frontend-only deployment, Docker Compose, local dev scripts, setup/architecture/API/testing/security docs, pitch page | deployment script tests, docs, `pitch.html`, generated zip package |
+| 10 | Deploy and document | Vercel Services full-stack, frontend-only deployment, Docker Compose, local dev scripts, setup/architecture/API/testing/security docs, pitch page | deployment script tests, docs, `capstone-project-overview.html`, generated zip package |
 
 ## Engineering Challenges & Limitations
 
@@ -27,7 +27,7 @@ This audit maps `docs/requirements/edureka-project.pdf` to the implemented syste
 
 - Source code is present under `backend/`, `frontend/`, `scripts/`, `docs/`, and `.specify/`.
 - [Documentation](../README.md#submission-reference) explains setup, architecture, agent roles, deployment, limitations, and challenges.
-- `pitch.html` summarizes the capstone mapping and production-grade additions.
+- `capstone-project-overview.html` summarizes the capstone mapping and production-grade additions.
 - `agentic-rag-poc-submission.zip` can be regenerated after final validation.
 - Tests cover backend unit/integration, frontend unit, Playwright E2E, live dependency checks, Ragas evaluation, and deployment scripts.
 

@@ -611,9 +611,14 @@ def reranker_node(state: AgentState) -> AgentState:
             )
             return {**state, "reranker_latency_ms": 0}
 
+        # Score against the original user question, not the planner's rewrite.
+        # The generator also uses original_question, so both nodes evaluate the
+        # same question — prevents the reranker from dropping relevant chunks that
+        # score lower against an aggressively rewritten query.
+        rerank_question = state.get("original_question") or state["question"]
         t0 = time.perf_counter()
         pairs = [
-            (state["question"], doc.metadata.get("raw_chunk", doc.page_content))
+            (rerank_question, doc.metadata.get("raw_chunk", doc.page_content))
             for doc in docs
         ]
         scores = cross_encoder.predict(pairs)
@@ -643,10 +648,16 @@ def reranker_node(state: AgentState) -> AgentState:
 
     if reranker_type == "llm-judge":
         judge_model = get_effective_reranker_judge_model()
+        # Score against the original user question, not the planner's rewrite.
+        # The generator also uses original_question, so the reranker and generator
+        # evaluate chunk relevance against the same question — this prevents
+        # relevant chunks from being scored low against an aggressively rewritten
+        # planner query and then dropped before the generator sees them.
+        rerank_question = state.get("original_question") or state["question"]
         t0 = time.perf_counter()
         top_docs, tokens = _llm_judge_rerank(
             docs=docs,
-            question=state["question"],
+            question=rerank_question,
             top_k=settings.reranker_top_k,
             api_key=get_effective_api_key(),
             judge_model=judge_model,

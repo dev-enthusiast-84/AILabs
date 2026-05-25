@@ -1,7 +1,7 @@
 
 - **Getting Started**
   - [Home](README.md)
-  - [**Capability Showcase**](pitch.html ':ignore')
+  - [**Capability Showcase**](capstone-project-overview.html ':ignore')
   - [Walkthrough Videos](walkthrough/index.html ':ignore')
 
 - **Architecture**
@@ -21,6 +21,8 @@
     - [Vercel Deployment](deployment/DEPLOY-VERCEL.md)
     - [Vercel Operations](deployment/DEPLOY-VERCEL-OPS.md)
     - [Operational Limits](deployment/DEPLOY-LIMITS.md)
+    - **— Notifications —**
+    - [Email & Push Notifications](deployment/NOTIFICATIONS.md)
 
 - **API Reference**
   - [API Overview](api/API.md)

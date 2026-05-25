@@ -315,10 +315,9 @@ def test_admin_list_keeps_usable_old_files_and_excludes_stale_documents(client, 
 
 
 def test_delete_nonexistent_document(client, auth_headers):
-    # Idempotent delete: non-existent documents return 200 (not 404) so callers
-    # don't see an error for an operation that reached its intended end state.
+    # Documents that never existed (no file, no manifest, no chunks) must return 404.
     resp = client.delete("/api/documents/nonexistent_file.txt", headers=auth_headers)
-    assert resp.status_code == 200
+    assert resp.status_code == 404
 
 
 def test_delete_existing_document(client, auth_headers):

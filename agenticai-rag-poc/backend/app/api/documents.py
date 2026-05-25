@@ -370,6 +370,15 @@ async def _send_limit_notification(count: int, limit: int) -> None:
         pass
 
 
+async def _send_cleanup_notification(result) -> None:
+    """Send a post-cleanup summary notification (best-effort)."""
+    try:
+        from app.core.notifications import send_cleanup_notification
+        await send_cleanup_notification(result)
+    except Exception:
+        pass
+
+
 @router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
 @_upload_limiter.limit(f"{settings.guest_upload_rate_limit_per_minute}/minute")
 async def upload_document(
@@ -870,11 +879,17 @@ async def remove_document(filename: str, request: Request, _user=Depends(require
             filename=safe_name,
         )
         raise safe_error from exc
-    # Idempotent delete: if no vector chunks were removed, the document may have
-    # already been deleted (or never indexed — e.g. a Vercel cold-start on a
-    # different function instance wiped the in-memory store).  Still clean up
-    # any orphaned file / manifest artifacts and return success so the caller
-    # doesn't see a 404 for an operation that reached its intended end state.
+    # If the vector store removed nothing AND neither pre-flight check found any
+    # trace of this document, it definitively never existed — return 404.
+    if removed == 0 and not _has_file and not _has_manifest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{safe_name}' not found.",
+        )
+    # Idempotent delete: if no vector chunks were removed but the pre-flight
+    # checks found a file or manifest trace, the document existed and was
+    # already deleted from the vector store (e.g. Vercel cold-start wiped the
+    # in-memory index).  Clean up any orphaned artifacts and return success.
     try:
         delete_file(source_key)
         delete_chunk_manifest(source_key)
@@ -905,12 +920,14 @@ from app.auth.router import limiter as _cleanup_limiter
 async def trigger_cleanup(
     request: Request,
     body: CleanupRequest,
+    background_tasks: BackgroundTasks,
     _user=Depends(require_full_access),
 ):
     """Trigger manual admin document cleanup. Admin required. Rate-limited 2/minute.
 
     Sweeps admin-owned documents and deletes those older than the configured
     retention cadence. When force=True, deletes all admin documents regardless of age.
+    A post-cleanup summary notification is dispatched via all configured channels.
 
     OWASP A01 — requires full admin access; guests receive 403.
     OWASP A04 — rate-limited to 2 calls per minute.
@@ -921,6 +938,9 @@ async def trigger_cleanup(
     _cleanup_mod._last_cleanup_result = result
     audit_event("document_cleanup", status="completed", request=request, user=_user,
                 deleted_count=result.deleted_count, force=body.force)
+    from app.config import get_settings as _gs
+    if _gs().notification_enabled:
+        background_tasks.add_task(_send_cleanup_notification, result)
     return result
 
 

@@ -206,28 +206,28 @@ export default function DocumentList({ refreshKey, onDocumentsChange }: Props) {
           </div>
         )}
 
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-            Indexed Documents
-            <span className="text-xs font-normal text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2 min-w-0">
+            <span className="truncate">Indexed Documents</span>
+            <span className="text-xs font-normal text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full shrink-0">
               {documents.length}
             </span>
           </h2>
           {!isGuest && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400">Auto-cleanup: {retentionDays}d</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-slate-400 whitespace-nowrap">Auto-cleanup: {retentionDays}d</span>
               <button
                 type="button"
                 onClick={() => void handleCleanup()}
                 disabled={cleaning}
-                title={`Remove stale and documents older than ${retentionDays} days`}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                title={`Remove stale documents older than ${retentionDays} days`}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium whitespace-nowrap rounded-lg border border-slate-200 text-slate-600 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-50"
                 data-testid="cleanup-btn"
               >
                 {cleaning ? (
-                  <div className="h-3 w-3 rounded-full border border-slate-400 border-t-transparent animate-spin" />
+                  <div className="h-3 w-3 shrink-0 rounded-full border border-slate-400 border-t-transparent animate-spin" />
                 ) : (
-                  <SparklesIcon className="h-3 w-3" />
+                  <SparklesIcon className="h-3 w-3 shrink-0" />
                 )}
                 {cleaning ? 'Cleaning…' : 'Clean up'}
               </button>

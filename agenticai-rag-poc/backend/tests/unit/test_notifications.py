@@ -6,6 +6,7 @@ Covers:
 """
 import os
 import time
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -54,6 +55,20 @@ def _mock_settings(**overrides):
     return cfg
 
 
+_STORE = "app.runtime.settings_store"
+
+
+@contextmanager
+def _patch_notifications(cfg):
+    """Patch get_settings and both effective notification getters from the cfg mock."""
+    with patch("app.config.get_settings", return_value=cfg):
+        with patch(f"{_STORE}.get_effective_notification_email",
+                   return_value=cfg.notification_email):
+            with patch(f"{_STORE}.get_effective_notification_ntfy_topic",
+                       return_value=cfg.notification_ntfy_topic):
+                yield
+
+
 # ── send_limit_warning — SMTP path (T027) ────────────────────────────────────
 
 class TestSendLimitWarning:
@@ -64,7 +79,7 @@ class TestSendLimitWarning:
         notif_mod._last_notified_at = 0.0
 
         cfg = _mock_settings(**_smtp_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             with patch.object(notif_mod, "_send_smtp") as mock_smtp:
                 await notif_mod.send_limit_warning(85, 100)
                 mock_smtp.assert_called_once()
@@ -77,7 +92,7 @@ class TestSendLimitWarning:
 
         cfg = _mock_settings(notification_enabled=True, notification_smtp_host="",
                              notification_email="", notification_ntfy_topic="")
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             with patch.object(notif_mod, "_send_smtp") as mock_smtp:
                 await notif_mod.send_limit_warning(85, 100)
                 mock_smtp.assert_not_called()
@@ -90,7 +105,7 @@ class TestSendLimitWarning:
 
         cfg = _mock_settings(**_smtp_config(enabled=False))
         cfg.notification_enabled = False
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             with patch.object(notif_mod, "_send_smtp") as mock_smtp:
                 await notif_mod.send_limit_warning(85, 100)
                 mock_smtp.assert_not_called()
@@ -103,7 +118,7 @@ class TestSendLimitWarning:
         notif_mod._last_notified_at = time.time()
 
         cfg = _mock_settings(**_smtp_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             with patch.object(notif_mod, "_send_smtp") as mock_smtp:
                 await notif_mod.send_limit_warning(85, 100)
                 mock_smtp.assert_not_called()
@@ -115,7 +130,7 @@ class TestSendLimitWarning:
         notif_mod._last_notified_at = time.time() - notif_mod.NOTIFICATION_DEDUP_SECONDS - 1
 
         cfg = _mock_settings(**_smtp_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             with patch.object(notif_mod, "_send_smtp") as mock_smtp:
                 await notif_mod.send_limit_warning(85, 100)
                 mock_smtp.assert_called_once()
@@ -131,7 +146,7 @@ class TestSendLimitWarningNtfy:
         notif_mod._last_notified_at = 0.0
 
         cfg = _mock_settings(**_ntfy_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             mock_response = AsyncMock()
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(return_value=mock_response)
@@ -152,7 +167,7 @@ class TestSendLimitWarningNtfy:
 
         cfg = _mock_settings(notification_enabled=True, notification_ntfy_topic="",
                              notification_smtp_host="", notification_email="")
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             with patch("httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -169,7 +184,7 @@ class TestSendLimitWarningNtfy:
         notif_mod._last_notified_at = 0.0
 
         cfg = _mock_settings(**_ntfy_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(side_effect=Exception("ntfy unreachable"))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -197,7 +212,7 @@ class TestSmtpPasswordNotLogged:
         notif_mod._last_notified_at = 0.0
 
         cfg = _mock_settings(**_smtp_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             with patch.object(notif_mod, "_send_smtp", side_effect=Exception("connection refused")):
                 # Should NOT raise — errors are swallowed
                 await notif_mod.send_limit_warning(85, 100)
@@ -232,6 +247,135 @@ class TestSmtpPasswordNotLogged:
         mock_smtp_instance.sendmail.assert_called_once()
 
 
+# ── send_cleanup_notification ────────────────────────────────────────────────
+
+def _make_cleanup_result(**overrides):
+    """Return a minimal CleanupResult-like object for testing."""
+    from app.rag.cleanup import CleanupResult
+    defaults = dict(
+        trigger="manual",
+        scope="admin",
+        force_mode=False,
+        deleted_count=3,
+        eligible_count=5,
+        cadence="daily",
+        retention_hours=720,
+        deleted_sources=["report.pdf", "notes.txt", "data.csv"],
+        errors=[],
+        ran_at="2026-05-24T19:00:00+00:00",
+    )
+    defaults.update(overrides)
+    return CleanupResult(**defaults)
+
+
+class TestSendCleanupNotification:
+    @pytest.mark.asyncio
+    async def test_smtp_called_with_cleanup_context(self):
+        """SMTP subject and body contain deleted count and file names."""
+        import app.core.notifications as notif_mod
+        cfg = _mock_settings(**_smtp_config(enabled=True))
+        result = _make_cleanup_result()
+        with _patch_notifications(cfg):
+            with patch.object(notif_mod, "_send_smtp") as mock_smtp:
+                await notif_mod.send_cleanup_notification(result)
+        mock_smtp.assert_called_once()
+        _, _, _, _, _, subject, body = mock_smtp.call_args[0]
+        assert "3" in subject                     # deleted count in subject
+        assert "report.pdf" in body               # deleted file names in body
+        assert "720" in body or "30" in body or "month" in body  # retention window
+        assert "2026-05-24" in body               # ran_at timestamp
+
+    @pytest.mark.asyncio
+    async def test_force_mode_subject_says_force(self):
+        """Force cleanup uses a distinct subject that mentions 'Force'."""
+        import app.core.notifications as notif_mod
+        cfg = _mock_settings(**_smtp_config(enabled=True))
+        result = _make_cleanup_result(force_mode=True, retention_hours=None, cadence=None)
+        with _patch_notifications(cfg):
+            with patch.object(notif_mod, "_send_smtp") as mock_smtp:
+                await notif_mod.send_cleanup_notification(result)
+        subject = mock_smtp.call_args[0][5]
+        assert "force" in subject.lower() or "Force" in subject
+
+    @pytest.mark.asyncio
+    async def test_zero_deleted_subject_says_no_expired(self):
+        """When nothing was deleted the subject reflects that clearly."""
+        import app.core.notifications as notif_mod
+        cfg = _mock_settings(**_smtp_config(enabled=True))
+        result = _make_cleanup_result(deleted_count=0, deleted_sources=[], eligible_count=0)
+        with _patch_notifications(cfg):
+            with patch.object(notif_mod, "_send_smtp") as mock_smtp:
+                await notif_mod.send_cleanup_notification(result)
+        subject = mock_smtp.call_args[0][5]
+        assert "no" in subject.lower() or "0" in subject
+
+    @pytest.mark.asyncio
+    async def test_errors_in_result_raise_priority_and_tag(self):
+        """Partial storage errors are included in body and ntfy priority becomes high."""
+        import app.core.notifications as notif_mod
+        cfg = _mock_settings(**_ntfy_config(enabled=True))
+        result = _make_cleanup_result(errors=["vector_store: IOError"])
+        with _patch_notifications(cfg):
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=AsyncMock())
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            with patch("httpx.AsyncClient", return_value=mock_client):
+                await notif_mod.send_cleanup_notification(result)
+        headers = mock_client.post.call_args[1]["headers"]
+        assert headers["Priority"] == "high"
+        assert "warning" in headers.get("Tags", "")
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_notifications_disabled(self):
+        """Cleanup notification is a no-op when notification_enabled is False."""
+        import app.core.notifications as notif_mod
+        cfg = _mock_settings(**_smtp_config(enabled=True))
+        cfg.notification_enabled = False
+        result = _make_cleanup_result()
+        with _patch_notifications(cfg):
+            with patch.object(notif_mod, "_send_smtp") as mock_smtp:
+                await notif_mod.send_cleanup_notification(result)
+        mock_smtp.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_never_raises_on_channel_failure(self):
+        """send_cleanup_notification swallows all errors — never raises."""
+        import app.core.notifications as notif_mod
+        cfg = _mock_settings(**_smtp_config(enabled=True))
+        result = _make_cleanup_result()
+        with _patch_notifications(cfg):
+            with patch.object(notif_mod, "_send_smtp", side_effect=Exception("SMTP down")):
+                await notif_mod.send_cleanup_notification(result)  # must not raise
+
+
+# ── send_test_notification message content ────────────────────────────────────
+
+class TestSendTestNotificationMessages:
+    @pytest.mark.asyncio
+    async def test_subject_contains_test_keyword(self):
+        """Test notification subject must clearly identify it as a test."""
+        import app.core.notifications as notif_mod
+        cfg = _mock_settings(**_smtp_config(enabled=True))
+        with _patch_notifications(cfg):
+            with patch.object(notif_mod, "_send_smtp") as mock_smtp:
+                await notif_mod.send_test_notification()
+        subject = mock_smtp.call_args[0][5]
+        assert "test" in subject.lower()
+
+    @pytest.mark.asyncio
+    async def test_body_lists_configured_channels(self):
+        """Body must mention configured email address and ntfy status."""
+        import app.core.notifications as notif_mod
+        cfg = _mock_settings(**_smtp_config(enabled=True))
+        cfg.notification_email = "admin@example.com"
+        with _patch_notifications(cfg):
+            with patch.object(notif_mod, "_send_smtp") as mock_smtp:
+                await notif_mod.send_test_notification()
+        body = mock_smtp.call_args[0][6]
+        assert "admin@example.com" in body
+
+
 # ── send_test_notification (T028 helper) ─────────────────────────────────────
 
 class TestSendTestNotification:
@@ -240,7 +384,7 @@ class TestSendTestNotification:
         import app.core.notifications as notif_mod
         cfg = _mock_settings(notification_enabled=True, notification_smtp_host="",
                              notification_email="", notification_ntfy_topic="")
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             result = await notif_mod.send_test_notification()
         assert "email_sent" in result
         assert "ntfy_sent" in result
@@ -253,7 +397,7 @@ class TestSendTestNotification:
         notif_mod._last_notified_at = time.time()  # dedup window active
 
         cfg = _mock_settings(**_smtp_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             with patch.object(notif_mod, "_send_smtp") as mock_smtp:
                 await notif_mod.send_test_notification()
                 # Should still be called despite recent dedup timestamp
@@ -264,7 +408,7 @@ class TestSendTestNotification:
         """Email failure is captured in errors list, not raised."""
         import app.core.notifications as notif_mod
         cfg = _mock_settings(**_smtp_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             with patch.object(notif_mod, "_send_smtp", side_effect=Exception("conn refused")):
                 result = await notif_mod.send_test_notification()
         assert result["email_sent"] is False
@@ -275,7 +419,7 @@ class TestSendTestNotification:
         """When ntfy topic is configured, send_test_notification returns ntfy_sent=True."""
         import app.core.notifications as notif_mod
         cfg = _mock_settings(**_ntfy_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(return_value=AsyncMock())
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -290,7 +434,7 @@ class TestSendTestNotification:
         """ntfy failure is captured in errors list, ntfy_sent=False."""
         import app.core.notifications as notif_mod
         cfg = _mock_settings(**_ntfy_config(enabled=True))
-        with patch("app.config.get_settings", return_value=cfg):
+        with _patch_notifications(cfg):
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(side_effect=Exception("ntfy down"))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -369,6 +513,6 @@ class TestNotificationEndpoint:
             cfg.notification_smtp_host = ""
             cfg.notification_ntfy_topic = ""
             mock_cfg.return_value = cfg
-
-            res = client.post("/api/notifications/test", headers=admin_headers)
+            with patch(f"{_STORE}.get_effective_notification_ntfy_topic", return_value=""):
+                res = client.post("/api/notifications/test", headers=admin_headers)
         assert res.status_code == 422

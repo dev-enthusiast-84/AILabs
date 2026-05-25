@@ -298,6 +298,7 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
   const [notificationNtfyTopic, setNotificationNtfyTopic] = useState('')
   const [testNotifRunning, setTestNotifRunning] = useState(false)
   const [testNotifResult, setTestNotifResult] = useState<string | null>(null)
+  const [testNotifSuccess, setTestNotifSuccess] = useState(false)
 
   const [openSections, toggleSection] = useToggleSet(['vector-store'])
 
@@ -430,7 +431,7 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
         setNotificationNtfyTopic(data.notification_ntfy_topic ?? '')
         setTestNotifResult(null)
       })
-      .catch(() => toast.error('Could not load settings.'))
+      .catch(() => { if (!isGuest) toast.error('Could not load settings.') })
       .finally(() => setLoading(false))
     setTimeout(() => firstFocusRef.current?.focus(), 50)
   }, [open, isGuest])
@@ -678,11 +679,19 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
   const handleSendTestNotification = async () => {
     setTestNotifRunning(true)
     setTestNotifResult(null)
+    setTestNotifSuccess(false)
     try {
       const result = await notificationsApi.sendTest()
-      setTestNotifResult(result.errors.length > 0 ? `Errors: ${result.errors.join(', ')}` : 'Test notification sent!')
-    } catch {
-      setTestNotifResult('Failed to send test notification.')
+      if (result.errors.length > 0) {
+        setTestNotifResult(`Errors: ${result.errors.join(', ')}`)
+        setTestNotifSuccess(false)
+      } else {
+        setTestNotifResult('Test notification sent successfully!')
+        setTestNotifSuccess(true)
+      }
+    } catch (e) {
+      setTestNotifResult(extractErrorMessage(e))
+      setTestNotifSuccess(false)
     } finally {
       setTestNotifRunning(false)
     }
@@ -1691,7 +1700,19 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
             {/* ── Section 9: Notifications (admin only) — T032 ── */}
             {!isGuest && (
               <section className="border-t pt-4 mt-4">
-                <h3 className="font-semibold text-gray-800 mb-3 text-sm">Notifications</h3>
+                <h3 className="font-semibold text-gray-800 mb-1 text-sm">Notifications</h3>
+                <p className="text-xs text-slate-500 mb-3">
+                  Email requires SMTP env vars in <code className="font-mono bg-slate-100 px-1 rounded">backend/.env</code> —
+                  entering an email address here alone is not enough.{' '}
+                  <a
+                    href="docs/deployment/NOTIFICATIONS.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-sky-600 hover:text-sky-800"
+                  >
+                    Setup guide
+                  </a>
+                </p>
                 <div className="flex items-center gap-3 mb-3">
                   <label className="text-sm text-gray-600 w-28 shrink-0">Enable</label>
                   <input
@@ -1734,7 +1755,7 @@ export default function SettingsModal({ open, onClose, isGuest = false, prerequi
                   {testNotifRunning ? 'Sending...' : 'Send test notification'}
                 </button>
                 {testNotifResult && (
-                  <p className={`mt-2 text-sm ${testNotifResult.startsWith('Test') ? 'text-green-600' : 'text-red-600'}`} data-testid="test-notif-result">
+                  <p className={`mt-2 text-sm ${testNotifSuccess ? 'text-green-600' : 'text-red-600'}`} data-testid="test-notif-result">
                     {testNotifResult}
                   </p>
                 )}

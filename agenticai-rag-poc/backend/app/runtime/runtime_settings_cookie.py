@@ -54,6 +54,10 @@ _ALLOWED_KEYS = {
     "max_context_chunks",
     "retriever_hybrid_bm25",
     "similarity_score_threshold",
+    # Notification settings — persisted so ntfy topic set via UI survives cold starts.
+    "notification_enabled",
+    "notification_email",
+    "notification_ntfy_topic",
 }
 
 

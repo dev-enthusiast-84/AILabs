@@ -939,6 +939,93 @@ class TestRerankerNode:
         assert result["chunks_after_rerank"] == 2
         assert result["retrieved_docs"][0].page_content == "doc 0"
 
+    def test_reranker_llm_judge_uses_original_question_not_planner_rewrite(self):
+        """llm-judge reranker must score chunks against original_question, not state['question'].
+
+        After planner_node runs, state['question'] = planner's rewritten query.
+        generator_node uses original_question. The reranker must use the same
+        question as the generator so chunks are not dropped based on a different query.
+        """
+        from app.agents.rag_agent import reranker_node
+
+        docs = [
+            Document(page_content=f"doc {i}", metadata={"source": "f.txt", "raw_chunk": f"doc {i}"})
+            for i in range(2)
+        ]
+        state = _base_agent_state()
+        state["retrieved_docs"] = docs
+        state["retrieved_context"] = "ctx"
+        # Simulate a planner rewrite: question is now the keyword-rich rewrite,
+        # original_question is what the user actually typed.
+        state["question"] = "advanced keyword rich rewrite for vector search"
+        state["original_question"] = "what does the document say?"
+
+        captured_question: list[str] = []
+
+        def capturing_judge_rerank(docs, question, top_k, api_key, judge_model):
+            captured_question.append(question)
+            return docs[:top_k], 0
+
+        with patch("app.agents.rag_agent.get_effective_reranker_type", return_value="llm-judge"), \
+             patch("app.agents.rag_agent.get_effective_reranker_judge_model", return_value="gpt-4.1-mini"), \
+             patch("app.agents.rag_agent.get_effective_api_key", return_value="sk-test"), \
+             patch("app.agents.rag_agent.settings") as mock_s, \
+             patch("app.agents.rag_agent._llm_judge_rerank", side_effect=capturing_judge_rerank), \
+             patch("app.agents.rag_agent.format_context", return_value="ctx"):
+            mock_s.reranker_top_k = 2
+            reranker_node(state)
+
+        assert len(captured_question) == 1
+        assert captured_question[0] == "what does the document say?", (
+            "Reranker must use original_question, not planner's rewrite"
+        )
+
+    def test_reranker_cross_encoder_uses_original_question_not_planner_rewrite(self):
+        """cross-encoder reranker must score (original_question, chunk) pairs.
+
+        Ensures parity with the llm-judge fix: both reranker types use
+        original_question so the reranker and generator evaluate the same question.
+        """
+        from app.agents.rag_agent import reranker_node
+
+        docs = [
+            Document(page_content=f"doc {i}", metadata={"source": "f.txt", "raw_chunk": f"doc {i}"})
+            for i in range(2)
+        ]
+        state = _base_agent_state()
+        state["retrieved_docs"] = docs
+        state["retrieved_context"] = "ctx"
+        state["question"] = "advanced keyword rich rewrite for vector search"
+        state["original_question"] = "what does the document say?"
+
+        captured_pairs: list = []
+
+        mock_ce_instance = MagicMock()
+
+        def capture_predict(pairs):
+            captured_pairs.extend(pairs)
+            return [0.5] * len(pairs)
+
+        mock_ce_instance.predict.side_effect = capture_predict
+        mock_ce_cls = MagicMock(return_value=mock_ce_instance)
+
+        with patch("app.agents.rag_agent.get_effective_reranker_type", return_value="cross-encoder"), \
+             patch("app.agents.rag_agent.settings") as mock_s, \
+             patch("app.agents.rag_agent.format_context", return_value="ctx"), \
+             patch("app.agents.rag_agent._cross_encoder_cache", {}), \
+             patch.dict("sys.modules", {
+                 "sentence_transformers": MagicMock(CrossEncoder=mock_ce_cls),
+             }):
+            mock_s.reranker_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+            mock_s.reranker_top_k = 2
+            reranker_node(state)
+
+        assert len(captured_pairs) == 2
+        for question_used, _ in captured_pairs:
+            assert question_used == "what does the document say?", (
+                "Cross-encoder must use original_question, not planner's rewrite"
+            )
+
 
 # ── Features 4+6 telemetry in AgentTrace ─────────────────────────────────────
 
