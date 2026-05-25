@@ -630,10 +630,10 @@ PYEOF
         return 0
     fi
 
-    git -C "$SCRIPT_DIR" add \
-        "docs/walkthrough/" \
-        "docs/WALKTHROUGH-VIDEO.md" \
-        "README.md" 2>/dev/null || true
+    # Stage each path separately so a missing optional file doesn't abort the whole add.
+    git -C "$SCRIPT_DIR" add "docs/walkthrough/" 2>/dev/null || true
+    git -C "$SCRIPT_DIR" add "docs/project/WALKTHROUGH-VIDEO.md" 2>/dev/null || true
+    git -C "$SCRIPT_DIR" add "README.md" 2>/dev/null || true
 
     if git -C "$SCRIPT_DIR" diff --cached --quiet 2>/dev/null; then
         echo "  docs/walkthrough/ already up-to-date — nothing to commit."

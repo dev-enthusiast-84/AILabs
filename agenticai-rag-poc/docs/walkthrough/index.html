@@ -1,581 +1,256 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Demo Recordings — Agentic RAG</title>
-
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Demo Recordings &#x2014; Agentic RAG</title>
   <style>
-    /* ── Design tokens (oat palette — matches pitch.html) ── */
-    :root {
-      --bg:         #FAF6EE;
-      --surface:    #F2E8D0;
-      --surface2:   #EDE0C4;
-      --border:     rgba(139,103,20,.16);
-      --border-hi:  rgba(139,103,20,.32);
-      --gold:       #8B6914;
-      --rust:       #B5532A;
-      --sage:       #4C7A4C;
-      --tan:        #C4A46B;
-      --text:       #2C1A08;
-      --text-dim:   #6B5240;
-      --text-soft:  #8B7355;
-      --grad:       linear-gradient(135deg, #8B6914, #C4A46B);
-      --r:          10px;
-      --r-sm:       7px;
-    }
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { font-size: 14px; scroll-behavior: smooth; }
-    body {
-      font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh;
-    }
-
-    /* ── Page shell ── */
-    .page {
-      max-width: 1020px; margin: 24px auto 48px;
-      border-radius: 16px; overflow: hidden;
-      border: 1px solid var(--border-hi);
-      box-shadow: 0 24px 64px rgba(60,40,15,.18), 0 0 80px rgba(139,103,20,.07);
-    }
-
-    /* ── Header ── */
-    .demo-header {
-      background: var(--surface); padding: 28px 36px 22px;
-      border-bottom: 1px solid var(--border); position: relative; overflow: hidden;
-    }
-    .demo-header::before {
-      content: ''; position: absolute; inset: 0;
-      background-image: radial-gradient(circle, rgba(196,164,107,.2) 1px, transparent 1px);
-      background-size: 26px 26px;
-      mask-image: linear-gradient(to bottom, transparent, rgba(0,0,0,.35) 50%, transparent);
-      pointer-events: none;
-    }
-    .header-inner { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-    .eyebrow {
-      display: inline-flex; align-items: center; gap: 7px;
-      font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-      color: var(--gold); background: rgba(139,103,20,.1);
-      border: 1px solid rgba(139,103,20,.22); border-radius: 20px;
-      padding: 4px 12px; margin-bottom: 12px;
-    }
-    .eyebrow-dot {
-      width: 6px; height: 6px; border-radius: 50%; background: var(--gold);
-      animation: pulse 2.2s ease-in-out infinite; flex-shrink: 0;
-    }
-    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
-    .demo-header h1 {
-      font-size: 22px; font-weight: 900; letter-spacing: -.3px;
-      background: var(--grad); -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 8px;
-    }
-    .header-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
-    .hlink {
-      display: inline-flex; align-items: center; gap: 5px; font-size: 11px;
-      font-weight: 600; color: var(--text-dim); text-decoration: none;
-      background: rgba(139,103,20,.06); border: 1px solid var(--border);
-      border-radius: 6px; padding: 4px 10px; transition: border-color .15s, color .15s;
-    }
-    .hlink:hover { border-color: var(--border-hi); color: var(--text); }
-    .hlink.hl-live { color: var(--sage); border-color: rgba(76,122,76,.3); background: rgba(76,122,76,.08); }
-
-    /* ── 2-column demo grid ── */
-    .demo-grid {
-      display: grid; grid-template-columns: 1fr 1fr;
-    }
-    .env-col {
-      padding: 22px 24px 24px;
-      border-right: 1px solid var(--border);
-    }
-    .env-col:last-child { border-right: none; }
-
-    /* ── Env column header ── */
-    .env-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
-    .env-icon { font-size: 17px; line-height: 1; }
-    .env-title { font-size: 13.5px; font-weight: 800; color: var(--text); flex: 1; }
-    .badge {
-      font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
-      padding: 3px 9px; border-radius: 20px;
-      background: var(--text); color: var(--bg);
-    }
-    .badge-vercel { background: linear-gradient(135deg, #111 0%, #2a2a2a 100%); }
-
-    /* ── URL strip ── */
-    .env-url-strip {
-      display: flex; align-items: center; gap: 7px;
-      background: rgba(139,103,20,.06); border: 1px solid var(--border);
-      border-radius: var(--r-sm); padding: 6px 11px; margin-bottom: 14px;
-      font-size: 11px;
-    }
-    .url-dot {
-      width: 6px; height: 6px; border-radius: 50%; background: var(--sage);
-      box-shadow: 0 0 6px rgba(76,122,76,.7); flex-shrink: 0;
-      animation: pulse 2s ease-in-out infinite;
-    }
-    .url-dot.offline { background: var(--text-soft); box-shadow: none; animation: none; }
-    .env-url-strip a { color: var(--gold); font-weight: 600; text-decoration: none; }
-    .env-url-strip a:hover { text-decoration: underline; }
-    .env-url-strip .url-note { color: var(--text-soft); font-size: 10.5px; }
-
-    /* ── Video slots ── */
-    .video-slots { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
-
-    .video-slot {
-      border: 1px solid var(--border); border-radius: var(--r-sm);
-      overflow: hidden; background: var(--surface);
-    }
-    .slot-label {
-      display: flex; align-items: center; gap: 7px;
-      padding: 7px 12px; background: var(--surface2);
-      border-bottom: 1px solid var(--border);
-      font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .07em; color: var(--text-dim);
-    }
-    .role-badge {
-      margin-left: auto; font-size: 9px; font-weight: 700; padding: 2px 7px;
-      border-radius: 10px; text-transform: uppercase; letter-spacing: .05em;
-    }
-    .role-badge.guest { background: rgba(76,122,76,.12); color: #2E5A2E; border: 1px solid rgba(76,122,76,.3); }
-    .role-badge.admin { background: rgba(181,83,42,.12); color: #7A2E10; border: 1px solid rgba(181,83,42,.3); }
-
-    /* ── Video wrapper ── */
-    .video-wrap {
-      position: relative; background: #140d04; aspect-ratio: 16 / 9;
-    }
-    .video-wrap video {
-      width: 100%; height: 100%; display: none; object-fit: contain;
-    }
-
-    /* ── Overlay (both click-to-load and placeholder) ── */
-    .video-overlay {
-      position: absolute; inset: 0; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 9px;
-      background: radial-gradient(ellipse at 50% 40%, rgba(196,164,107,.12) 0%, rgba(20,13,4,.94) 75%);
-    }
-    .video-overlay.clickable { cursor: pointer; transition: background .2s; }
-    .video-overlay.clickable:hover {
-      background: radial-gradient(ellipse at 50% 40%, rgba(196,164,107,.22) 0%, rgba(20,13,4,.88) 75%);
-    }
-    .video-overlay.clickable:hover .ov-play-btn { transform: scale(1.09); background: rgba(196,164,107,.28); }
-
-    .ov-play-btn {
-      width: 48px; height: 48px; border-radius: 50%;
-      background: rgba(196,164,107,.14); border: 2px solid rgba(196,164,107,.38);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; color: var(--tan); transition: transform .2s, background .2s;
-    }
-    .ov-label {
-      font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .07em; color: rgba(196,164,107,.75);
-    }
-
-    /* Placeholder overlay extra text */
-    .ov-placeholder-msg { text-align: center; }
-    .ov-placeholder-msg .ov-main { font-size: 11px; color: rgba(196,164,107,.55); font-weight: 600; }
-    .ov-placeholder-msg .ov-sub  { font-size: 10px; color: rgba(196,164,107,.38); margin-top: 3px; }
-
-    /* Progress during loading */
-    .ov-progress-wrap {
-      width: 62%; height: 3px; background: rgba(196,164,107,.18);
-      border-radius: 2px; overflow: hidden; display: none;
-    }
-    .ov-progress-fill { height: 100%; width: 0%; background: var(--grad); border-radius: 2px; transition: width .25s; }
-    .ov-progress-pct  { font-size: 9.5px; color: rgba(196,164,107,.5); margin-top: 1px; }
-
-    /* ── Download fallback strip ── */
-    .dl-strip {
-      padding: 9px 12px; background: rgba(0,0,0,.5);
-      display: flex; align-items: center; justify-content: center; gap: 10px;
-    }
-    .dl-btn {
-      display: inline-flex; align-items: center; gap: 5px; font-size: 11px;
-      font-weight: 700; color: var(--tan); border: 1px solid rgba(196,164,107,.38);
-      border-radius: 20px; padding: 4px 14px; text-decoration: none; background: transparent;
-      cursor: pointer; transition: background .15s;
-    }
-    .dl-btn:hover { background: rgba(196,164,107,.1); }
-    .dl-err { font-size: 10px; color: rgba(196,164,107,.5); }
-
-    /* ── Record command ── */
-    .record-section { margin-top: 2px; }
-    .record-label {
-      font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em;
-      color: var(--text-soft); margin-bottom: 6px;
-    }
-    .record-cmd {
-      background: #1a1007; border: 1px solid rgba(139,103,20,.22);
-      border-radius: var(--r-sm); padding: 10px 13px;
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-      font-size: 10px; color: var(--tan); line-height: 1.75;
-      overflow-x: auto; white-space: pre;
-    }
-    .record-cmd .cmd-comment { color: rgba(196,164,107,.4); }
-
-    /* ── Footer ── */
-    .demo-footer {
-      background: var(--surface); border-top: 1px solid var(--border);
-      padding: 11px 36px; display: flex; flex-wrap: wrap;
-      justify-content: space-between; align-items: center; gap: 8px;
-      font-size: 11px; color: var(--text-dim);
-    }
-    .demo-footer a { color: var(--gold); text-decoration: none; border-bottom: 1px dashed rgba(139,103,20,.3); }
-    .demo-footer a:hover { border-bottom-color: var(--gold); }
-
-    /* ── Responsive ── */
-    @media (max-width: 680px) {
-      .demo-grid { grid-template-columns: 1fr; }
-      .env-col { border-right: none; border-bottom: 1px solid var(--border); }
-      .env-col:last-child { border-bottom: none; }
-      .page { margin: 0; border-radius: 0; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-    }
+    :root{--bg:#FAF6EE;--surface:#F2E8D0;--surface2:#EDE0C4;--border:rgba(139,103,20,.16);--border-hi:rgba(139,103,20,.32);--gold:#8B6914;--sage:#4C7A4C;--tan:#C4A46B;--text:#2C1A08;--text-dim:#6B5240;--text-soft:#8B7355;--grad:linear-gradient(135deg,#8B6914,#C4A46B);--r:10px;--r-sm:7px}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{font-size:14px;scroll-behavior:smooth}
+    body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
+    .page{max-width:1020px;margin:24px auto 48px;border-radius:16px;overflow:hidden;border:1px solid var(--border-hi);box-shadow:0 24px 64px rgba(60,40,15,.18)}
+    .demo-header{background:var(--surface);padding:28px 36px 22px;border-bottom:1px solid var(--border);position:relative;overflow:hidden}
+    .demo-header::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,rgba(196,164,107,.2) 1px,transparent 1px);background-size:26px 26px;mask-image:linear-gradient(to bottom,transparent,rgba(0,0,0,.35) 50%,transparent);pointer-events:none}
+    .header-inner{position:relative;z-index:1}
+    .eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);background:rgba(139,103,20,.1);border:1px solid rgba(139,103,20,.22);border-radius:20px;padding:4px 12px;margin-bottom:12px}
+    .eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 2.2s ease-in-out infinite;flex-shrink:0}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+    .demo-header h1{font-size:22px;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px}
+    .header-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+    .hlink{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--text-dim);text-decoration:none;background:rgba(139,103,20,.06);border:1px solid var(--border);border-radius:6px;padding:4px 10px;transition:border-color .15s,color .15s}
+    .hlink:hover{border-color:var(--border-hi);color:var(--text)}
+    .hlink.hl-live{color:var(--sage);border-color:rgba(76,122,76,.3);background:rgba(76,122,76,.08)}
+    .demo-grid{display:grid;grid-template-columns:1fr 1fr}
+    .env-col{padding:22px 24px 24px;border-right:1px solid var(--border)}
+    .env-col:last-child{border-right:none}
+    .env-head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+    .env-icon{font-size:17px;line-height:1}
+    .env-title{font-size:13.5px;font-weight:800;color:var(--text);flex:1}
+    .badge{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:20px;background:var(--text);color:var(--bg)}
+    .badge-vercel{background:linear-gradient(135deg,#111 0%,#2a2a2a 100%)}
+    .env-url-strip{display:flex;align-items:center;gap:7px;background:rgba(139,103,20,.06);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 11px;margin-bottom:14px;font-size:11px}
+    .url-dot{width:6px;height:6px;border-radius:50%;background:var(--sage);box-shadow:0 0 6px rgba(76,122,76,.7);flex-shrink:0;animation:pulse 2s ease-in-out infinite}
+    .env-url-strip a{color:var(--gold);font-weight:600;text-decoration:none}
+    .env-url-strip a:hover{text-decoration:underline}
+    .video-slots{display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
+    .video-slot{border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;background:var(--surface)}
+    .slot-label{display:flex;align-items:center;gap:7px;padding:7px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-dim)}
+    .role-badge{margin-left:auto;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.05em}
+    .role-badge.guest{background:rgba(76,122,76,.12);color:#2E5A2E;border:1px solid rgba(76,122,76,.3)}
+    .role-badge.admin{background:rgba(181,83,42,.12);color:#7A2E10;border:1px solid rgba(181,83,42,.3)}
+    .video-wrap{position:relative;background:#140d04;aspect-ratio:16/9}
+    .video-wrap video{width:100%;height:100%;display:none;object-fit:contain}
+    .video-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:radial-gradient(ellipse at 50% 40%,rgba(196,164,107,.12) 0%,rgba(20,13,4,.94) 75%)}
+    .video-overlay.clickable{cursor:pointer;transition:background .2s}
+    .video-overlay.clickable:hover{background:radial-gradient(ellipse at 50% 40%,rgba(196,164,107,.22) 0%,rgba(20,13,4,.88) 75%)}
+    .video-overlay.clickable:hover .ov-play-btn{transform:scale(1.09);background:rgba(196,164,107,.28)}
+    .ov-play-btn{width:48px;height:48px;border-radius:50%;background:rgba(196,164,107,.14);border:2px solid rgba(196,164,107,.38);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--tan);transition:transform .2s,background .2s}
+    .ov-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(196,164,107,.75)}
+    .ov-placeholder-msg{text-align:center}
+    .ov-placeholder-msg .ov-main{font-size:11px;color:rgba(196,164,107,.55);font-weight:600}
+    .ov-placeholder-msg .ov-sub{font-size:10px;color:rgba(196,164,107,.38);margin-top:3px}
+    .ov-progress-wrap{width:62%;height:3px;background:rgba(196,164,107,.18);border-radius:2px;overflow:hidden;display:none}
+    .ov-progress-fill{height:100%;width:0%;background:var(--grad);border-radius:2px;transition:width .25s}
+    .ov-progress-pct{font-size:9.5px;color:rgba(196,164,107,.5);margin-top:1px}
+    .dl-strip{padding:9px 12px;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;gap:10px}
+    .dl-btn{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--tan);border:1px solid rgba(196,164,107,.38);border-radius:20px;padding:4px 14px;text-decoration:none;background:transparent;cursor:pointer;transition:background .15s}
+    .dl-btn:hover{background:rgba(196,164,107,.1)}
+    .dl-err{font-size:10px;color:rgba(196,164,107,.5)}
+    .record-section{margin-top:2px}
+    .record-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-soft);margin-bottom:6px}
+    .record-cmd{background:#1a1007;border:1px solid rgba(139,103,20,.22);border-radius:var(--r-sm);padding:10px 13px;font-family:'SF Mono','Fira Code',monospace;font-size:10px;color:var(--tan);line-height:1.75;overflow-x:auto;white-space:pre}
+    .cmd-comment{color:rgba(196,164,107,.4)}
+    .demo-footer{background:var(--surface);border-top:1px solid var(--border);padding:11px 36px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--text-dim)}
+    .demo-footer a{color:var(--gold);text-decoration:none;border-bottom:1px dashed rgba(139,103,20,.3)}
+    .demo-footer a:hover{border-bottom-color:var(--gold)}
+    @media(max-width:680px){.demo-grid{grid-template-columns:1fr}.env-col{border-right:none;border-bottom:1px solid var(--border)}.env-col:last-child{border-bottom:none}.page{margin:0;border-radius:0}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
   </style>
 </head>
 <body>
-
 <div class="page">
-
-  <!-- ═══ HEADER ════════════════════════════════════════ -->
   <header class="demo-header">
     <div class="header-inner">
-      <div>
-        <div class="eyebrow">
-          <span class="eyebrow-dot" aria-hidden="true"></span>
-          Demo Recordings
-        </div>
-        <h1>Agentic RAG — Walkthrough Videos</h1>
-        <nav class="header-links" aria-label="Project links">
-          <a class="hlink hl-live" href="https://agenticai-rag-poc.vercel.app" target="_blank" rel="noopener noreferrer">
-            🌐 Live App
-          </a>
-          <a class="hlink" href="https://dev-enthusiast-84.github.io/AILabs/" target="_blank" rel="noopener noreferrer">
-            📖 Documentation
-          </a>
-          <a class="hlink" href="https://github.com/dev-enthusiast-84/AILabs" target="_blank" rel="noopener noreferrer">
-            📦 GitHub
-          </a>
-          <a class="hlink" href="https://github.com/dev-enthusiast-84/AILabs/releases" target="_blank" rel="noopener noreferrer">
-            🎬 All Releases
-          </a>
-        </nav>
-      </div>
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Demo Recordings</div>
+      <h1>Agentic RAG &#x2014; Walkthrough Videos</h1>
+      <nav class="header-links">
+        <a class="hlink hl-live" href="https://agenticai-rag-poc.vercel.app" target="_blank" rel="noopener noreferrer">&#x1F310; Live App</a>
+        <a class="hlink" href="https://dev-enthusiast-84.github.io/AILabs/" target="_blank" rel="noopener noreferrer">&#x1F4D6; Documentation</a>
+        <a class="hlink" href="https://github.com/dev-enthusiast-84/AILabs" target="_blank" rel="noopener noreferrer">&#x1F4E6; GitHub</a>
+        <a class="hlink" href="https://github.com/dev-enthusiast-84/AILabs/releases" target="_blank" rel="noopener noreferrer">&#x1F3AC; All Releases</a>
+      </nav>
     </div>
   </header>
-
-  <!-- ═══ 2-COLUMN DEMO GRID ════════════════════════════ -->
   <div class="demo-grid" role="main">
-
-    <!-- ─── LOCAL DEMO ─────────────────────────────────── -->
     <section class="env-col" aria-labelledby="local-heading">
       <div class="env-head">
-        <span class="env-icon" aria-hidden="true">💻</span>
+        <span class="env-icon">&#x1F4BB;</span>
         <h2 class="env-title" id="local-heading">Local Demo</h2>
-        <span class="badge" aria-label="Environment: localhost">LOCALHOST</span>
+        <span class="badge badge">LOCALHOST</span>
       </div>
-
       <div class="env-url-strip">
-        <span class="url-dot" aria-hidden="true"></span>
-        <a href="http://localhost:5173" target="_blank" rel="noopener noreferrer">localhost:5173</a>
-        <span class="url-note">&nbsp;— <code>npm run dev</code></span>
+        <span class="url-dot"></span><a href="http://localhost:5173" target="_blank" rel="noopener noreferrer">localhost:5173</a>
       </div>
-
       <div class="video-slots">
-
-        <!-- Guest -->
         <div class="video-slot">
-          <div class="slot-label">
-            <span aria-hidden="true">👤</span>
-            Guest Walkthrough
-            <span class="role-badge guest">No login needed</span>
-          </div>
+          <div class="slot-label">&#x1F464; Guest Walkthrough
+            <span class="role-badge guest">No login needed</span></div>
           <div class="video-wrap"
                data-src="https://github.com/dev-enthusiast-84/AILabs/releases/download/walkthrough-local/guest-walkthrough.webm"
                data-filename="guest-walkthrough.webm">
-            <video controls preload="none" aria-label="Local guest walkthrough video"></video>
-            <div class="video-overlay clickable" role="button" tabindex="0"
-                 aria-label="Load and play local guest walkthrough">
-              <div class="ov-play-btn" aria-hidden="true">&#9654;</div>
-              <div class="ov-label">Click to watch</div>
-              <div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div>
-              <div class="ov-progress-pct"></div>
+            <video controls preload="none"></video>
+            <div class="video-overlay clickable" role="button" tabindex="0">
+              <div class="ov-play-btn">&#9654;</div>
+              <div class="ov-label">Click to watch</div><div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div><div class="ov-progress-pct"></div>
             </div>
           </div>
         </div>
-
-        <!-- Admin -->
         <div class="video-slot">
-          <div class="slot-label">
-            <span aria-hidden="true">🔑</span>
-            Admin Walkthrough
-            <span class="role-badge admin">Login required</span>
-          </div>
+          <div class="slot-label">&#x1F511; Admin Walkthrough
+            <span class="role-badge admin">Login required</span></div>
           <div class="video-wrap"
                data-src="https://github.com/dev-enthusiast-84/AILabs/releases/download/walkthrough-local/admin-walkthrough.webm"
                data-filename="admin-walkthrough.webm">
-            <video controls preload="none" aria-label="Local admin walkthrough video"></video>
-            <div class="video-overlay clickable" role="button" tabindex="0"
-                 aria-label="Load and play local admin walkthrough">
-              <div class="ov-play-btn" aria-hidden="true">&#9654;</div>
-              <div class="ov-label">Click to watch</div>
-              <div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div>
-              <div class="ov-progress-pct"></div>
+            <video controls preload="none"></video>
+            <div class="video-overlay clickable" role="button" tabindex="0">
+              <div class="ov-play-btn">&#9654;</div>
+              <div class="ov-label">Click to watch</div><div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div><div class="ov-progress-pct"></div>
             </div>
           </div>
         </div>
-
-      </div><!-- /video-slots -->
-
+      </div>
       <div class="record-section">
         <div class="record-label">Record command</div>
-        <div class="record-cmd" role="code"><span class="cmd-comment"># Records both guest + admin walkthrough videos</span>
+        <div class="record-cmd"><span class="cmd-comment"># Records both guest + admin walkthrough videos</span>
 bash scripts/record-walkthrough.sh \
   --url http://localhost:5173 \
   --username admin \
   --password &lt;password from backend/.env&gt;</div>
       </div>
-    </section><!-- /local -->
-
-    <!-- ─── LIVE DEMO (VERCEL) ─────────────────────────── -->
+    </section>
     <section class="env-col" aria-labelledby="remote-heading">
       <div class="env-head">
-        <span class="env-icon" aria-hidden="true">🌐</span>
+        <span class="env-icon">&#x1F310;</span>
         <h2 class="env-title" id="remote-heading">Live Demo</h2>
-        <span class="badge badge-vercel" aria-label="Environment: Vercel">&#x26A1; VERCEL</span>
+        <span class="badge badge badge-vercel">&#x26A1; VERCEL</span>
       </div>
-
       <div class="env-url-strip">
-        <span class="url-dot" aria-hidden="true"></span>
-        <a href="https://agenticai-rag-poc.vercel.app" target="_blank" rel="noopener noreferrer">
-          agenticai-rag-poc.vercel.app
-        </a>
+        <span class="url-dot"></span><a href="https://agenticai-rag-poc.vercel.app" target="_blank" rel="noopener noreferrer">agenticai-rag-poc.vercel.app</a>
       </div>
-
       <div class="video-slots">
-
-        <!-- Remote Guest — placeholder until recording exists -->
         <div class="video-slot">
-          <div class="slot-label">
-            <span aria-hidden="true">👤</span>
-            Guest Walkthrough
-            <span class="role-badge guest">No login needed</span>
-          </div>
+          <div class="slot-label">&#x1F464; Guest Walkthrough
+            <span class="role-badge guest">No login needed</span></div>
           <div class="video-wrap"
                data-src="https://github.com/dev-enthusiast-84/AILabs/releases/download/walkthrough-remote/guest-walkthrough.webm"
                data-filename="guest-walkthrough.webm">
-            <video controls preload="none" aria-label="Remote guest walkthrough video"></video>
-            <div class="video-overlay clickable" role="button" tabindex="0"
-                 aria-label="Load and play remote guest walkthrough">
-              <div class="ov-play-btn" aria-hidden="true">&#9654;</div>
-              <div class="ov-label">Click to watch</div>
-              <div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div>
-              <div class="ov-progress-pct"></div>
+            <video controls preload="none"></video>
+            <div class="video-overlay clickable" role="button" tabindex="0">
+              <div class="ov-play-btn">&#9654;</div>
+              <div class="ov-label">Click to watch</div><div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div><div class="ov-progress-pct"></div>
             </div>
           </div>
         </div>
-
-        <!-- Remote Admin — placeholder until recording exists -->
         <div class="video-slot">
-          <div class="slot-label">
-            <span aria-hidden="true">🔑</span>
-            Admin Walkthrough
-            <span class="role-badge admin">Login required</span>
-          </div>
+          <div class="slot-label">&#x1F511; Admin Walkthrough
+            <span class="role-badge admin">Login required</span></div>
           <div class="video-wrap"
                data-src="https://github.com/dev-enthusiast-84/AILabs/releases/download/walkthrough-remote/admin-walkthrough.webm"
-               data-filename="admin-walkthrough.webm"
-               data-placeholder="true">
-            <video controls preload="none" aria-label="Remote admin walkthrough video"></video>
-            <div class="video-overlay" aria-hidden="true">
-              <div class="ov-play-btn" style="opacity:.3" aria-hidden="true">&#9654;</div>
-              <div class="ov-placeholder-msg">
-                <div class="ov-main">Recording not yet generated</div>
-                <div class="ov-sub">Run the command below to produce this video</div>
-              </div>
+               data-filename="admin-walkthrough.webm">
+            <video controls preload="none"></video>
+            <div class="video-overlay clickable" role="button" tabindex="0">
+              <div class="ov-play-btn">&#9654;</div>
+              <div class="ov-label">Click to watch</div><div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div><div class="ov-progress-pct"></div>
             </div>
           </div>
         </div>
-
-      </div><!-- /video-slots -->
-
+      </div>
       <div class="record-section">
         <div class="record-label">Record command</div>
-        <div class="record-cmd" role="code"><span class="cmd-comment"># Requires a live Vercel deployment with credentials</span>
+        <div class="record-cmd"><span class="cmd-comment"># Records both guest + admin walkthrough videos</span>
 bash scripts/record-walkthrough.sh \
   --url https://agenticai-rag-poc.vercel.app \
   --username admin \
   --password &lt;password from Vercel env&gt;</div>
       </div>
-    </section><!-- /remote -->
-
-  </div><!-- /demo-grid -->
-
-  <!-- ═══ FOOTER ═══════════════════════════════════════ -->
+    </section>
+  </div>
   <footer class="demo-footer">
-    <span>Videos hosted on <a href="https://github.com/dev-enthusiast-84/AILabs/releases">GitHub Releases</a></span>
+    <span>Videos on <a href="https://github.com/dev-enthusiast-84/AILabs/releases">GitHub Releases</a></span>
     <span>Gallery: <a href="https://dev-enthusiast-84.github.io/AILabs/walkthrough/">GitHub Pages</a></span>
     <span>Auto-produced by <code>scripts/record-walkthrough.sh</code></span>
   </footer>
-
-</div><!-- /page -->
-
-<!--
-  ── Video loader ────────────────────────────────────────────────────────────
-  GitHub Releases assets are served as application/octet-stream which prevents
-  browsers from streaming them directly in a <video> element on some platforms.
-  This script fetches each video as a blob (respecting CORS from
-  objects.githubusercontent.com which sets Access-Control-Allow-Origin: *),
-  re-wraps it with the correct video/webm MIME type, and passes a blob URL
-  to the <video> element — guaranteeing inline playback rather than a download.
-  ──────────────────────────────────────────────────────────────────────────── -->
+</div>
 <script>
-(function () {
+(function(){
   'use strict';
-
-  function fmtBytes(b) {
-    if (!b) return '';
-    return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB'
-                       : (b / 1024).toFixed(0) + ' KB';
+  function fmtB(b){return b>1048576?(b/1048576).toFixed(1)+' MB':(b/1024).toFixed(0)+' KB'}
+  function showVideo(wrap,blobUrl){
+    var v=wrap.querySelector('video'),ov=wrap.querySelector('.video-overlay');
+    v.src=blobUrl;v.style.display='block';if(ov)ov.remove();
+    v.play().catch(function(){});
   }
-
-  function setLoadingState(overlay, pct, total) {
-    var playBtn = overlay.querySelector('.ov-play-btn');
-    var label   = overlay.querySelector('.ov-label');
-    var pbWrap  = overlay.querySelector('.ov-progress-wrap');
-    var pbFill  = overlay.querySelector('.ov-progress-fill');
-    var pbPct   = overlay.querySelector('.ov-progress-pct');
-    if (playBtn) playBtn.textContent = '⧗';
-    if (label)   label.textContent   = 'Loading…';
-    if (pbWrap)  pbWrap.style.display = 'block';
-    if (pbFill)  pbFill.style.width   = pct + '%';
-    if (pbPct)   pbPct.textContent    = pct > 0 ? pct + '% of ' + fmtBytes(total) : '';
-  }
-
-  function showVideo(wrap, blobUrl) {
-    var video   = wrap.querySelector('video');
-    var overlay = wrap.querySelector('.video-overlay');
-    video.src           = blobUrl;
-    video.style.display = 'block';
-    if (overlay) overlay.remove();
-    video.play().catch(function () { /* autoplay blocked — user can press play */ });
-  }
-
-  function showFallback(wrap, src, filename) {
-    var overlay = wrap.querySelector('.video-overlay');
-    if (overlay) overlay.remove();
-    /* Try direct src — works in Chrome even with octet-stream MIME */
-    var video = wrap.querySelector('video');
-    video.src           = src;
-    video.style.display = 'block';
-    video.load();
-    video.play().catch(function () {
-      /* If direct src also fails, offer a download link */
-      video.remove();
-      var strip = document.createElement('div');
-      strip.className = 'dl-strip';
-      strip.innerHTML =
-        '<span class="dl-err">Inline playback unavailable.</span>' +
-        '<a class="dl-btn" href="' + src + '" download="' + (filename || 'walkthrough.webm') + '">' +
-        '&#x2B07; Download to watch</a>';
-      wrap.appendChild(strip);
+  function showFallback(wrap,src,fname){
+    var ov=wrap.querySelector('.video-overlay');if(ov)ov.remove();
+    var v=wrap.querySelector('video');v.src=src;v.style.display='block';v.load();
+    v.play().catch(function(){
+      v.remove();
+      var s=document.createElement('div');s.className='dl-strip';
+      s.innerHTML='<span class="dl-err">Inline playback unavailable.</span>'
+        +'<a class="dl-btn" href="'+src+'" download="'+(fname||'walkthrough.webm')+'">&#x2B07; Download to watch</a>';
+      wrap.appendChild(s);
     });
   }
-
-  function loadVideoBlob(wrap) {
-    var src      = wrap.dataset.src;
-    var filename = wrap.dataset.filename || 'walkthrough.webm';
-    var overlay  = wrap.querySelector('.video-overlay');
-
-    /* Disable click handler to prevent double-fire */
-    overlay.classList.remove('clickable');
-    overlay.style.cursor = 'wait';
-
-    fetch(src, { mode: 'cors' })
-      .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        var total  = parseInt(res.headers.get('content-length') || '0', 10);
-        var reader = res.body.getReader();
-        var chunks = [];
-        var received = 0;
-
-        function pump() {
-          return reader.read().then(function (r) {
-            if (r.done) return chunks;
-            chunks.push(r.value);
-            received += r.value.length;
-            var pct = total ? Math.min(99, Math.round(received / total * 100)) : 0;
-            setLoadingState(overlay, pct, total);
-            return pump();
-          });
-        }
-
-        return pump().then(function (ch) {
-          return new Blob(ch, { type: 'video/webm' });
-        });
+  function loadBlob(wrap){
+    var src=wrap.dataset.src,fname=wrap.dataset.filename||'walkthrough.webm';
+    var ov=wrap.querySelector('.video-overlay');
+    ov.classList.remove('clickable');ov.style.cursor='wait';
+    var pb=ov.querySelector('.ov-play-btn'),lb=ov.querySelector('.ov-label');
+    var pw=ov.querySelector('.ov-progress-wrap'),pf=ov.querySelector('.ov-progress-fill'),pp=ov.querySelector('.ov-progress-pct');
+    if(pb)pb.textContent='&#x29D7;';if(lb)lb.textContent='Loading…';if(pw)pw.style.display='block';
+    fetch(src,{mode:'cors'})
+      .then(function(r){
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        var cl=parseInt(r.headers.get('content-length')||'0',10),rd=r.body.getReader(),ch=[],rx=0;
+        function pump(){return rd.read().then(function(x){
+          if(x.done)return ch;
+          ch.push(x.value);rx+=x.value.length;
+          var p=cl?Math.min(99,Math.round(rx/cl*100)):0;
+          if(pf)pf.style.width=p+'%';if(pp)pp.textContent=p>0?p+'% of '+fmtB(cl):'';
+          return pump();
+        });}
+        return pump().then(function(c){return new Blob(c,{type:'video/webm'});});
       })
-      .then(function (blob) {
-        showVideo(wrap, URL.createObjectURL(blob));
-      })
-      .catch(function (err) {
-        console.warn('Blob fetch failed (' + err.message + '), trying direct URL:', src);
-        showFallback(wrap, src, filename);
-      });
+      .then(function(b){showVideo(wrap,URL.createObjectURL(b));} )
+      .catch(function(e){console.warn('Blob fetch failed:',e.message);showFallback(wrap,src,fname);});
   }
-
-  function probeAndActivate(wrap) {
-    var src = wrap.dataset.src;
-    /* Quick HEAD request: if the asset doesn't exist yet (404), keep placeholder */
-    fetch(src, { method: 'HEAD', mode: 'cors' })
-      .then(function (res) {
-        if (!res.ok) return; /* asset not found — leave placeholder as-is */
-        /* Asset exists — replace placeholder overlay with clickable one */
-        var overlay = wrap.querySelector('.video-overlay');
-        if (!overlay) return;
-        overlay.removeAttribute('aria-hidden');
-        overlay.innerHTML =
-          '<div class="ov-play-btn" aria-hidden="true">&#9654;</div>' +
-          '<div class="ov-label">Click to watch</div>' +
-          '<div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div>' +
-          '<div class="ov-progress-pct"></div>';
-        overlay.classList.add('clickable');
-        wrap.removeAttribute('data-placeholder');
-        attachClickHandler(wrap);
-      })
-      .catch(function () { /* network error — keep placeholder */ });
+  function attachClick(wrap){
+    var ov=wrap.querySelector('.video-overlay');if(!ov)return;
+    function go(){ov.removeEventListener('click',go);ov.removeEventListener('keydown',kd);loadBlob(wrap);}
+    function kd(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}}
+    ov.addEventListener('click',go);ov.addEventListener('keydown',kd);
   }
-
-  function attachClickHandler(wrap) {
-    var overlay = wrap.querySelector('.video-overlay');
-    if (!overlay) return;
-
-    function onActivate() {
-      overlay.removeEventListener('click',    onActivate);
-      overlay.removeEventListener('keydown',  onKeyDown);
-      loadVideoBlob(wrap);
-    }
-    function onKeyDown(e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onActivate(); }
-    }
-
-    overlay.addEventListener('click',   onActivate);
-    overlay.addEventListener('keydown', onKeyDown);
+  function probe(wrap){
+    fetch(wrap.dataset.src,{method:'HEAD',mode:'cors'})
+      .then(function(r){
+        if(!r.ok)return;
+        var ov=wrap.querySelector('.video-overlay');if(!ov)return;
+        ov.removeAttribute('aria-hidden');
+        ov.innerHTML='<div class="ov-play-btn">&#9654;</div>'
+          +'<div class="ov-label">Click to watch</div>'
+          +'<div class="ov-progress-wrap"><div class="ov-progress-fill"></div></div>'
+          +'<div class="ov-progress-pct"></div>';
+        ov.classList.add('clickable');wrap.removeAttribute('data-placeholder');
+        attachClick(wrap);
+      }).catch(function(){});
   }
-
-  /* Wire up all video wraps on DOMContentLoaded */
-  document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('.video-wrap[data-src]').forEach(function (wrap) {
-      if (wrap.dataset.placeholder === 'true') {
-        /* Probe whether the GitHub Release asset actually exists */
-        probeAndActivate(wrap);
-      } else {
-        /* Asset known to exist — attach click handler immediately */
-        attachClickHandler(wrap);
-      }
+  document.addEventListener('DOMContentLoaded',function(){
+    document.querySelectorAll('.video-wrap[data-src]').forEach(function(w){
+      w.dataset.placeholder==='true'?probe(w):attachClick(w);
     });
   });
 }());
 </script>
-
 </body>
 </html>

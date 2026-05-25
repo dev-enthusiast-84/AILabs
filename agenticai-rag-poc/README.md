@@ -3,7 +3,7 @@
 An AI agent–based knowledge and decision support system built for the **Edureka / Illinois Tech Generative AI & ML Capstone**. Upload enterprise documents (PDF, TXT, CSV, Excel) and ask natural-language questions — a **7-node LangGraph agent pipeline** retrieves the most relevant content and produces grounded, validated answers via OpenAI GPT-4o-mini.
 
 > **Full documentation, submission reference, and walkthrough:** [GitHub Pages →](https://dev-enthusiast-84.github.io/AILabs/)  
-> **Capability Showcase (all 10 tasks, pipeline demo, metrics):** [Capability Showcase →](https://dev-enthusiast-84.github.io/AILabs/pitch.html)
+> **Capability Showcase (all 10 tasks, pipeline demo, metrics):** [Capability Showcase →](https://dev-enthusiast-84.github.io/AILabs/capstone-project-overview.html)
 
 ---
 

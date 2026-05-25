@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.utils import require_full_access
 from app.runtime.runtime_settings_cookie import restore_runtime_settings_from_cookie
+from app.runtime.settings_store import get_effective_notification_ntfy_topic
 
 router = APIRouter()
 
@@ -21,7 +22,7 @@ async def send_test_notification_endpoint(request: Request, _user=Depends(requir
     restore_runtime_settings_from_cookie(request, _user)
     from app.config import get_settings
     cfg = get_settings()
-    if not cfg.notification_smtp_host and not cfg.notification_ntfy_topic:
+    if not cfg.notification_smtp_host and not get_effective_notification_ntfy_topic():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No notification channels configured. Set NOTIFICATION_SMTP_HOST or NOTIFICATION_NTFY_TOPIC.",
