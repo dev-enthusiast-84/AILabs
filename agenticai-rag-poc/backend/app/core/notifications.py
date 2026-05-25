@@ -69,8 +69,10 @@ async def _notify_all_channels(
     if effective_ntfy_topic:
         try:
             import httpx
-            headers: dict[str, str] = {
-                "Title": subject,
+            # ntfy.sh supports UTF-8 header values; encode as bytes so httpx
+            # does not try to force-encode emoji/non-ASCII as latin-1.
+            headers: dict[str, bytes | str] = {
+                "Title": subject.encode("utf-8"),
                 "Priority": priority,
             }
             if tags:
@@ -79,7 +81,7 @@ async def _notify_all_channels(
                 await client.post(
                     f"https://ntfy.sh/{effective_ntfy_topic}",
                     headers=headers,
-                    content=body,
+                    content=body.encode("utf-8"),
                 )
             ntfy_sent = True
             log.info("notification_ntfy_sent", subject=subject)
